@@ -16,6 +16,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useTimesheetLabelOptions } from "@/hooks/useTimesheetLabelOptions";
+import { SiteVisitNote } from "@/components/SiteVisitNote";
 import { useAuth } from "@/hooks/use-auth";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -1334,6 +1335,16 @@ export function TimesheetDialog({
                       )}
                     </span>
                   </div>
+                )}
+
+                {/* Arriving on site (#46) — the phone's site sign-in register */}
+                {timesheet && (
+                  <SiteVisitNote
+                    userId={timesheet.userId}
+                    projectId={timesheet.projectId}
+                    date={timesheet.date as any}
+                    className="bg-muted/20 rounded-md px-3 py-1.5"
+                  />
                 )}
 
                 {/* Approval / rejection note */}

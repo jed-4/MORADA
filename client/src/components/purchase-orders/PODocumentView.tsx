@@ -49,12 +49,15 @@ export interface PODocumentLine {
   totalCents: number;
   gstFree: boolean;
   costCode?: string | null;
+  /** From delivery check-ins. Omitted until anything has been checked in. */
+  received?: { qty: number; outstanding: number } | null;
 }
 
 export function PODocumentLines({ lines }: { lines: PODocumentLine[] }) {
   // Optional columns only appear when a line uses them.
   const showCostCode = lines.some((l) => l.costCode);
   const anyGstFree = lines.some((l) => l.gstFree);
+  const showReceived = lines.some((l) => l.received);
 
   return (
     <div className="border-t border-border/60 overflow-x-auto" data-testid="po-document-lines">
@@ -63,6 +66,7 @@ export function PODocumentLines({ lines }: { lines: PODocumentLine[] }) {
           <tr className="border-b bg-muted/40">
             <th className="doc-col-label text-left px-3 py-2">Description</th>
             <th className="doc-col-label text-right px-3 py-2">Qty</th>
+            {showReceived && <th className="doc-col-label text-right px-3 py-2">Received</th>}
             <th className="doc-col-label text-right px-3 py-2">Unit price</th>
             {anyGstFree && <th className="doc-col-label text-left px-3 py-2">GST</th>}
             {showCostCode && <th className="doc-col-label text-left px-3 py-2">Cost code</th>}
@@ -72,7 +76,7 @@ export function PODocumentLines({ lines }: { lines: PODocumentLine[] }) {
         <tbody>
           {lines.length === 0 ? (
             <tr>
-              <td colSpan={6} className="px-3 py-4 doc-body-muted">No lines on this purchase order.</td>
+              <td colSpan={7} className="px-3 py-4 doc-body-muted">No lines on this purchase order.</td>
             </tr>
           ) : (
             lines.map((l) => (
@@ -82,6 +86,20 @@ export function PODocumentLines({ lines }: { lines: PODocumentLine[] }) {
                   {l.quantity}
                   {l.unit ? <span className="text-muted-foreground"> {l.unit}</span> : null}
                 </td>
+                {showReceived && (
+                  <td className="px-3 py-2 money" data-testid={`po-document-line-received-${l.key}`}>
+                    {l.received ? (
+                      <>
+                        {l.received.qty}
+                        {l.received.outstanding > 0 ? (
+                          <span className="block text-[11px] text-muted-foreground">{l.received.outstanding} to come</span>
+                        ) : (
+                          <span className="block text-[11px] text-muted-foreground">all in</span>
+                        )}
+                      </>
+                    ) : <Dash />}
+                  </td>
+                )}
                 <td className="px-3 py-2 money">{formatCents(l.unitPriceCents, { alwaysShowDecimals: true })}</td>
                 {anyGstFree && <td className="px-3 py-2 text-muted-foreground">{l.gstFree ? "GST free" : "GST"}</td>}
                 {showCostCode && <td className="px-3 py-2">{l.costCode || <Dash />}</td>}

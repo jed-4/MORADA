@@ -540,7 +540,7 @@ export type UserWithRole = User & {
   isAdminLike?: boolean;
 };
 
-export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only";
+export type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only" | "close";
 export type UserCategory = "team" | "supplier" | "client";
 
 // Note Groups for organizing notes
@@ -1008,6 +1008,16 @@ export const projects = pgTable("projects", {
   color: text("color").default("#A890D4"), // Default lavender — primary BuildPro accent
   icon: text("icon").default("Building2"), // Lucide icon name
   location: text("location"), // Project address/location (displayed as "Address")
+  // ── Site location (0133) ────────────────────────────────────────────────
+  // Coordinates of the job site. Written ONLY by PUT /api/projects/:id/site-location
+  // (omitted from insertProjectSchema so the generic PATCH can't set them, or
+  // forge who set them). Shared with the planned "arriving on site" geofence.
+  siteLatitude: doublePrecision("site_latitude"),
+  siteLongitude: doublePrecision("site_longitude"),
+  siteRadiusM: integer("site_radius_m").default(150), // geofence radius, metres
+  siteLocationSource: text("site_location_source"), // SITE_LOCATION_SOURCES: 'pin' | 'on_site' | 'geocoded'
+  siteLocationSetAt: timestamp("site_location_set_at"),
+  siteLocationSetBy: varchar("site_location_set_by"), // users.id (no FK — a deleted user must not block)
   projectArea: doublePrecision("project_area"), // Floor area in m² (0137) — drives price/cost per m²
   status: text("status").notNull().default("active"), // Legacy field - kept for backwards compatibility
   
@@ -1075,6 +1085,8 @@ export const projects = pgTable("projects", {
   companyId: varchar("company_id").references(() => companies.id), // Multi-tenant isolation
   ownerId: varchar("owner_id").references(() => users.id),
   tradesPortalToken: varchar("trades_portal_token").unique(), // UUID for /portal/project/:token/trades, generated lazily
+  // Defects stage 3 (migration 0135): client logins see the handover list.
+  shareHandoverWithClient: boolean("share_handover_with_client").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1083,6 +1095,14 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  // Site location has its own route with its own rules (never let a geocode
+  // overwrite a dropped pin; stamp who set it from the session).
+  siteLatitude: true,
+  siteLongitude: true,
+  siteRadiusM: true,
+  siteLocationSource: true,
+  siteLocationSetAt: true,
+  siteLocationSetBy: true,
 }).extend({
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
   status: z.enum(["active", "on_hold", "completed"]).default("active"),
@@ -1093,6 +1113,32 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
 
 export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Project = typeof projects.$inferSelect;
+
+/** How a project's site coordinates were set. Manual sources outrank 'geocoded'. */
+export const SITE_LOCATION_SOURCES = ["pin", "on_site", "geocoded"] as const;
+export type SiteLocationSource = typeof SITE_LOCATION_SOURCES[number];
+export const SITE_RADIUS_DEFAULT_M = 150;
+export const SITE_RADIUS_MIN_M = 20;
+export const SITE_RADIUS_MAX_M = 5000;
+
+/** Body of PUT /api/projects/:id/site-location. */
+export const siteLocationUpdateSchema = z.object({
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  source: z.enum(SITE_LOCATION_SOURCES).optional(),
+  radiusM: z.number().int().min(SITE_RADIUS_MIN_M).max(SITE_RADIUS_MAX_M).optional(),
+  /** Explicit "Use address" — the user chose to replace a pin with the geocode. */
+  replaceManual: z.boolean().optional(),
+  /** Remove the location entirely. */
+  clear: z.boolean().optional(),
+}).refine(
+  (b) => (b.latitude === undefined) === (b.longitude === undefined),
+  { message: "latitude and longitude must be sent together" },
+).refine(
+  (b) => b.latitude === undefined || !!b.source,
+  { message: "source is required when setting coordinates" },
+);
+export type SiteLocationUpdate = z.infer<typeof siteLocationUpdateSchema>;
 
 // Task Views (saved filters and view settings)
 export const taskViews = pgTable("task_views", {
@@ -1452,6 +1498,10 @@ export const companySettings = pgTable("company_settings", {
   clientInvoiceDefaultXeroAccount: text("client_invoice_default_xero_account"),
 
   documentStyle: text("document_style").notNull().default("style1"),
+
+  // Delivery check-in (migration 0134): site crew must photograph the docket
+  // unless the company turns this off.
+  deliveryDocketPhotoRequired: boolean("delivery_docket_photo_required").notNull().default(true),
   paymentDetails: text("payment_details"),
 
   takeoffMeasurementTemplates: json("takeoff_measurement_templates"),
@@ -1477,6 +1527,17 @@ export const companySettings = pgTable("company_settings", {
     layoutSettings?: Record<string, any>;
   }>>().default([]),
 
+  // ── Arriving on site (0136) ────────────────────────────────────────────
+  // The phone's geofence: "You're at 12 Smith St — clock in?". Notification
+  // only, never an automatic clock-in. Off by default; each person also opts
+  // in on their own phone. See siteVisits.
+  geofenceEnabled: boolean("geofence_enabled").notNull().default(false),
+  /** Keep the site sign-in register. Off = prompts only, nothing stored. */
+  geofenceStoreVisits: boolean("geofence_store_visits").notNull().default(true),
+  geofenceHoursStart: text("geofence_hours_start").notNull().default("05:00"), // HH:MM, company time
+  geofenceHoursEnd: text("geofence_hours_end").notNull().default("19:00"), // HH:MM, company time
+  geofenceWeekends: boolean("geofence_weekends").notNull().default(false),
+
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1487,6 +1548,8 @@ export const insertCompanySettingsSchema = createInsertSchema(companySettings, {
   taxRate: z.coerce.string(),
   timesheetReminderThresholdHours: z.coerce.string(),
   timesheetDefaultBreak: z.coerce.string(),
+  geofenceHoursStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM"),
+  geofenceHoursEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM"),
 }).omit({
   id: true,
   createdAt: true,
@@ -4227,6 +4290,31 @@ export const timesheets = pgTable("timesheets", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Site visits (0136) — the "arriving on site" sign-in register.
+// One row per arrival at a job site, recorded by the phone's geofence. Kept
+// apart from timesheets on purpose: a visit NEVER changes a timesheet, and is
+// kept even if the person never clocks in. No coordinates are stored — only
+// who, which job, and when they arrived / left. Deleted after 12 months.
+export const siteVisits = pgTable("site_visits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  arrivedAt: timestamp("arrived_at").notNull(),
+  leftAt: timestamp("left_at"),
+  source: text("source").notNull().default("geofence"),
+  /** The phone's id for the arrive event — unique per user, so a replayed queue item is a no-op. */
+  clientRequestId: text("client_request_id"),
+  /** The phone's id for the leave event. */
+  leaveClientRequestId: text("leave_client_request_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  userRequestUq: uniqueIndex("site_visits_user_request_uq").on(t.userId, t.clientRequestId),
+  companyUserArrivedIdx: index("site_visits_company_user_arrived_idx").on(t.companyId, t.userId, t.arrivedAt),
+  arrivedIdx: index("site_visits_arrived_idx").on(t.arrivedAt),
+}));
+export type SiteVisit = typeof siteVisits.$inferSelect;
+
 // Timesheet Cost Codes (for split timesheets - distributing hours across multiple cost codes)
 export const timesheetCostCodes = pgTable("timesheet_cost_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -5092,12 +5180,151 @@ export const defects = pgTable("defects", {
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+
+  // ── Defects v2 (migration 0131, docs/DEFECTS_V2.md) ──
+  // Denormalised from projects for tenant-scoped queries ("my defects").
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  // Per project, shown as D-014. Assigned by the server on create.
+  number: integer("number"),
+  // Canonical workflow stage (shared/defects.ts). `status` above is kept in sync.
+  stage: text("stage").notNull().default("open"),
+  jobStage: text("job_stage").notNull().default("construction"),
+  // Internal person responsible (assignedContact* is the trade).
+  ownerUserId: varchar("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  ownerName: text("owner_name"),
+  // When set, `location` holds the location's full path text.
+  locationId: varchar("location_id").references((): AnyPgColumn => projectLocations.id, { onDelete: "set null" }),
+  // Offline idempotency key from the phone.
+  clientRequestId: varchar("client_request_id"),
+  closedAt: timestamp("closed_at"),
+  closedBy: varchar("closed_by").references(() => users.id, { onDelete: "set null" }),
+  closedByName: text("closed_by_name"),
+
+  // ── Defects v2 stages 2–3 (migration 0135) ──
+  sentToTradeAt: timestamp("sent_to_trade_at"),
+  tradeViewedAt: timestamp("trade_viewed_at"),
+  tradeMarkedFixedAt: timestamp("trade_marked_fixed_at"),
+  ownerOverdueRemindedAt: timestamp("owner_overdue_reminded_at"),
+  // Backcharge to the trade: CENTS INC GST. Readable only with financial.bills.
+  backchargeCents: integer("backcharge_cents"),
+  backchargeReason: text("backcharge_reason"),
+  backchargedAt: timestamp("backcharged_at"),
+  backchargeContactId: varchar("backcharge_contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  backchargeCostCodeId: varchar("backcharge_cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  backchargedBy: varchar("backcharged_by").references(() => users.id, { onDelete: "set null" }),
+  backchargedByName: text("backcharged_by_name"),
+}, (table) => ({
+  tradeContactIdx: index("defects_trade_contact_idx").on(table.projectId, table.assignedContactId, table.stage),
+  companyProjectStageIdx: index("defects_company_project_stage_idx").on(table.companyId, table.projectId, table.stage),
+  projectNumberUnique: uniqueIndex("defects_project_number_unique").on(table.projectId, table.number),
+  projectClientRequestUnique: uniqueIndex("defects_project_client_request_unique").on(table.projectId, table.clientRequestId),
+}));
+
+// A project's location tree, e.g. Level 1 › Kitchen › Island.
+export const projectLocations = pgTable("project_locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  parentId: varchar("parent_id").references((): AnyPgColumn => projectLocations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("project_locations_project_idx").on(table.projectId),
+}));
+export type ProjectLocation = typeof projectLocations.$inferSelect;
+
+export const defectWatchers = pgTable("defect_watchers", {
+  defectId: varchar("defect_id").notNull().references(() => defects.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.defectId, table.userId] }),
+  userIdx: index("defect_watchers_user_idx").on(table.userId),
+}));
+
+export const defectEvents = pgTable("defect_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  defectId: varchar("defect_id").notNull().references(() => defects.id, { onDelete: "cascade" }),
+  // created | updated | transition | comment | photo | watcher_added | watcher_removed
+  type: text("type").notNull(),
+  actorUserId: varchar("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: text("actor_name"),
+  data: jsonb("data").notNull().default({}),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  defectIdx: index("defect_events_defect_idx").on(table.defectId, table.createdAt),
+}));
+export type DefectEvent = typeof defectEvents.$inferSelect;
+
+// One private link per trade (contact) per job — /portal/defects/:token.
+export const defectTradeLinks = pgTable("defect_trade_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+  token: varchar("token").notNull().unique(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+  lastViewedAt: timestamp("last_viewed_at"),
+  lastDigestAt: timestamp("last_digest_at"),
+  lastEmailedAt: timestamp("last_emailed_at"),
+}, (table) => ({
+  liveUnique: uniqueIndex("defect_trade_links_live_unique").on(table.projectId, table.contactId).where(sql`revoked_at IS NULL`),
+  companyProjectIdx: index("defect_trade_links_company_project_idx").on(table.companyId, table.projectId),
+}));
+export type DefectTradeLink = typeof defectTradeLinks.$inferSelect;
+
+// A client's sign-off of the handover defects list (stage 3).
+export const defectHandoverSignoffs = pgTable("defect_handover_signoffs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  signerUserId: varchar("signer_user_id").references(() => users.id, { onDelete: "set null" }),
+  signerName: text("signer_name").notNull(),
+  jobStages: jsonb("job_stages").notNull().default([]),
+  defectCount: integer("defect_count").notNull().default(0),
+  openCount: integer("open_count").notNull().default(0),
+  snapshot: jsonb("snapshot").notNull().default([]),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  signedAt: timestamp("signed_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("defect_handover_signoffs_project_idx").on(table.projectId, table.signedAt),
+}));
+export type DefectHandoverSignoff = typeof defectHandoverSignoffs.$inferSelect;
+
+export const defectPhotoSchema = z.object({
+  url: z.string().min(1).max(2048),
+  name: z.string().max(255).default(""),
+  type: z.string().max(100).optional(),
+  kind: z.enum(["before", "after", "trade"]).optional(),
+  size: z.number().optional(),
 });
 
 export const insertDefectSchema = createInsertSchema(defects).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  // Server-owned (v2): tenancy, numbering, workflow and close stamps.
+  companyId: true,
+  number: true,
+  closedAt: true,
+  closedBy: true,
+  closedByName: true,
+  // Server-owned (stages 2–3): trade stamps and backcharge money.
+  sentToTradeAt: true,
+  tradeViewedAt: true,
+  tradeMarkedFixedAt: true,
+  ownerOverdueRemindedAt: true,
+  backchargeCents: true,
+  backchargeReason: true,
+  backchargedAt: true,
+  backchargeContactId: true,
+  backchargeCostCodeId: true,
+  backchargedBy: true,
+  backchargedByName: true,
 }).extend({
   // Type / priority / status come from the company's Field Settings, which can
   // add and rename options. These were hard-coded enums of the default keys,
@@ -5110,12 +5337,9 @@ export const insertDefectSchema = createInsertSchema(defects).omit({
   dueDate: z.coerce.date().nullable().optional(),
   dateResolved: z.coerce.date().nullable().optional(),
   costImpact: z.number().optional(),
-  attachments: z.array(z.object({
-    url: z.string(),
-    name: z.string(),
-    type: z.string().optional(),
-    size: z.number().optional(),
-  })).optional(),
+  attachments: z.array(defectPhotoSchema).optional(),
+  stage: z.enum(["open", "sent", "accepted", "fixed", "closed", "rejected"]).optional(),
+  jobStage: z.enum(["construction", "pre_handover", "handover", "dlp", "warranty"]).optional(),
 });
 
 export type InsertDefect = z.infer<typeof insertDefectSchema>;
@@ -6634,6 +6858,12 @@ export const purchaseOrders = pgTable("purchase_orders", {
   matchedBillId: varchar("matched_bill_id"), // ID of the matched bill (no FK constraint to avoid circular dep)
   matchedAt: timestamp("matched_at"),
 
+  // What has physically arrived (migration 0134). Separate from `status`,
+  // which is the money lifecycle and is never touched by deliveries.
+  // none | partial | delivered | issues — recomputed from the check-ins by
+  // shared/deliveries.ts computeDeliveryStatus; never written by a client.
+  deliveryStatus: text("delivery_status").notNull().default("none"),
+
   // Creator
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   
@@ -6651,6 +6881,7 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
   id: true,
   createdAt: true,
   updatedAt: true,
+  deliveryStatus: true, // derived from check-ins, never sent by a client
 }).extend({
   poType: z.enum(["main", "site"]).default("main"),
   status: z.enum(["draft", "sent", "accepted", "invoiced", "partially_paid", "paid", "cancelled"]).default("draft"),
@@ -6760,15 +6991,62 @@ export const purchaseOrderAttachments = pgTable("purchase_order_attachments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   thumbnailX: integer("thumbnail_x").notNull().default(50),
   thumbnailY: integer("thumbnail_y").notNull().default(50),
+
+  // Set when the photo came from a delivery check-in (migration 0134).
+  deliveryId: varchar("delivery_id").references((): AnyPgColumn => purchaseOrderDeliveries.id, { onDelete: "cascade" }),
+  kind: text("kind"), // "docket" | "damage"
 });
 
 export const insertPurchaseOrderAttachmentSchema = createInsertSchema(purchaseOrderAttachments).omit({
   id: true,
   createdAt: true,
+  deliveryId: true, // only the delivery check-in route links a photo to a delivery
 });
 
 export type InsertPurchaseOrderAttachment = z.infer<typeof insertPurchaseOrderAttachmentSchema>;
 export type PurchaseOrderAttachment = typeof purchaseOrderAttachments.$inferSelect;
+
+// Delivery check-ins against a PO (migration 0134). One row per delivery the
+// crew records on site; the lines say how many of each PO line turned up and
+// in what condition. Quantities only — a delivery never carries a price.
+export const purchaseOrderDeliveries = pgTable("purchase_order_deliveries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  purchaseOrderId: varchar("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  receivedAt: timestamp("received_at").notNull().defaultNow(),
+  receivedById: varchar("received_by_id").references(() => users.id, { onDelete: "set null" }),
+  receivedByName: text("received_by_name"),
+  docketNumber: text("docket_number"),
+  notes: text("notes"),
+  hasIssues: boolean("has_issues").notNull().default(false),
+  // The phone's id for the submission, so an offline retry never doubles it.
+  clientRequestId: text("client_request_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  poIdx: index("purchase_order_deliveries_po_idx").on(table.purchaseOrderId),
+  companyIdx: index("purchase_order_deliveries_company_idx").on(table.companyId),
+  projectRequestUq: uniqueIndex("purchase_order_deliveries_project_request_uq").on(table.projectId, table.clientRequestId),
+}));
+
+export type PurchaseOrderDelivery = typeof purchaseOrderDeliveries.$inferSelect;
+
+export const purchaseOrderDeliveryItems = pgTable("purchase_order_delivery_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deliveryId: varchar("delivery_id").notNull().references(() => purchaseOrderDeliveries.id, { onDelete: "cascade" }),
+  purchaseOrderItemId: varchar("purchase_order_item_id").references(() => purchaseOrderItems.id, { onDelete: "set null" }),
+  descriptionSnapshot: text("description_snapshot").notNull().default(""),
+  qtyOrderedSnapshot: numeric("qty_ordered_snapshot", { precision: 10, scale: 2 }).notNull().default("0"),
+  qtyReceived: numeric("qty_received", { precision: 10, scale: 2 }).notNull().default("0"),
+  condition: text("condition").notNull().default("ok"), // ok | short | damaged | wrong
+  note: text("note"),
+  photoUrls: json("photo_urls").$type<string[]>().default([]),
+}, (table) => ({
+  deliveryIdx: index("purchase_order_delivery_items_delivery_idx").on(table.deliveryId),
+  poItemIdx: index("purchase_order_delivery_items_po_item_idx").on(table.purchaseOrderItemId),
+}));
+
+export type PurchaseOrderDeliveryItem = typeof purchaseOrderDeliveryItems.$inferSelect;
 
 // Purchase Order Signatures (for supplier acceptance)
 export const purchaseOrderSignatures = pgTable("purchase_order_signatures", {

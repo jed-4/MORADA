@@ -35,6 +35,8 @@ export const TAB_PERMISSIONS: Record<string, SectionPermission> = {
   "client-invoices": { keys: [PORTAL_KEYS.invoices] },
   "site-diary": { keys: [PORTAL_KEYS.siteDiary] },
   messages: { keys: [PORTAL_KEYS.messages] },
+  // Clients see the handover list here, only where the project shares it.
+  defects: { keys: [PORTAL_KEYS.handover] },
 };
 
 /** Sidebar item title (projectFlatOrder in SidebarNav) → project tab id. */

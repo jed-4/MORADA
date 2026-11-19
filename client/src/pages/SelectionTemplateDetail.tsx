@@ -971,6 +971,9 @@ export default function SelectionTemplateDetail() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {/* The budget is never sent to a role without selections pricing,
+                      and the server ignores one it sends — so no empty box. */}
+                  {canSeeSelectionPricing && (
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Budget ($)</Label>
                     <Input
@@ -986,6 +989,7 @@ export default function SelectionTemplateDetail() {
                       data-testid="input-budget"
                     />
                   </div>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap gap-6 pt-1">

@@ -7,7 +7,10 @@ import express from "express";
 import { createServer, type Server } from "http";
 import * as Sentry from "@sentry/node";
 import { sentryEnabled } from "./instrument";
-import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz } from "./storage";
+import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz, formatHHmmInTz } from "./storage";
+import { geofenceSettingsOf, rankSiteFences, resolveSiteVisitTime, StaleSiteVisitTimeError, SITE_FENCE_RECENT_DAYS } from "@shared/siteVisits";
+import { recordSiteArrival, recordSiteLeave, listSiteVisits } from "./services/siteVisits";
+import { resolveClockTime, StaleClientTimeError } from "./clockTime";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
 import { computePOTotalsCents, hasPricedLine, poLineCents } from "@shared/poTotals";
 import { canMovePOStatus, poStatusMoveError } from "@shared/poStatus";
@@ -20,6 +23,60 @@ import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subM
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { buildClientVariationDocument } from "./clientVariationDocument";
 import { registerSiteBoardRoutes, siteBoardUrl, qrPng, newSiteToken, publicBaseUrl } from "./siteBoard";
+import {
+  DefectError,
+  actorFromReq,
+  resolveDefectActions,
+  defectListQuerySchema,
+  createDefectSchema,
+  transitionSchema,
+  commentSchema,
+  photosSchema,
+  createLocationSchema,
+  updateLocationSchema,
+  listDefects as listDefectsV2,
+  getDefectDetail,
+  createDefect as createDefectV2,
+  updateDefect as updateDefectV2,
+  transitionDefect,
+  commentOnDefect,
+  addDefectPhotos,
+  setWatching,
+  deleteDefect as deleteDefectV2,
+  listLocations,
+  createLocation,
+  updateLocation,
+  deleteLocation,
+} from "./services/defects";
+import {
+  sendToTradeSchema,
+  sendAllToTradeSchema,
+  tradeActionSchema,
+  sendDefectToTrade,
+  sendAllToTrade,
+  getDefectTradeStatus,
+  listProjectTrades,
+  tradeLinkFor,
+  revokeTradeLink,
+  afterDefectStageChange,
+  loadTradePortal,
+  tradePhotoPath,
+  tradeAct,
+} from "./services/defectTrades";
+import {
+  getHandoverList,
+  handoverPhotoPath,
+  handoverSettingsSchema,
+  setHandoverSharing,
+  signoffSchema,
+  signHandoverList,
+  backchargeSchema,
+  setBackcharge,
+  clearBackcharge,
+  getBackcharge,
+  listBackcharges,
+} from "./services/defectHandover";
+import { registerDeliveryRoutes, deliverySummaryFor } from "./deliveries";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
@@ -43,6 +100,7 @@ import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./service
 import { isVendorCredit } from "./services/xeroCreditGuard";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
 import { dedupXeroBills } from "./services/xeroBillDedup";
+import { resolveDayWindow, buildWidgetSnapshot } from "./services/widgetSnapshot";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -334,6 +392,10 @@ import {
   redactDecisionLogPrices,
   stripOptionMoneyForWrite,
   stripProductMoneyForWrite,
+  stripSelectionMoneyForWrite,
+  redactSelectionForViewer,
+  redactTemplateForViewer,
+  mergeTemplateWriteForViewer,
 } from "./selectionVisibility";
 import { makeOwnedByCompany, makeOwnedViaParent, makeOwnsAllByIds, makeOwnsAllVia } from "./middleware/tenantGuards";
 import { signUploadGrant, verifyUploadGrant } from "./utils/signedGrant";
@@ -4469,96 +4531,480 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Defects API Routes
-  app.get("/api/defects", async (req, res) => {
+  // ── Defects v2 (docs/DEFECTS_V2.md) ─────────────────────────────────────
+  // Every route: requireAuth + team member + projects.defects permission +
+  // the defect's/project's company (enforceProjectCompany, or the service's
+  // company-scoped query for by-id routes — a miss is a 404, never a 403).
+  // Team members see every project in their company; that is the app-wide
+  // project-access rule for team users (user_project_access only confines
+  // client logins).
+  const defectFail = (res: Response, error: any, fallback: string) => {
+    if (error instanceof DefectError) {
+      return res.status(error.status).json({ error: error.message, ...(error.details ? { details: error.details } : {}) });
+    }
+    console.error(`[defects] ${fallback}:`, error);
+    return res.status(500).json({ error: fallback });
+  };
+  const defectCompany = (req: Request, res: Response): string | null => {
+    const companyId = getSessionCompanyId(req);
+    if (!companyId) { res.status(401).json({ error: "Not authenticated" }); return null; }
+    return companyId;
+  };
+  const defectCreate = async (req: Request, res: Response, projectId: string | undefined) => {
     try {
-      const { projectId } = req.query;
-      // Tenant scoping: a projectId must belong to the caller's company; an
-      // omitted projectId previously returned every company's defects.
-      if (projectId) {
-        if (!(await enforceProjectCompany(req, res, projectId as string, "Project not found"))) return;
-      } else if (!(req.user as any)?.companyId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      const defects = await storage.getDefects(projectId as string | undefined);
-      const userCompanyId = (req.user as any)?.companyId;
-      const scoped = projectId ? defects : await (async () => {
-        const { projects: projectsTbl } = await import("@shared/schema");
-        const companyProjects = await db.select({ id: projectsTbl.id })
-          .from(projectsTbl).where(eq(projectsTbl.companyId, userCompanyId));
-        const ids = new Set(companyProjects.map((pr: any) => pr.id));
-        return defects.filter((d: any) => ids.has(d.projectId));
-      })();
-      res.json(scoped);
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!projectId) return res.status(400).json({ error: "projectId is required" });
+      const parsed = createDefectSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      const result = await createDefectV2({ companyId, projectId, actor: actorFromReq(req), body: parsed.data });
+      res.status(result.created ? 201 : 200).json(result.defect);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch defects" });
+      defectFail(res, error, "Failed to create defect");
+    }
+  };
+
+  app.get("/api/projects/:projectId/defects", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const query = defectListQuerySchema.safeParse(req.query);
+      if (!query.success) return res.status(400).json({ error: "Bad query", details: fromZodError(query.error).toString() });
+      res.json(await listDefectsV2({ companyId, userId: (req.user as any)?.id ?? null, projectId: req.params.projectId, query: query.data }));
+    } catch (error) {
+      defectFail(res, error, "Failed to fetch defects");
     }
   });
 
-  app.get("/api/defects/:id", async (req, res) => {
+  app.post("/api/projects/:projectId/defects", requireAuth, requireTeamMember, requirePermission("projects.defects", "add"), async (req, res) => {
+    if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+    return defectCreate(req, res, req.params.projectId);
+  });
+
+  // Legacy list (dashboard widgets, pinned items): a plain array, every row.
+  // Same shape per row as the v2 list, which still carries `status`.
+  app.get("/api/defects", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
     try {
-      const defect = await getOwnedDefect(req, res, req.params.id);
-      if (!defect) return;
-      res.json(defect);
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+      const result = await listDefectsV2({ companyId, userId: (req.user as any)?.id ?? null, projectId, query: {}, unpaged: true });
+      res.json(result.items);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch defect" });
+      defectFail(res, error, "Failed to fetch defects");
     }
   });
 
-  app.post("/api/defects", async (req, res) => {
+  // Legacy create: projectId in the body.
+  app.post("/api/defects", requireAuth, requireTeamMember, requirePermission("projects.defects", "add"), async (req, res) => {
+    const projectId = typeof req.body?.projectId === "string" ? req.body.projectId : "";
+    if (!projectId) return res.status(400).json({ error: "projectId is required" });
+    if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+    return defectCreate(req, res, projectId);
+  });
+
+  // Before /api/defects/:id so "mine" isn't read as an id.
+  app.get("/api/defects/mine", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
     try {
-      const validationResult = insertDefectSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
-
-      const defect = await storage.createDefect(validationResult.data);
-      res.status(201).json(defect);
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const query = defectListQuerySchema.safeParse(req.query);
+      if (!query.success) return res.status(400).json({ error: "Bad query", details: fromZodError(query.error).toString() });
+      res.json(await listDefectsV2({ companyId, userId: (req.user as any)?.id ?? null, mine: true, query: query.data }));
     } catch (error) {
-      res.status(500).json({ error: "Failed to create defect" });
+      defectFail(res, error, "Failed to fetch defects");
     }
   });
 
-  app.patch("/api/defects/:id", async (req, res) => {
+  app.get("/api/defects/:id", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
     try {
-      const updateSchema = insertDefectSchema.partial();
-      const validationResult = updateSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-
-      const owned = await getOwnedDefect(req, res, req.params.id);
-      if (!owned) return;
-      // A reassignment must land on a project the caller also owns.
-      if (validationResult.data.projectId && validationResult.data.projectId !== owned.projectId) {
-        if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
-      }
-      const defect = await storage.updateDefect(req.params.id, validationResult.data);
-      if (!defect) {
-        return res.status(404).json({ error: "Defect not found" });
-      }
-      res.json(defect);
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await getDefectDetail(req.params.id, companyId, (req.user as any)?.id ?? null));
     } catch (error) {
-      res.status(500).json({ error: "Failed to update defect" });
+      defectFail(res, error, "Failed to fetch defect");
     }
   });
 
-  app.delete("/api/defects/:id", async (req, res) => {
+  app.patch("/api/defects/:id", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
     try {
-      const owned = await getOwnedDefect(req, res, req.params.id);
-      if (!owned) return;
-      await storage.deleteDefect(req.params.id);
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await updateDefectV2({ id: req.params.id, companyId, actor: actorFromReq(req), body: req.body ?? {} }));
+    } catch (error) {
+      defectFail(res, error, "Failed to update defect");
+    }
+  });
+
+  // edit OR close is enough to reach the handler; transitionDefect decides
+  // per move (close/reopen need `close`, everything else `edit`).
+  app.post("/api/defects/:id/transition", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = transitionSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      const actions = await resolveDefectActions(req.user);
+      const detail = await transitionDefect({ id: req.params.id, companyId, actor: actorFromReq(req), actions, body: parsed.data });
+      // Closing the trade's last open defect turns their link off.
+      await afterDefectStageChange(companyId, req.params.id);
+      res.json(detail);
+    } catch (error) {
+      defectFail(res, error, "Failed to move defect");
+    }
+  });
+
+  // Commenting is part of working a defect, so it takes `view` like reading
+  // the thread does — a site lead with view-only can still say "done".
+  app.post("/api/defects/:id/comments", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = commentSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      res.status(201).json(await commentOnDefect({ id: req.params.id, companyId, actor: actorFromReq(req), body: parsed.data }));
+    } catch (error) {
+      defectFail(res, error, "Failed to add comment");
+    }
+  });
+
+  app.post("/api/defects/:id/photos", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = photosSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      res.status(201).json(await addDefectPhotos({ id: req.params.id, companyId, actor: actorFromReq(req), photos: parsed.data.photos }));
+    } catch (error) {
+      defectFail(res, error, "Failed to add photos");
+    }
+  });
+
+  app.post("/api/defects/:id/watch", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await setWatching({ id: req.params.id, companyId, actor: actorFromReq(req), watching: true }));
+    } catch (error) {
+      defectFail(res, error, "Failed to watch defect");
+    }
+  });
+
+  app.delete("/api/defects/:id/watch", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await setWatching({ id: req.params.id, companyId, actor: actorFromReq(req), watching: false }));
+    } catch (error) {
+      defectFail(res, error, "Failed to unwatch defect");
+    }
+  });
+
+  app.delete("/api/defects/:id", requireAuth, requireTeamMember, requirePermission("projects.defects", "delete"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      await deleteDefectV2(req.params.id, companyId);
       res.status(204).send();
     } catch (error) {
-      res.status(500).json({ error: "Failed to delete defect" });
+      defectFail(res, error, "Failed to delete defect");
+    }
+  });
+
+  // Project locations (the defect location tree).
+  app.get("/api/projects/:projectId/locations", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      res.json(await listLocations(companyId, req.params.projectId));
+    } catch (error) {
+      defectFail(res, error, "Failed to fetch locations");
+    }
+  });
+
+  // Adding a location is part of raising a defect ("add location" inline), so `add`.
+  app.post("/api/projects/:projectId/locations", requireAuth, requireTeamMember, requirePermission("projects.defects", "add"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const parsed = createLocationSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      res.status(201).json(await createLocation(companyId, req.params.projectId, parsed.data));
+    } catch (error) {
+      defectFail(res, error, "Failed to add location");
+    }
+  });
+
+  app.patch("/api/project-locations/:id", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = updateLocationSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      res.json(await updateLocation(req.params.id, companyId, parsed.data));
+    } catch (error) {
+      defectFail(res, error, "Failed to update location");
+    }
+  });
+
+  app.delete("/api/project-locations/:id", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      await deleteLocation(req.params.id, companyId);
+      res.status(204).send();
+    } catch (error) {
+      defectFail(res, error, "Failed to delete location");
+    }
+  });
+
+  // ── Defects v2 stage 2: trades (docs/DEFECTS_V2.md) ─────────────────────
+  // Sending moves open → sent, so it needs `edit`; the service re-checks the
+  // move with checkDefectTransition. Link management is `edit` too.
+  app.post("/api/defects/:id/send-to-trade", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = sendToTradeSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      const actions = await resolveDefectActions(req.user);
+      const result = await sendDefectToTrade({
+        id: req.params.id, companyId, actor: actorFromReq(req), actions, body: parsed.data, baseUrl: publicBaseUrl(req),
+      });
+      res.json({ ...result, defect: await getDefectDetail(req.params.id, companyId, (req.user as any)?.id ?? null) });
+    } catch (error) {
+      defectFail(res, error, "Failed to send to the trade");
+    }
+  });
+
+  app.get("/api/defects/:id/trade-status", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await getDefectTradeStatus(req.params.id, companyId));
+    } catch (error) {
+      defectFail(res, error, "Failed to load trade status");
+    }
+  });
+
+  // Per-trade view: counts, overdue, link state; backcharge totals only for
+  // callers holding financial.bills:view.
+  app.get("/api/projects/:projectId/defect-trades", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const withMoney = await userHasPermission(req.user as any, "financial.bills", "view");
+      res.json(await listProjectTrades(companyId, req.params.projectId, withMoney));
+    } catch (error) {
+      defectFail(res, error, "Failed to load trades");
+    }
+  });
+
+  app.post("/api/projects/:projectId/defect-trades/:contactId/send", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const parsed = sendAllToTradeSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      const actions = await resolveDefectActions(req.user);
+      res.json(await sendAllToTrade({
+        companyId, projectId: req.params.projectId, contactId: req.params.contactId,
+        actor: actorFromReq(req), actions, body: parsed.data, baseUrl: publicBaseUrl(req),
+      }));
+    } catch (error) {
+      defectFail(res, error, "Failed to send to the trade");
+    }
+  });
+
+  // The trade's link (created if needed) — "Copy link".
+  app.post("/api/projects/:projectId/defect-trades/:contactId/link", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      res.json(await tradeLinkFor(companyId, req.params.projectId, req.params.contactId, publicBaseUrl(req)));
+    } catch (error) {
+      defectFail(res, error, "Failed to get the link");
+    }
+  });
+
+  app.post("/api/projects/:projectId/defect-trades/:contactId/revoke", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const revoked = await revokeTradeLink({
+        companyId, projectId: req.params.projectId, contactId: req.params.contactId,
+        actor: actorFromReq(req), reason: "Turned off by the office",
+      });
+      res.json({ revoked });
+    } catch (error) {
+      defectFail(res, error, "Failed to turn the link off");
+    }
+  });
+
+  // Public trade page. No session: the token names ONE trade on ONE job, and
+  // the link row carries its own companyId — every lookup below is scoped by
+  // it (services/defectTrades.ts). Unknown token → 404, revoked → 410.
+  app.get("/api/portal/defects/:token", async (req, res) => {
+    try {
+      // Scoped by the link's own companyId + projectId + contactId.
+      res.json(await loadTradePortal(req.params.token));
+    } catch (error) {
+      defectFail(res, error, "Failed to load defects");
+    }
+  });
+
+  app.post("/api/portal/defects/:token/defects/:defectId/action", async (req, res) => {
+    try {
+      const parsed = tradeActionSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      const objectStorage = new ObjectStorageService();
+      // Uploaded under the LINK's companyId (never one from the request).
+      res.json(await tradeAct({
+        token: req.params.token,
+        defectId: req.params.defectId,
+        body: parsed.data,
+        uploadPhoto: (buffer, mime, companyId) => objectStorage.uploadObjectEntity(buffer, mime, companyId),
+      }));
+    } catch (error) {
+      defectFail(res, error, "Failed to update the defect");
+    }
+  });
+
+  app.get("/api/portal/defects/:token/photos/:defectId/:index", async (req, res) => {
+    try {
+      // tradePhotoPath only returns a path under the link's own companyId.
+      const path = await tradePhotoPath(req.params.token, req.params.defectId, Number.parseInt(req.params.index, 10));
+      if (!path) return res.status(404).json({ error: "Not found" });
+      const objectStorage = new ObjectStorageService();
+      const file = await objectStorage.getObjectEntityFile(path.replace(/^\/objects\/company\/[^/]+\//, "/objects/"));
+      await objectStorage.downloadObject(file, res, 300);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") return res.status(404).json({ error: "Not found" });
+      if (!res.headersSent) defectFail(res, error, "Failed to load the photo");
+    }
+  });
+
+  // ── Defects v2 stage 3: handover list, client sign-off, backcharges ──────
+  // Team (projects.defects:view) and client logins share these. A client gets
+  // here only through clientAccessGate (portal.handover, project granted), and
+  // the service refuses unless the project shares the list.
+  const isClientSession = (req: Request) => (req.user as any)?.userCategory === "client";
+
+  app.get("/api/projects/:projectId/handover", requireAuth, requireTeamMemberOrClient, requireTeamPermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      res.json(await getHandoverList({
+        companyId, projectId: req.params.projectId, jobStagesRaw: req.query.jobStages, forClient: isClientSession(req),
+      }));
+    } catch (error) {
+      defectFail(res, error, "Failed to load the handover list");
+    }
+  });
+
+  app.get("/api/projects/:projectId/handover/photos/:defectId/:index", requireAuth, requireTeamMemberOrClient, requireTeamPermission("projects.defects", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const path = await handoverPhotoPath({
+        companyId, projectId: req.params.projectId, defectId: req.params.defectId,
+        index: Number.parseInt(req.params.index, 10), forClient: isClientSession(req),
+      });
+      if (!path) return res.status(404).json({ error: "Not found" });
+      const objectStorage = new ObjectStorageService();
+      const file = await objectStorage.getObjectEntityFile(path.replace(/^\/objects\/company\/[^/]+\//, "/objects/"));
+      await objectStorage.downloadObject(file, res, 300);
+    } catch (error: any) {
+      if (error?.name === "ObjectNotFoundError") return res.status(404).json({ error: "Not found" });
+      if (!res.headersSent) defectFail(res, error, "Failed to load the photo");
+    }
+  });
+
+  app.patch("/api/projects/:projectId/handover/settings", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const parsed = handoverSettingsSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: fromZodError(parsed.error).toString() });
+      res.json(await setHandoverSharing(companyId, req.params.projectId, parsed.data.shareWithClient));
+    } catch (error) {
+      defectFail(res, error, "Failed to save");
+    }
+  });
+
+  // Clients only: the builder doesn't sign the client's acceptance.
+  app.post("/api/projects/:projectId/handover/signoff", requireAuth, requireTeamMemberOrClient, async (req, res) => {
+    try {
+      if (!isClientSession(req)) return res.status(403).json({ error: "Only the client can sign off the handover list" });
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const parsed = signoffSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Validation failed" });
+      res.status(201).json(await signHandoverList({
+        companyId, projectId: req.params.projectId, actor: actorFromReq(req), body: parsed.data,
+        ip: req.ip ?? null, userAgent: String(req.get("user-agent") || "") || null,
+      }));
+    } catch (error) {
+      defectFail(res, error, "Failed to sign off");
+    }
+  });
+
+  // Backcharges: money, so financial.bills on top of the defect permission.
+  app.get("/api/defects/:id/backcharge", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), requirePermission("financial.bills", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      res.json(await getBackcharge(req.params.id, companyId));
+    } catch (error) {
+      defectFail(res, error, "Failed to load the backcharge");
+    }
+  });
+
+  app.put("/api/defects/:id/backcharge", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), requirePermission("financial.bills", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const parsed = backchargeSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Validation failed" });
+      res.json(await setBackcharge({ id: req.params.id, companyId, actor: actorFromReq(req), body: parsed.data }));
+    } catch (error) {
+      defectFail(res, error, "Failed to save the backcharge");
+    }
+  });
+
+  app.delete("/api/defects/:id/backcharge", requireAuth, requireTeamMember, requirePermission("projects.defects", "edit"), requirePermission("financial.bills", "edit"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      await clearBackcharge({ id: req.params.id, companyId, actor: actorFromReq(req) });
+      res.status(204).send();
+    } catch (error) {
+      defectFail(res, error, "Failed to clear the backcharge");
+    }
+  });
+
+  // The office's list to raise backcharges from (?projectId= for one job).
+  app.get("/api/defect-backcharges", requireAuth, requireTeamMember, requirePermission("projects.defects", "view"), requirePermission("financial.bills", "view"), async (req, res) => {
+    try {
+      const companyId = defectCompany(req, res);
+      if (!companyId) return;
+      const projectId = typeof req.query.projectId === "string" && req.query.projectId ? req.query.projectId : undefined;
+      if (projectId && !(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+      res.json(await listBackcharges(companyId, projectId));
+    } catch (error) {
+      defectFail(res, error, "Failed to load backcharges");
     }
   });
 
@@ -6556,8 +7002,302 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("[PATCH /api/projects/:id] Error stack:", error.stack);
       res.status(500).json({ 
         error: "Failed to update project",
-        details: error.message 
+        details: error.message
       });
+    }
+  });
+
+  // ── Site location (0133) ──────────────────────────────────────────────────
+  // Coordinates for the job site, used by the Site map / Job map widgets and,
+  // later, the "arriving on site" geofence. Same gates as editing the project
+  // (requireAuth + requireTeamMember + enforceProjectCompany) — the PATCH above
+  // can't touch these columns (they're omitted from insertProjectSchema).
+  //
+  // Rule: a 'geocoded' point never replaces a 'pin' or 'on_site' one unless the
+  // user explicitly pressed "Use address" (replaceManual). Automatic geocodes
+  // (address save, the Job map backfill) come back with skipped: true instead.
+  const siteLocationView = async (p: typeof projectsTable.$inferSelect) => {
+    let setByName: string | null = null;
+    if (p.siteLocationSetBy) {
+      const u = await storage.getUser(p.siteLocationSetBy).catch(() => undefined);
+      if (u) setByName = `${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email || null;
+    }
+    return {
+      projectId: p.id,
+      latitude: p.siteLatitude,
+      longitude: p.siteLongitude,
+      radiusM: p.siteRadiusM ?? schema.SITE_RADIUS_DEFAULT_M,
+      source: p.siteLocationSource,
+      setAt: p.siteLocationSetAt,
+      setById: p.siteLocationSetBy,
+      setByName,
+      address: p.location,
+    };
+  };
+
+  app.get("/api/projects/:id/site-location", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      res.json(await siteLocationView(project));
+    } catch (error: any) {
+      console.error("[GET /api/projects/:id/site-location]", error);
+      res.status(500).json({ error: "Failed to load site location" });
+    }
+  });
+
+  app.put("/api/projects/:id/site-location", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
+      const parsed = schema.siteLocationUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid site location", details: fromZodError(parsed.error).toString() });
+      }
+      const body = parsed.data;
+      const companyId = getSessionCompanyId(req);
+      const userId = (req.user as any)?.id ?? (req.session as any)?.userId ?? null;
+      const existing = await storage.getProject(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Project not found" });
+
+      const set: Partial<typeof projectsTable.$inferInsert> = {};
+      let skipped = false;
+
+      if (body.clear) {
+        Object.assign(set, {
+          siteLatitude: null, siteLongitude: null, siteLocationSource: null,
+          siteLocationSetAt: new Date(), siteLocationSetBy: userId,
+        });
+      } else if (body.latitude !== undefined && body.longitude !== undefined) {
+        const manual = existing.siteLocationSource === "pin" || existing.siteLocationSource === "on_site";
+        if (body.source === "geocoded" && manual && !body.replaceManual) {
+          skipped = true;
+        } else {
+          Object.assign(set, {
+            siteLatitude: body.latitude,
+            siteLongitude: body.longitude,
+            siteLocationSource: body.source,
+            siteLocationSetAt: new Date(),
+            siteLocationSetBy: userId,
+          });
+        }
+      }
+      if (body.radiusM !== undefined) set.siteRadiusM = body.radiusM;
+
+      let project = existing;
+      if (Object.keys(set).length > 0) {
+        const where = companyId
+          ? and(eq(projectsTable.id, existing.id), eq(projectsTable.companyId, companyId))
+          : eq(projectsTable.id, existing.id);
+        const [row] = await db.update(projectsTable).set({ ...set, updatedAt: new Date() }).where(where).returning();
+        if (!row) return res.status(404).json({ error: "Project not found" });
+        project = row;
+      }
+      res.json({ skipped, location: await siteLocationView(project) });
+    } catch (error: any) {
+      console.error("[PUT /api/projects/:id/site-location]", error);
+      res.status(500).json({ error: "Failed to save site location" });
+    }
+  });
+
+  // Google Maps browser key. A Maps JavaScript API key is a PUBLIC browser key
+  // by design — Google's protection is the HTTP-referrer + API restriction set
+  // on the key in Cloud Console, not secrecy. It's served at runtime (rather
+  // than baked into the bundle as VITE_*) so it can be added or rotated in
+  // Replit Secrets without a rebuild. Signed-in users with a company only.
+  // null = not set up; the map components show a "not set up yet" placeholder.
+  app.get("/api/maps/config", requireAuth, async (req, res) => {
+    const companyId = getSessionCompanyId(req);
+    if (!companyId) return res.json({ apiKey: null });
+    res.json({ apiKey: process.env.GOOGLE_MAPS_API_KEY?.trim() || null });
+  });
+
+  // ── Arriving on site (#46, 0136) ──────────────────────────────────────────
+  // The phone watches up to 20 job-site fences and, on arrival, offers a
+  // "clock in?" notification. Never an automatic clock-in. Arrive/leave are
+  // recorded separately as site visits (a sign-in register) and never change
+  // a timesheet. Rules: shared/siteVisits.ts. Storage: server/services/siteVisits.ts.
+  const siteVisitBodySchema = z.object({
+    projectId: z.string().min(1),
+    at: z.string().optional(),
+    clientRequestId: z.string().min(1).max(200).optional(),
+  });
+
+  const companyTimezone = async (companyId: string) =>
+    (await storage.getSystemConfiguration(companyId).catch(() => undefined))?.timezone || "Australia/Sydney";
+
+  // Ranked candidate fences + the company's geofence settings.
+  // Optional ?lat=&lng= (the phone's last known position) ranks by distance
+  // inside each group. The position is used for this response only — never stored.
+  app.get("/api/mobile/site-fences", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const companyId = getSessionCompanyId(req);
+      if (!user?.id || !companyId) return res.status(401).json({ error: "Unauthorized" });
+      const userId = String(user.id);
+      const settings = geofenceSettingsOf(await storage.getCompanySettings(companyId).catch(() => null));
+      const timezone = await companyTimezone(companyId);
+      const activeTimesheet = await storage.getActiveTimesheet(userId).catch(() => null);
+      const active = activeTimesheet
+        ? { id: activeTimesheet.id, projectId: activeTimesheet.projectId ?? null, clockInTime: activeTimesheet.clockInTime ?? null }
+        : null;
+      if (!settings.enabled) {
+        return res.json({ settings, timezone, activeTimesheet: active, fences: [] });
+      }
+
+      const rows = await db.select({
+        id: projectsTable.id,
+        name: projectsTable.name,
+        location: projectsTable.location,
+        ownerId: projectsTable.ownerId,
+        lat: projectsTable.siteLatitude,
+        lng: projectsTable.siteLongitude,
+        radius: projectsTable.siteRadiusM,
+      }).from(projectsTable).where(and(
+        eq(projectsTable.companyId, companyId),
+        eq(projectsTable.currentSystemPhase, "construction"),
+        eq(projectsTable.isArchived, false),
+        eq(projectsTable.isBusiness, false),
+        isNotNull(projectsTable.siteLatitude),
+        isNotNull(projectsTable.siteLongitude),
+      ));
+
+      const roleName = String(user.roleName || "").toLowerCase();
+      const isAdminLike = roleName.includes("admin") || roleName.includes("owner") || roleName.includes("general manager");
+      let visible = rows;
+      if (!isAdminLike) {
+        const access = new Set((await storage.getUserProjectAccess(userId)).map((a) => a.projectId));
+        visible = rows.filter((p) => access.has(p.id) || p.ownerId === userId);
+      }
+      const ids = visible.map((p) => p.id);
+
+      let scheduledTodayIds: string[] = [];
+      let recentProjectIds: string[] = [];
+      if (ids.length > 0) {
+        const today = calendarDateMidnightUtcInTz(new Date(), timezone).toISOString().slice(0, 10);
+        const idSet = new Set(ids);
+        const items = await storage.getAllScheduleItems(companyId, { startDate: today, endDate: today }).catch(() => []);
+        scheduledTodayIds = Array.from(new Set((items as any[]).map((i) => i.projectId).filter((id: string) => idSet.has(id))));
+        const since = new Date(Date.now() - SITE_FENCE_RECENT_DAYS * 24 * 60 * 60 * 1000);
+        const recent = await db.selectDistinct({ projectId: schema.timesheets.projectId })
+          .from(schema.timesheets)
+          .where(and(
+            eq(schema.timesheets.userId, userId),
+            gte(schema.timesheets.date, since),
+            inArray(schema.timesheets.projectId, ids),
+          ));
+        recentProjectIds = recent.map((r) => r.projectId).filter((id): id is string => !!id);
+      }
+
+      const lat = Number(req.query.lat);
+      const lng = Number(req.query.lng);
+      const position = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
+        ? { lat, lng } : null;
+
+      const fences = rankSiteFences(
+        visible.map((p) => ({
+          projectId: p.id, name: p.name, address: p.location ?? null,
+          latitude: p.lat as number, longitude: p.lng as number, radiusM: p.radius,
+        })),
+        { activeProjectId: active?.projectId, scheduledTodayIds, recentProjectIds, position },
+      );
+      res.json({ settings, timezone, activeTimesheet: active, fences });
+    } catch (error: any) {
+      console.error("[GET /api/mobile/site-fences]", error);
+      res.status(500).json({ error: "Failed to load site fences" });
+    }
+  });
+
+  const handleSiteVisit = async (kind: "arrive" | "leave", req: any, res: any, companyId: string | null | undefined) => {
+    try {
+      const userId = req.user?.id ? String(req.user.id) : null;
+      if (!userId || !companyId) return res.status(401).json({ error: "Unauthorized" });
+      const parsed = siteVisitBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid site visit", details: fromZodError(parsed.error).toString() });
+      const { projectId, at: rawAt, clientRequestId } = parsed.data;
+
+      const settings = geofenceSettingsOf(await storage.getCompanySettings(companyId).catch(() => null));
+      // Feature off, or prompts-only: accept and drop, so the phone's queue clears.
+      if (!settings.enabled || !settings.storeVisits) return res.json({ stored: false, reason: "not_storing" });
+
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
+
+      let at: Date;
+      try {
+        at = resolveSiteVisitTime(rawAt);
+      } catch (e) {
+        if (e instanceof StaleSiteVisitTimeError) return res.status(400).json({ error: e.message, code: "stale" });
+        throw e;
+      }
+
+      const args = { companyId, userId, projectId, at, clientRequestId: clientRequestId ?? null };
+      if (kind === "arrive") {
+        const { visit, created } = await recordSiteArrival(args);
+        return res.status(created ? 201 : 200).json({ stored: true, created, visit });
+      }
+      const { visit, closed } = await recordSiteLeave(args);
+      return res.json({ stored: !!visit, closed, visit, ...(visit ? {} : { reason: "no_open_visit" }) });
+    } catch (error: any) {
+      console.error(`[POST /api/site-visits/${kind}]`, error);
+      res.status(500).json({ error: "Failed to record site visit" });
+    }
+  };
+  app.post("/api/site-visits/arrive", requireAuth, (req, res) => handleSiteVisit("arrive", req, res, getSessionCompanyId(req)));
+  app.post("/api/site-visits/leave", requireAuth, (req, res) => handleSiteVisit("leave", req, res, getSessionCompanyId(req)));
+
+  // Site visits for the timesheet views. Self always; anyone else's only for
+  // people who can approve timesheets (the same check as /approve).
+  //   ?userId=&projectId=&date=YYYY-MM-DD   one day, in company time (timesheet.date)
+  //   ?from=YYYY-MM-DD&to=YYYY-MM-DD        a range of days, inclusive
+  // Returns [] when the feature is switched off, so the web hides it.
+  app.get("/api/site-visits", requireAuth, async (req, res) => {
+    try {
+      const companyId = getSessionCompanyId(req);
+      const me = (req.user as any)?.id ? String((req.user as any).id) : null;
+      if (!me || !companyId) return res.status(401).json({ error: "Unauthorized" });
+
+      const settings = geofenceSettingsOf(await storage.getCompanySettings(companyId).catch(() => null));
+      if (!settings.enabled) return res.json([]);
+
+      const requestedUserId = typeof req.query.userId === "string" && req.query.userId ? req.query.userId : null;
+      const canApprove = await storage.canUserApproveTimesheets(me);
+      if (requestedUserId && requestedUserId !== me && !canApprove) {
+        return res.status(403).json({ error: "You can only see your own site visits" });
+      }
+      const userId = requestedUserId ?? (canApprove ? null : me);
+      const projectId = typeof req.query.projectId === "string" && req.query.projectId ? req.query.projectId : null;
+
+      const isDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+      const fromDay = isDay(req.query.date) ? req.query.date : isDay(req.query.from) ? req.query.from : null;
+      const toDay = isDay(req.query.date) ? req.query.date : isDay(req.query.to) ? req.query.to : null;
+      if (!fromDay || !toDay) return res.status(400).json({ error: "date, or from and to, are required (YYYY-MM-DD)" });
+      if (toDay < fromDay) return res.status(400).json({ error: "to is before from" });
+      const spanDays = (Date.parse(toDay) - Date.parse(fromDay)) / 86400000;
+      if (spanDays > 62) return res.status(400).json({ error: "At most 62 days at a time" });
+
+      const tz = await companyTimezone(companyId);
+      // Over-fetch a day each side in UTC, then keep the rows whose arrival
+      // falls on the requested calendar days in company time.
+      const from = new Date(Date.parse(fromDay) - 86400000);
+      const to = new Date(Date.parse(toDay) + 2 * 86400000);
+      const rows = await listSiteVisits({ companyId, userId, projectId, from, to });
+      const out = rows
+        .map((v) => ({
+          id: v.id,
+          userId: v.userId,
+          projectId: v.projectId,
+          arrivedAt: v.arrivedAt,
+          leftAt: v.leftAt,
+          source: v.source,
+          date: calendarDateMidnightUtcInTz(new Date(v.arrivedAt), tz).toISOString().slice(0, 10),
+          arrivedTime: formatHHmmInTz(new Date(v.arrivedAt), tz),
+          leftTime: v.leftAt ? formatHHmmInTz(new Date(v.leftAt), tz) : null,
+        }))
+        .filter((v) => v.date >= fromDay && v.date <= toDay);
+      res.json(out);
+    } catch (error: any) {
+      console.error("[GET /api/site-visits]", error);
+      res.status(500).json({ error: "Failed to load site visits" });
     }
   });
 
@@ -16227,7 +16967,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const permissionSchema = z.object({
         permissionId: z.string(),
-        allowedActions: z.array(z.enum(["view", "add", "edit", "delete", "approve", "send", "convert", "summary_only"])),
+        allowedActions: z.array(z.enum(["view", "add", "edit", "delete", "approve", "send", "convert", "summary_only", "close"])),
         viewScope: z.enum(["own", "selected_roles", "all"]).optional(),
         viewableRoleIds: z.array(z.string()).optional(),
       });
@@ -16799,8 +17539,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // The target project must belong to the caller's company.
       if (!(await enforceProjectCompany(req, res, validationResult.data.projectId, "Project not found"))) return;
 
-      const selection = await storage.createSelection(validationResult.data);
-      res.status(201).json(selection);
+      // A role without selections pricing can't set the allowance, and gets
+      // the saved row back without it.
+      const viewer = await resolveSelectionViewer(req);
+      const selection = await storage.createSelection(stripSelectionMoneyForWrite(validationResult.data, viewer));
+      res.status(201).json(redactSelectionForViewer(selection, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to create selection" });
     }
@@ -16845,7 +17588,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
       }
 
-      res.json({ selection: newSel, optionCount: opts.length });
+      const viewer = await resolveSelectionViewer(req);
+      res.json({ selection: redactSelectionForViewer(newSel, viewer), optionCount: opts.length });
     } catch (error) {
       console.error("Duplicate selection error:", error);
       res.status(500).json({ error: "Failed to duplicate selection" });
@@ -16875,8 +17619,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if a selection already exists for this estimate item
       const existing = await storage.getSelectionByEstimateItemId(estimateItemId);
+      const viewer = await resolveSelectionViewer(req);
       if (existing) {
-        return res.json({ selection: existing, created: false });
+        return res.json({ selection: redactSelectionForViewer(existing, viewer), created: false });
       }
 
       // Allowance = the line's pre-margin inc-GST amount. Recompute via
@@ -16912,7 +17657,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const selection = await storage.createSelection(validationResult.data);
-      return res.status(201).json({ selection, created: true });
+      return res.status(201).json({ selection: redactSelectionForViewer(selection, viewer), created: true });
     } catch (error) {
       console.error("Error creating selection from estimate item:", error);
       res.status(500).json({ error: "Failed to create selection" });
@@ -17058,7 +17803,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (updated) updatedSelections.push(updated);
       }
 
-      res.status(201).json({ purchaseOrder: po, updatedSelections, skipped });
+      const viewer = await resolveSelectionViewer(req);
+      res.status(201).json({
+        purchaseOrder: po,
+        updatedSelections: updatedSelections.map((s) => redactSelectionForViewer(s, viewer)),
+        skipped,
+      });
     } catch (error) {
       console.error("Error creating PO from selections:", error);
       res.status(500).json({ error: "Failed to create purchase order from selections" });
@@ -17082,7 +17832,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         receivedAt: new Date(),
       } as any);
 
-      res.json(updated);
+      res.json(redactSelectionForViewer(updated as any, await resolveSelectionViewer(req)));
     } catch (error) {
       console.error("Error marking selection as received:", error);
       res.status(500).json({ error: "Failed to mark selection as received" });
@@ -17105,11 +17855,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (!(await enforceProjectCompany(req, res, existingSelection.projectId, "Selection not found"))) return;
 
-      const selection = await storage.updateSelection(req.params.id, validationResult.data);
+      // The edit form of a role without selections pricing never received the
+      // allowance, so it must not be able to set (or blank) it either.
+      const viewer = await resolveSelectionViewer(req);
+      const selection = await storage.updateSelection(req.params.id, stripSelectionMoneyForWrite(validationResult.data, viewer));
       if (!selection) {
         return res.status(404).json({ error: "Selection not found" });
       }
-      res.json(selection);
+      res.json(redactSelectionForViewer(selection, viewer));
     } catch (error) {
       res.status(500).json({ error: "Failed to update selection" });
     }
@@ -17288,7 +18041,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existing.selectionId) {
         await storage.updateSelection(existing.selectionId, { status: "submitted" });
       }
-      res.json(option);
+      res.json(redactOptionForViewer(option, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to unapprove selection option" });
     }
@@ -17311,7 +18064,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // option's costing into the allowance (upsert — never duplicates).
         await syncSelectionCostingToAllowance(existing.selectionId);
       }
-      res.json(option);
+      res.json(redactOptionForViewer(option, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to approve selection option" });
     }
@@ -18105,7 +18858,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // Link the option back to the product
       await storage.updateSelectionOption(req.params.id, { productId: product.id } as any);
-      res.status(201).json(product);
+      res.status(201).json(redactProductForViewer(product, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to save to library" });
     }
@@ -18179,7 +18932,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           thumbnailZoom: (img as any).thumbnailZoom ?? 100,
         });
       }
-      res.status(201).json(newOption);
+      res.status(201).json(redactOptionForViewer(newOption, await resolveSelectionViewer(req)));
     } catch (error) {
       res.status(500).json({ error: "Failed to add from library" });
     }
@@ -18188,6 +18941,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Trades Portal Routes ───────────────────────────────────────────────────
   // Site board: project files + their public routes (server/siteBoard.ts).
   registerSiteBoardRoutes(app);
+
+  // Delivery check-in against a PO (server/deliveries.ts). Outside the PO
+  // money gate on purpose, and price-free — see the module header.
+  registerDeliveryRoutes(app);
 
   // Get/generate trades portal token for a project
   app.get("/api/projects/:id/trades-portal-token", requireAuth, requireTeamMember, async (req: any, res) => {
@@ -22779,6 +23536,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("[GET /api/purchase-orders/:id/bills]", err);
       res.status(500).json({ error: "Failed to fetch bills for PO" });
+    }
+  });
+
+  // What has been delivered against a PO, in money: received value (qty
+  // received × unit price, inc GST) beside what has been billed. Behind the PO
+  // gate like every /api/purchase-orders route — the crew's price-free view
+  // is /api/deliveries.
+  app.get("/api/purchase-orders/:id/delivery-summary", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req as any).user?.companyId;
+      if (!companyId) return res.status(401).json({ error: "Not authenticated" });
+      const summary = await deliverySummaryFor(companyId, req.params.id);
+      if (!summary) return res.status(404).json({ error: "Purchase order not found" });
+      res.json(summary);
+    } catch (err) {
+      console.error("[GET /api/purchase-orders/:id/delivery-summary]", err);
+      res.status(500).json({ error: "Failed to fetch delivery summary" });
     }
   });
 
@@ -28717,7 +29491,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoiceable Selection Options picker
-  app.get("/api/projects/:projectId/selection-options/invoiceable", async (req, res) => {
+  // Same gate as the other invoice-selection routes: this is the client
+  // invoice picker, and it returns each option's charge.
+  app.get("/api/projects/:projectId/selection-options/invoiceable", requireAuth, requireTeamPermission("projects.invoices", "view"), async (req, res) => {
     try {
       const { projectId } = req.params;
       if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
@@ -36039,9 +36815,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .from(schema.costCodes).where(eq(schema.costCodes.id, costCodeId)).limit(1);
         if (!cc || cc.companyId !== (req.user as any).companyId) return res.status(400).json({ error: "Invalid cost code" });
       }
-      const timesheet = await storage.clockIn(resolvedProjectId, user.id, costCodeId);
+      // When the button was pressed (the phone may send this later from its
+      // offline queue). See server/clockTime.ts.
+      const at = resolveClockTime(req.body?.clientTime);
+      const timesheet = await storage.clockIn(resolvedProjectId, user.id, costCodeId, at);
       res.status(201).json(timesheet);
     } catch (error) {
+      if (error instanceof StaleClientTimeError) return res.status(400).json({ error: error.message });
       console.error("Error clocking in:", error);
       res.status(500).json({ error: "Failed to clock in" });
     }
@@ -36061,12 +36841,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "timesheetId is required" });
       }
       const breakMins = typeof breakDuration === 'number' && breakDuration >= 0 ? breakDuration : 0;
-      const timesheet = await storage.clockOut(timesheetId, user.id, breakMins);
+      // When the button was pressed; storage keeps it at or after the clock-in.
+      const at = resolveClockTime(req.body?.clientTime);
+      const timesheet = await storage.clockOut(timesheetId, user.id, breakMins, at);
       if (!timesheet) {
         return res.status(404).json({ error: "Timesheet not found" });
       }
       res.json(timesheet);
     } catch (error) {
+      if (error instanceof StaleClientTimeError) return res.status(400).json({ error: error.message });
       console.error("Error clocking out:", error);
       if (error instanceof Error && error.message.includes("Unauthorized")) {
         return res.status(403).json({ error: error.message });
@@ -41079,7 +41862,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const category = req.query.category as string | undefined;
       const templates = await storage.getSelectionTemplates(user.companyId, category);
-      res.json(templates);
+      const viewer = await resolveSelectionViewer(req);
+      res.json(templates.map((t: any) => redactTemplateForViewer(t, viewer)));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch selection templates",
@@ -41098,7 +41882,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!template) {
         return res.status(404).json({ error: "Selection template not found" });
       }
-      res.json(template);
+      res.json(redactTemplateForViewer(template, await resolveSelectionViewer(req)));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch selection template",
@@ -41120,7 +41904,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const { groupIds, ...rest } = validationResult.data;
+      // A role without selections pricing writes no cost, markup, charge or
+      // budget onto a template (and reads none back).
+      const viewer = await resolveSelectionViewer(req);
+      const { groupIds, ...rest } = mergeTemplateWriteForViewer(validationResult.data, null, viewer);
       const templateData = {
         ...rest,
         isPublic: false, // visible to every company — never user-settable
@@ -41142,7 +41929,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       const enriched = await storage.getSelectionTemplate(template.id, user.companyId);
-      res.status(201).json(enriched ?? template);
+      res.status(201).json(redactTemplateForViewer(enriched ?? template, viewer));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to create selection template",
@@ -41171,7 +41958,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           details: fromZodError(validationResult.error).toString() 
         });
       }
-      const { groupIds, isPublic: _isPublic, ...updateData } = validationResult.data;
+      // The editor of a role without selections pricing was never sent the
+      // template's money, so what it saves back has none. Keep each option's
+      // stored price rather than wiping it, and ignore any money it does send.
+      const viewer = await resolveSelectionViewer(req);
+      const { groupIds, isPublic: _isPublic, ...updateData } = mergeTemplateWriteForViewer(
+        validationResult.data,
+        existingTemplate,
+        viewer,
+      );
       const updated = await storage.updateSelectionTemplate(req.params.id, updateData as any, user.companyId);
       if (!updated) {
         return res.status(404).json({ error: "Selection template not found or access denied" });
@@ -41189,7 +41984,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.replaceTemplateGroups(req.params.id, safeGroupIds, user.companyId);
       }
       const enriched = await storage.getSelectionTemplate(req.params.id, user.companyId);
-      res.json(enriched);
+      res.json(redactTemplateForViewer(enriched, viewer));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to update selection template",
@@ -41480,7 +42275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Mirroring it is what stops those templates being invisible to the
       // library until someone remembers to re-run the backfill.
       await syncTemplateOptions(template.id, user.companyId, templateData, template.category ?? null);
-      res.status(201).json(template);
+      res.status(201).json(redactTemplateForViewer(template, await resolveSelectionViewer(req)));
     } catch (error: any) {
       res.status(500).json({ error: "Failed to save as template", details: error.message });
     }
@@ -45617,6 +46412,84 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error: any) {
       console.error("Error fetching mobile dashboard:", error);
       res.status(500).json({ error: "Failed to fetch dashboard data" });
+    }
+  });
+
+  // Mobile Home Screen widgets (#40): a small, money-free snapshot — the
+  // active clock-in, hours today, up to 4 tasks due today and the next
+  // schedule items. Same queries, tenancy and role filtering as
+  // /api/mobile/dashboard above. The phone passes its local day as
+  // ?date=YYYY-MM-DD&tzOffset=<Date#getTimezoneOffset>.
+  app.get("/api/mobile/widget-snapshot", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const userId = String(user.id);
+      const companyId = user.companyId;
+      const isAdmin = user.roleName?.toLowerCase()?.includes('admin') ||
+                      user.roleName?.toLowerCase()?.includes('owner') ||
+                      user.roleName?.toLowerCase()?.includes('general manager');
+
+      const win = resolveDayWindow(req.query.date, req.query.tzOffset);
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+      // Pad a day either side so date-only rows near midnight are caught;
+      // the service filters to the exact local day.
+      const scheduleRange = {
+        startDate: fmtDate(new Date(win.start.getTime() - DAY_MS)),
+        endDate: fmtDate(new Date(win.start.getTime() + 30 * DAY_MS)),
+      };
+
+      const [allProjects, userTasks, activeTimesheet, timesheetsNearToday, scheduleItemsRaw, companySettings] = await Promise.all([
+        storage.getProjects().catch(() => []),
+        storage.getTasksByUser(userId, companyId).catch(() => []),
+        storage.getActiveTimesheet(userId).catch(() => null),
+        storage.getTimesheets(undefined, {
+          userId,
+          companyId,
+          startDate: new Date(win.start.getTime() - DAY_MS),
+          endDate: new Date(win.end.getTime() + DAY_MS),
+        }).catch(() => []),
+        storage.getAllScheduleItems(companyId, scheduleRange).catch(() => []),
+        storage.getCompanySettings(companyId).catch(() => null),
+      ]);
+
+      const companyProjects = (allProjects as any[]).filter(p => p.companyId === companyId && !p.isBusiness);
+      let visibleProjects = companyProjects;
+      if (!isAdmin) {
+        const userAccess = await storage.getUserProjectAccess(userId);
+        const accessibleProjectIds = new Set(userAccess.map(a => a.projectId));
+        visibleProjects = companyProjects.filter(p =>
+          accessibleProjectIds.has(p.id) || p.ownerId === userId
+        );
+      }
+      const visibleProjectIds = new Set(visibleProjects.map((p: any) => p.id));
+      let scheduleItems = (scheduleItemsRaw as any[]).filter(item => visibleProjectIds.has(item.projectId));
+      const scheduleViewPref = (companySettings as any)?.workspaceScheduleView ?? "all";
+      if (scheduleViewPref === "parents") {
+        scheduleItems = scheduleItems.filter(item => !item.parentItemId);
+      } else if (scheduleViewPref === "sub_items") {
+        scheduleItems = scheduleItems.filter(item => !!item.parentItemId);
+      }
+
+      // Only pass the fields the widget needs — no rates, totals or prices.
+      const projectsLite = (allProjects as any[])
+        .filter(p => p.companyId === companyId)
+        .map(p => ({ id: p.id, name: p.name, jobNumber: p.jobNumber }));
+
+      res.json(buildWidgetSnapshot({
+        window: win,
+        projects: projectsLite,
+        tasks: userTasks as any[],
+        scheduleItems,
+        activeTimesheet: activeTimesheet || null,
+        timesheetsToday: timesheetsNearToday as any[],
+      }));
+    } catch (error: any) {
+      console.error("Error fetching widget snapshot:", error);
+      res.status(500).json({ error: "Failed to fetch widget snapshot" });
     }
   });
 

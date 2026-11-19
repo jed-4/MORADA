@@ -4,6 +4,7 @@ import { sentryEnabled } from "./instrument";
 import * as Sentry from "@sentry/node";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { registerDailyReportRoutes } from "./dailyReport";
 import { setupVite, serveStatic, log } from "./vite";
 import { startReminderProcessor } from "./utils/reminderProcessor";
 import { startScheduledMessageProcessor } from "./utils/scheduledMessageProcessor";
@@ -157,17 +158,41 @@ function sentryIngestOrigin(): string {
 }
 const SENTRY_CONNECT_SRC = sentryIngestOrigin();
 
+// Google Maps JavaScript API (Site map / Job map widgets, Project Settings
+// site pin). These are the sources from Google's own CSP guide for the Maps JS
+// API (developers.google.com/maps/documentation/javascript/content-security-policy):
+//   script-src  the bootstrap + library chunks come from maps.googleapis.com and
+//               maps.gstatic.com; some auth/telemetry scripts from *.google.com.
+//               (The API also needs 'unsafe-eval' and inline styles — both are
+//               already allowed below for other reasons.)
+//   img-src     map tiles and marker sprites: *.googleapis.com, *.gstatic.com,
+//               *.google.com, *.googleusercontent.com, *.ggpht.com (photos).
+//   connect-src tile/vector data + Geocoder calls go to *.googleapis.com, and
+//               usage pings to *.google.com.
+//   font-src    the map's Roboto labels load from fonts.gstatic.com and its
+//               stylesheet from fonts.googleapis.com.
+//   frame-src   the API opens a hidden *.google.com frame for auth.
+//   worker-src  vector rendering uses blob: workers (already allowed).
+// Without these the map silently renders grey with no error the user can see —
+// the same failure mode as the upload and Sentry blocks below.
+const GMAPS_SCRIPT = ' https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com https://*.google.com';
+const GMAPS_IMG = ' https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.googleusercontent.com https://*.ggpht.com';
+const GMAPS_CONNECT = ' https://*.googleapis.com https://*.gstatic.com https://*.google.com';
+const GMAPS_FONT = ' https://fonts.gstatic.com';
+const GMAPS_STYLE = ' https://fonts.googleapis.com';
+const GMAPS_FRAME = ' https://*.google.com';
+
 // Set Content Security Policy — frame-ancestors * allows canvas/iframe embedding
 app.use((req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://client.crisp.chat; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://client.crisp.chat" + GMAPS_SCRIPT + "; " +
     "worker-src 'self' blob:; " +
     "child-src 'self' blob:; " +
-    "style-src 'self' 'unsafe-inline' https://client.crisp.chat; " +
-    "img-src 'self' data: blob: https://client.crisp.chat https://image.crisp.chat https://api.qrserver.com; " +
-    "font-src 'self' data: https://client.crisp.chat; " +
+    "style-src 'self' 'unsafe-inline' https://client.crisp.chat" + GMAPS_STYLE + "; " +
+    "img-src 'self' data: blob: https://client.crisp.chat https://image.crisp.chat https://api.qrserver.com" + GMAPS_IMG + "; " +
+    "font-src 'self' data: https://client.crisp.chat" + GMAPS_FONT + "; " +
     // storage.googleapis.com is where a file actually goes. /api/uploads/request-url
     // hands back a SIGNED GCS URL and the browser PUTs the file straight to it,
     // which is a cross-origin request — without this the browser refuses it
@@ -178,8 +203,8 @@ app.use((req, res, next) => {
     // through any connect-src. Every direct-to-storage upload therefore tests
     // clean locally and fails in production. If this list is ever tightened
     // again, check it against a REAL signed URL, not a dev one.
-    "connect-src 'self' ws: wss: blob: data: https://storage.googleapis.com https://client.crisp.chat wss://client.relay.crisp.chat" + SENTRY_CONNECT_SRC + "; " +
-    "frame-src 'self' blob: https://client.crisp.chat; " +
+    "connect-src 'self' ws: wss: blob: data: https://storage.googleapis.com https://client.crisp.chat wss://client.relay.crisp.chat" + SENTRY_CONNECT_SRC + GMAPS_CONNECT + "; " +
+    "frame-src 'self' blob: https://client.crisp.chat" + GMAPS_FRAME + "; " +
     "object-src 'self' blob:; " +
     "frame-ancestors *;"
   );
@@ -225,6 +250,9 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+  // After registerRoutes so these sit behind the same session, auth and
+  // client-access gate; before the error handler and the /api 404 below.
+  registerDailyReportRoutes(app);
 
   app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -510,6 +538,16 @@ app.use((req, res, next) => {
     import("./services/variationReminders")
       .then((m) => m.startVariationReminderScheduler())
       .catch((e) => console.error("[VariationReminders] failed to start", e));
+    // Defects: each trade's 7am digest of new/overdue defects, link tidy-up,
+    // and owners' overdue reminders (services/defectTrades.ts).
+    import("./services/defectTrades")
+      .then((m) => m.startDefectDigestScheduler())
+      .catch((e) => console.error("[defect-digest] failed to start", e));
+
+    // Arriving on site: site visits are kept for 12 months. Daily sweep.
+    import("./services/siteVisits")
+      .then((m) => m.startSiteVisitCleanup())
+      .catch((e) => console.error("[SiteVisits] failed to start", e));
 
     // Billing config audit: billing fails soft (no Stripe = no paywall), so
     // surface misconfiguration loudly at boot — console always, Sentry in

@@ -34,6 +34,7 @@ export const PORTAL_KEYS = {
   reviews: "portal.reviews",
   messages: "portal.messages",
   siteDiary: "portal.site_diary",
+  handover: "portal.handover",
 } as const;
 
 export interface PortalPermissionDefinition {
@@ -56,6 +57,7 @@ export const CLIENT_PORTAL_PERMISSIONS: PortalPermissionDefinition[] = [
   { key: PORTAL_KEYS.reviews, name: "Client — Reviews", description: "See reviews; comment (add) and give a decision (approve)", actions: ["view", "add", "approve"] },
   { key: PORTAL_KEYS.messages, name: "Client — Messages", description: "See project message channels they are in; post (send)", actions: ["view", "send"] },
   { key: PORTAL_KEYS.siteDiary, name: "Client — Site diary", description: "See site diary entries", actions: ["view"] },
+  { key: PORTAL_KEYS.handover, name: "Client — Handover defects", description: "See the handover defects list when the project shares it; sign it off (approve)", actions: ["view", "approve"] },
 ];
 
 export const isPortalPermissionKey = (key: string | null | undefined): boolean =>
@@ -75,6 +77,9 @@ export const DEFAULT_CLIENT_PORTAL_GRANTS: Record<string, PortalPermissionAction
   [PORTAL_KEYS.reviews]: ["view", "add", "approve"],
   [PORTAL_KEYS.messages]: ["view", "send"],
   [PORTAL_KEYS.siteDiary]: ["view"],
+  // Shown only on projects where the builder switches "Share handover list
+  // with client" on, so granting it by default exposes nothing on its own.
+  [PORTAL_KEYS.handover]: ["view", "approve"],
 };
 
 /**
@@ -111,6 +116,12 @@ export function translateLegacyClientGrants(
     if (has("projects.messages", "send") || has("projects.messages", "add")) add(PORTAL_KEYS.messages, ["send"]);
   }
   if (has("projects.site_diary", "view")) add(PORTAL_KEYS.siteDiary, ["view"]);
+  // Handover defects (2026-11) had no legacy key. On the boot that creates it,
+  // a client role that can see variations gets it — still gated per project by
+  // "Share handover list with client", which starts off.
+  if (has(PORTAL_KEYS.variations, "view") || has("projects.variations", "view")) {
+    add(PORTAL_KEYS.handover, ["view", "approve"]);
+  }
   return out;
 }
 
@@ -195,6 +206,14 @@ export const CLIENT_PORTAL_SECTIONS: PortalSection[] = [
     title: "Site diary",
     view: { key: PORTAL_KEYS.siteDiary, action: "view", label: "See site diary entries" },
     extras: [],
+  },
+  {
+    id: "handover",
+    title: "Handover defects",
+    view: { key: PORTAL_KEYS.handover, action: "view", label: "See the handover defects list", hint: "Only on projects that share it" },
+    extras: [
+      { key: PORTAL_KEYS.handover, action: "approve", label: "Sign off the list" },
+    ],
   },
 ];
 
