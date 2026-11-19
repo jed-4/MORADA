@@ -22532,160 +22532,17 @@ export class DbStorage implements IStorage {
   }
 
   /**
-   * Builder COST ex GST (integer cents) of a set of variations.
-   *
-   * The Budget page is a pure cost view, so variations must enter the budget at
-   * what they cost to build, not at what the client is charged. variation_items
-   * mirrors estimate_items: unitCostExTax is DOLLARS ex tax, quantity is a
-   * count. Rounded per line before summing, like the estimate baseline.
+   * Recompute the project's cost (shared/projectCost.ts — the one calculation
+   * behind the Budget page) and save its snapshot to budgets + budget_line_items
+   * in one locked transaction. Pass `tx` from inside a write so the
+   * calculation sees that write.
    */
-  private async variationBuilderCostExGstCents(exec: any, variationIds: string[]): Promise<number> {
-    if (variationIds.length === 0) return 0;
-    const items = await exec.select()
-      .from(schema.variationItems)
-      .where(inArray(schema.variationItems.variationId, variationIds));
-    return items.reduce((sum: number, item: any) => {
-      const unitCost = Number(item.unitCostExTax) || 0;
-      const qty = item.quantity == null ? 1 : Number(item.quantity) || 0;
-      return sum + Math.round(unitCost * qty * 100);
-    }, 0);
-  }
-
   async calculateBudget(projectId: string, tx?: any): Promise<Budget | undefined> {
-    const exec = tx ?? db;
     try {
-      // Get or create budget for this project
-      let budget = await this.getBudget(projectId, tx);
-      if (!budget) {
-        budget = await this.createBudget({ 
-          projectId,
-          name: "Project Budget",
-          baselineAmount: 0,
-          revisedAmount: 0,
-          actualAmount: 0,
-          forecastAmount: 0,
-          varianceAmount: 0,
-          profitAmount: 0,
-          profitPercent: 0
-        }, tx);
-      }
-
-      // Calculate baseline from the single Contract estimate on the project.
-      // Estimates are only considered budget-feeding once promoted to
-      // status='contract'. There is at most one Contract estimate per project
-      // (enforced by the /contract endpoint, which demotes any prior Contract
-      // back to Approved).
-      const estimates: Estimate[] = await exec.select()
-        .from(schema.estimates)
-        .where(and(
-          eq(schema.estimates.projectId, projectId),
-          eq(schema.estimates.status, "contract"),
-        ));
-
-      const estimateIds = estimates.map((e) => e.id);
-      const estimateItems: EstimateItem[] = estimateIds.length > 0 ? await exec.select()
-        .from(schema.estimateItems)
-        .where(inArray(schema.estimateItems.estimateId, estimateIds)) : [];
-
-      // COST-ONLY baseline. The Budget page is a pure cost view, so the
-      // baseline must EXCLUDE GST and ALL markup (both per-line markup and the
-      // global project markup). estimateItemBuilderCostExTax returns the raw
-      // builder cost ex-tax per line (qty * unitCost, or the cached ex-tax
-      // value for fixed-price PC-sum lines) — the same cost basis the canonical
-      // estimate summary produces. Convert per-line to integer CENTS and round
-      // before summing (priceIncTax/unitCost are doublePrecision DOLLARS while
-      // budgets.baselineAmount is integer CENTS, and the UI divides by 100).
-      const baselineAmount = estimateItems.reduce(
-        (sum, item) => sum + Math.round(estimateItemBuilderCostExTax(item) * 100),
-        0,
-      );
-
-      // Calculate actual from bills. Sum bill LINE ITEMS (not the inc-GST header
-      // total) and strip GST from tax-inclusive lines so the actual is ex-GST —
-      // matching the ex-GST baseline and the per-cost-code line items.
-      const bills: Bill[] = await exec.select()
-        .from(schema.bills)
-        .where(eq(schema.bills.projectId, projectId));
-      const billIdsForActual = bills.map((b) => b.id);
-      const billLineItemsForActual: BillLineItem[] = billIdsForActual.length > 0
-        ? await exec.select()
-            .from(schema.billLineItems)
-            .where(inArray(schema.billLineItems.billId, billIdsForActual))
-        : [];
-      const billByIdForActual = new Map<string, Bill>(bills.map((b) => [b.id, b]));
-
-      let billsActualAmount = billLineItemsForActual.reduce((sum, li) => {
-        const bill = billByIdForActual.get(li.billId);
-        const exGst = billLineExGstCents(li.total || 0, li.tax, bill?.taxMode);
-        return sum + (bill?.billType === 'credit' ? -exGst : exGst);
-      }, 0);
-
-      // Bills carrying no line items would contribute $0 and drop out of cost
-      // entirely. Fall back to the stored ex-GST subtotal for those only, so
-      // this can never double count a bill that does have lines. Mirrors the
-      // same guard in GET /api/projects/:id/actual-costs.
-      const billIdsWithLines = new Set(billLineItemsForActual.map((li) => li.billId));
-      for (const bill of bills) {
-        if (billIdsWithLines.has(bill.id)) continue;
-        const exGst = (bill as any).subtotal || 0;
-        billsActualAmount += bill.billType === 'credit' ? -exGst : exGst;
-      }
-
-      // Approved timesheet labour is a real project cost (ex GST — wages carry
-      // no GST), so it belongs in the actual alongside the ex-GST bill costs.
-      const approvedTimesheetsForActual = await exec.select()
-        .from(schema.timesheets)
-        .where(and(
-          eq(schema.timesheets.projectId, projectId),
-          eq(schema.timesheets.status, "approved"),
-        ));
-      // Subcontractor time is costed via their bills; skip any legacy row
-      // that still carries a rate so it can't double-count.
-      const actualSubs = await this.subcontractorUserIds(approvedTimesheetsForActual.map((t: any) => t.userId));
-      const labourActualAmount = approvedTimesheetsForActual
-        .filter((ts: any) => !actualSubs.has(ts.userId))
-        .reduce((sum: number, ts: any) => sum + timesheetTotalExGstCents(ts), 0);
-
-      const actualAmount = billsActualAmount + labourActualAmount;
-
-      // Approved variations, as BUILDER COST ex-GST.
-      //
-      // This used to sum variations.subtotal — the client SELL price ex GST,
-      // global markup included. Adding a sell figure to a cost-only baseline
-      // mixed bases and inflated the budget by the margin on every variation,
-      // which is why the CASH "Budget vs Actual" widget read well above the
-      // Budget page's cost-code total. Cost is qty x unitCostExTax (dollars),
-      // matching how the dashboard derives change-order costs.
-      const variations: Variation[] = await exec.select()
-        .from(schema.variations)
-        .where(and(
-          eq(schema.variations.projectId, projectId),
-          eq(schema.variations.status, "approved")
-        ));
-
-      const variationAmount = await this.variationBuilderCostExGstCents(
-        exec,
-        variations.map((v) => v.id),
-      );
-
-      const revisedAmount = baselineAmount + variationAmount;
-      const forecastAmount = actualAmount + (revisedAmount - actualAmount); // Simple forecast
-      const varianceAmount = revisedAmount - forecastAmount;
-      const profitPercent = revisedAmount > 0 ? Math.round(((revisedAmount - forecastAmount) / revisedAmount) * 100) : 0;
-
-      // Update budget. Amount columns are integer-typed so we round any
-      // float sums (estimate items use doublePrecision price columns) before
-      // persisting — Postgres rejects e.g. 55653.41 for an integer column.
-      const updated = await this.updateBudget(budget.id, {
-        baselineAmount: Math.round(baselineAmount),
-        revisedAmount: Math.round(revisedAmount),
-        actualAmount: Math.round(actualAmount),
-        forecastAmount: Math.round(forecastAmount),
-        varianceAmount: Math.round(varianceAmount),
-        profitPercent
-      }, tx);
-
-      return updated;
+      const { loadProjectCost, saveProjectCostSnapshot } = await import("./services/projectCostService");
+      const cost = await loadProjectCost(projectId, { exec: tx });
+      if (!cost) return undefined;
+      return await saveProjectCostSnapshot(cost, { exec: tx });
     } catch (error) {
       console.error("Database error in calculateBudget:", error);
       throw error;
@@ -22756,151 +22613,16 @@ export class DbStorage implements IStorage {
     }
   }
 
+  /**
+   * The saved per-cost-code rows. calculateBudget writes them (header and rows
+   * together, in one transaction), so this only reads.
+   */
   async recalculateBudgetLineItems(budgetId: string, tx?: any): Promise<BudgetLineItem[]> {
     const exec = tx ?? db;
-    try {
-      const budgetResult = await exec.select()
-        .from(schema.budgets)
-        .where(eq(schema.budgets.id, budgetId))
-        .limit(1);
-      if (!budgetResult[0]) throw new Error("Budget not found");
-
-      const budget = budgetResult[0];
-      const projectId = budget.projectId;
-
-      // Load cost codes and categories for lookups
-      const costCodes = await exec.select().from(schema.costCodes).where(eq(schema.costCodes.isActive, true));
-      const costCategories = await exec.select().from(schema.costCategories);
-
-      const costCodeMap = new Map<string, CostCode>(costCodes.map((cc: CostCode) => [cc.id, cc]));
-      const categoryMap = new Map<string, string>(costCategories.map((cat: CostCategory) => [cat.id, `${cat.code} - ${cat.title}`]));
-
-      // Pull items from the project's Contract estimate only (see
-      // calculateBudget for the rationale).
-      const estimates: Estimate[] = await exec.select().from(schema.estimates).where(and(
-        eq(schema.estimates.projectId, projectId),
-        eq(schema.estimates.status, "contract"),
-      ));
-      const estimateIds = estimates.map((e) => e.id);
-      const estimateItems: EstimateItem[] = estimateIds.length > 0 ? await exec.select()
-        .from(schema.estimateItems)
-        .where(inArray(schema.estimateItems.estimateId, estimateIds)) : [];
-
-      // Get bills (exclude vendor credits from "actual" or subtract them)
-      const bills: Bill[] = await exec.select().from(schema.bills).where(eq(schema.bills.projectId, projectId));
-      const billIds = bills.map((b) => b.id);
-      const billLineItems: BillLineItem[] = billIds.length > 0 ? await exec.select()
-        .from(schema.billLineItems)
-        .where(inArray(schema.billLineItems.billId, billIds)) : [];
-
-      // Key: costCodeId | "cat:{categoryId}" | "uncategorized"
-      type BucketData = { budgeted: number; actual: number; costCodeId: string | null; costCodeTitle: string; categoryTitle: string };
-      const buckets = new Map<string, BucketData>();
-
-      const getBucket = (key: string, costCodeId: string | null, costCodeTitle: string, categoryTitle: string): BucketData => {
-        if (!buckets.has(key)) {
-          buckets.set(key, { budgeted: 0, actual: 0, costCodeId, costCodeTitle, categoryTitle });
-        }
-        return buckets.get(key)!;
-      };
-
-      // Budget from estimate items — COST ONLY (ex-tax, no per-line markup, no
-      // global project markup), matching the cost-only baseline in
-      // calculateBudget. estimateItemBuilderCostExTax returns dollars; convert
-      // per line to integer CENTS (budget_line_items.budgetedAmount is integer).
-      for (const item of estimateItems) {
-        const amount = Math.round(estimateItemBuilderCostExTax(item) * 100);
-        if (item.costCode) {
-          const cc = costCodeMap.get(item.costCode);
-          const catTitle = cc?.categoryId ? (categoryMap.get(cc.categoryId) || "") : "";
-          const bucket = getBucket(item.costCode, cc?.id || null, cc ? `${cc.code} - ${cc.title}` : item.costCode, catTitle);
-          bucket.budgeted += amount;
-        } else if ((item as any).costCategoryId) {
-          const catId = (item as any).costCategoryId as string;
-          const catTitle = categoryMap.get(catId) || "Unknown Category";
-          const bucket = getBucket(`cat:${catId}`, null, catTitle, catTitle);
-          bucket.budgeted += amount;
-        } else {
-          const bucket = getBucket("uncategorized", null, "Uncategorized", "");
-          bucket.budgeted += amount;
-        }
-      }
-
-      // Approved variations enter the cost table as their own bucket, at BUILDER
-      // COST ex GST. Without this the cost-code BUDGETED total was the bare
-      // estimate baseline while budgets.revisedAmount included variations, so
-      // the Budget page and the CASH "Budget vs Actual" widget disagreed by the
-      // whole variation value. variation_items.costCode is free text (not an FK
-      // to cost_codes), so it cannot be bucketed per code reliably — one honest
-      // "Variations" row is used instead.
-      const approvedVariations: Variation[] = await exec.select()
-        .from(schema.variations)
-        .where(and(
-          eq(schema.variations.projectId, projectId),
-          eq(schema.variations.status, "approved"),
-        ));
-      const variationBudgetCents = await this.variationBuilderCostExGstCents(
-        exec,
-        approvedVariations.map((v) => v.id),
-      );
-      if (variationBudgetCents !== 0) {
-        getBucket("variations", null, "Variations", "").budgeted += variationBudgetCents;
-      }
-
-      // Actuals from bill line items. Bill line totals are stored INC-GST for
-      // tax-inclusive bills, so strip GST to keep the actual ex-GST and
-      // comparable with the ex-GST budgeted amounts above.
-      for (const billItem of billLineItems) {
-        const bill = bills.find((b) => b.id === billItem.billId);
-        const multiplier = bill?.billType === "credit" ? -1 : 1;
-        const amount = billLineExGstCents(billItem.total || 0, billItem.tax, bill?.taxMode) * multiplier;
-        if (billItem.costCodeId) {
-          const cc = costCodeMap.get(billItem.costCodeId);
-          const catTitle = cc?.categoryId ? (categoryMap.get(cc.categoryId) || "") : "";
-          const bucket = getBucket(billItem.costCodeId, billItem.costCodeId, cc ? `${cc.code} - ${cc.title}` : billItem.costCodeId, catTitle);
-          bucket.actual += amount;
-        } else {
-          const bucket = getBucket("uncategorized", null, "Uncategorized", "");
-          bucket.actual += amount;
-        }
-      }
-
-      // Delete and recreate budget line items
-      await exec.delete(schema.budgetLineItems).where(eq(schema.budgetLineItems.budgetId, budgetId));
-
-      const lineItems: BudgetLineItem[] = [];
-      let sortOrder = 0;
-
-      for (const [, data] of buckets.entries()) {
-        const forecast = data.actual + Math.max(0, data.budgeted - data.actual);
-        const variance = data.budgeted - forecast;
-        const variancePercent = data.budgeted > 0 ? Math.round((variance / data.budgeted) * 100) : 0;
-
-        // budget_line_items amount columns are integer-typed; the source
-        // estimate items expose priceIncTax as doublePrecision dollars, so
-        // we must round before insert to avoid Postgres rejecting decimals.
-        const lineItem = await this.createBudgetLineItem({
-          budgetId,
-          costCodeId: data.costCodeId,
-          costCodeTitle: data.costCodeTitle,
-          categoryTitle: data.categoryTitle,
-          budgetedAmount: Math.round(data.budgeted),
-          actualAmount: Math.round(data.actual),
-          variationAmount: 0,
-          forecastAmount: Math.round(forecast),
-          variance: Math.round(variance),
-          variancePercent,
-          profitAmount: Math.round(variance),
-          sortOrder: sortOrder++
-        }, tx);
-        lineItems.push(lineItem);
-      }
-
-      return lineItems;
-    } catch (error) {
-      console.error("Database error in recalculateBudgetLineItems:", error);
-      throw error;
-    }
+    return await exec.select()
+      .from(schema.budgetLineItems)
+      .where(eq(schema.budgetLineItems.budgetId, budgetId))
+      .orderBy(schema.budgetLineItems.sortOrder);
   }
 
   async getProjectIdsWithContractEstimate(companyId: string): Promise<string[]> {
@@ -23136,9 +22858,11 @@ export class DbStorage implements IStorage {
       const allTimesheets = await db.select()
         .from(schema.timesheets)
         .where(eq(schema.timesheets.projectId, projectId));
-      // Subcontractors are costed through bills — not labour rows here.
-      const breakdownSubs = await this.subcontractorUserIds(allTimesheets.map((t) => t.userId));
-      const timesheets = allTimesheets.filter((t) => t.status === "approved" && !breakdownSubs.has(t.userId));
+      // No subcontractor filter: their timesheets are stored at $0 (cost comes
+      // through their bill) and add nothing. Filtering on today's subcontractor
+      // flag would wrongly drop a person's past staff timesheets. Same rule as
+      // shared/projectCost.ts allocateLabourCents.
+      const timesheets = allTimesheets.filter((t) => t.status === "approved");
       if (timesheets.length === 0) return { byCostCode: [], total: 0, entries: [] };
 
       const timesheetIds = timesheets.map((t) => t.id);
