@@ -246,11 +246,12 @@ export async function userHasPermission(
 
 /**
  * How much of the cost budget (financial.budget_actuals) a user may see.
- *   full    — admin-like role, or View ticked without Summary Only
- *   summary — Summary Only ticked (with or without View): % used and status
- *             by category, no dollar figures, margin or drill-downs
+ *   full    — admin-like role, or View ticked
+ *   summary — Summary Only ticked WITHOUT View: % used and status by
+ *             category, no dollar figures, margin or drill-downs
  *   none    — neither ticked
- * Summary Only is a RESTRICTION: ticking it alongside View narrows the role.
+ * View wins when both are ticked: the default roles (Project Manager,
+ * Accounts) are seeded with both, and must keep the full budget.
  * In development everyone is full, as with requirePermission; set
  * DEV_BUDGET_ACCESS=summary to try the summary view locally.
  */
@@ -273,8 +274,8 @@ export async function getBudgetAccess(
   if (!permission) return 'none';
   const rp = rolePermissions.find((r) => r.permissionId === permission.id);
   const actions = Array.isArray(rp?.allowedActions) ? (rp!.allowedActions as string[]) : [];
-  if (actions.includes('summary_only')) return 'summary';
   if (actions.includes('view')) return 'full';
+  if (actions.includes('summary_only')) return 'summary';
   return 'none';
 }
 

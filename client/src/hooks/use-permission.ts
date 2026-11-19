@@ -58,9 +58,10 @@ export function useFinancialPermission(): boolean {
 /**
  * useBudgetAccess() — how much of the cost budget (financial.budget_actuals)
  * the user may see, by the same rule as getBudgetAccess on the server:
- *   full    — admin-like, or View without Summary Only
- *   summary — Summary Only ticked (it narrows View, it doesn't add to it)
+ *   full    — admin-like, or View ticked
+ *   summary — Summary Only ticked without View
  *   none    — neither
+ * View wins when both are ticked (the default roles carry both).
  * Only a hint for what to fetch; the server enforces it, and the Budget page
  * follows the `access` field on cost-summary.
  */
@@ -71,8 +72,8 @@ export function useBudgetAccess(): "full" | "summary" | "none" {
     if (!u) return "none";
     if (u.isAdminLike) return "full";
     const allowed = u.effectivePermissions?.["financial.budget_actuals"] ?? [];
-    if (allowed.includes("summary_only")) return "summary";
     if (allowed.includes("view")) return "full";
+    if (allowed.includes("summary_only")) return "summary";
     return "none";
   }, [user]);
 }

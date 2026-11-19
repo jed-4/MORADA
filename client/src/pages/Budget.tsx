@@ -123,10 +123,10 @@ export default function BudgetPage() {
   const pageTitle = usePageTitle({ pageName: "Budget" });
   const { isLoading: authLoading } = useAuth();
   const canViewLabour = usePermission("financial.budget_labour", "view");
-  // "Summary Only" on the cost budget is a restriction: the server answers
-  // cost-summary with % used and status per category, and refuses every
-  // dollar route. The page follows what the server sent (costSummary.access),
-  // so the tick is enforced there, not here.
+  // A role with "Summary Only" and no "View" on the cost budget: the server
+  // answers cost-summary with % used and status per category, and refuses
+  // every dollar route. The page follows what the server sent
+  // (costSummary.access), so the rule is enforced there, not here.
   const budgetAccess = useBudgetAccess();
   const canViewActuals = budgetAccess !== "none";
   const isDark = useIsDark();

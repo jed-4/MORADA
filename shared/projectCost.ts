@@ -295,7 +295,8 @@ export function allocateLabourCents(input: {
 }
 
 // ── Summary only ────────────────────────────────────────────────────────────
-// What a role with the Budget permission's "Summary Only" tick may see: how far
+// What a role with the Budget permission's "Summary Only" tick (and no View
+// tick — View wins) may see: how far
 // through its budget each category is, and a status. No dollar figures, no
 // margin, no line-level rows, no drill-downs. Built on the server so the
 // dollar figures never leave it.
