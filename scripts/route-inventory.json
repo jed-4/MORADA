@@ -422,6 +422,7 @@
     "server/routes.ts GET /api/minutes/:id",
     "server/routes.ts GET /api/minutes/:id/action-items",
     "server/routes.ts GET /api/mobile/dashboard",
+    "server/routes.ts GET /api/mobile/widget-snapshot",
     "server/routes.ts GET /api/non-working-days",
     "server/routes.ts GET /api/note-groups",
     "server/routes.ts GET /api/note-groups/:id",

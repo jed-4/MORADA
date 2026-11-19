@@ -97,6 +97,7 @@ import { recomputePOStatusFromBills, recomputePOStatusForLinks } from "./service
 import { isVendorCredit } from "./services/xeroCreditGuard";
 import { applyPOSuggestionsToBill } from "./services/poSuggestions";
 import { dedupXeroBills } from "./services/xeroBillDedup";
+import { resolveDayWindow, buildWidgetSnapshot } from "./services/widgetSnapshot";
 import { 
   insertNoteSchema,
   insertTaskSchema,
@@ -46183,6 +46184,84 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
     } catch (error: any) {
       console.error("Error fetching mobile dashboard:", error);
       res.status(500).json({ error: "Failed to fetch dashboard data" });
+    }
+  });
+
+  // Mobile Home Screen widgets (#40): a small, money-free snapshot — the
+  // active clock-in, hours today, up to 4 tasks due today and the next
+  // schedule items. Same queries, tenancy and role filtering as
+  // /api/mobile/dashboard above. The phone passes its local day as
+  // ?date=YYYY-MM-DD&tzOffset=<Date#getTimezoneOffset>.
+  app.get("/api/mobile/widget-snapshot", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id || !user?.companyId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const userId = String(user.id);
+      const companyId = user.companyId;
+      const isAdmin = user.roleName?.toLowerCase()?.includes('admin') ||
+                      user.roleName?.toLowerCase()?.includes('owner') ||
+                      user.roleName?.toLowerCase()?.includes('general manager');
+
+      const win = resolveDayWindow(req.query.date, req.query.tzOffset);
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+      // Pad a day either side so date-only rows near midnight are caught;
+      // the service filters to the exact local day.
+      const scheduleRange = {
+        startDate: fmtDate(new Date(win.start.getTime() - DAY_MS)),
+        endDate: fmtDate(new Date(win.start.getTime() + 30 * DAY_MS)),
+      };
+
+      const [allProjects, userTasks, activeTimesheet, timesheetsNearToday, scheduleItemsRaw, companySettings] = await Promise.all([
+        storage.getProjects().catch(() => []),
+        storage.getTasksByUser(userId, companyId).catch(() => []),
+        storage.getActiveTimesheet(userId).catch(() => null),
+        storage.getTimesheets(undefined, {
+          userId,
+          companyId,
+          startDate: new Date(win.start.getTime() - DAY_MS),
+          endDate: new Date(win.end.getTime() + DAY_MS),
+        }).catch(() => []),
+        storage.getAllScheduleItems(companyId, scheduleRange).catch(() => []),
+        storage.getCompanySettings(companyId).catch(() => null),
+      ]);
+
+      const companyProjects = (allProjects as any[]).filter(p => p.companyId === companyId && !p.isBusiness);
+      let visibleProjects = companyProjects;
+      if (!isAdmin) {
+        const userAccess = await storage.getUserProjectAccess(userId);
+        const accessibleProjectIds = new Set(userAccess.map(a => a.projectId));
+        visibleProjects = companyProjects.filter(p =>
+          accessibleProjectIds.has(p.id) || p.ownerId === userId
+        );
+      }
+      const visibleProjectIds = new Set(visibleProjects.map((p: any) => p.id));
+      let scheduleItems = (scheduleItemsRaw as any[]).filter(item => visibleProjectIds.has(item.projectId));
+      const scheduleViewPref = (companySettings as any)?.workspaceScheduleView ?? "all";
+      if (scheduleViewPref === "parents") {
+        scheduleItems = scheduleItems.filter(item => !item.parentItemId);
+      } else if (scheduleViewPref === "sub_items") {
+        scheduleItems = scheduleItems.filter(item => !!item.parentItemId);
+      }
+
+      // Only pass the fields the widget needs — no rates, totals or prices.
+      const projectsLite = (allProjects as any[])
+        .filter(p => p.companyId === companyId)
+        .map(p => ({ id: p.id, name: p.name, jobNumber: p.jobNumber }));
+
+      res.json(buildWidgetSnapshot({
+        window: win,
+        projects: projectsLite,
+        tasks: userTasks as any[],
+        scheduleItems,
+        activeTimesheet: activeTimesheet || null,
+        timesheetsToday: timesheetsNearToday as any[],
+      }));
+    } catch (error: any) {
+      console.error("Error fetching widget snapshot:", error);
+      res.status(500).json({ error: "Failed to fetch widget snapshot" });
     }
   });
 
