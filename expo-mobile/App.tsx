@@ -1,3 +1,7 @@
+// FIRST: defines the "arriving on site" background task (TaskManager.defineTask).
+// iOS may launch the app in the background only to deliver a fence event, so
+// the task has to exist before anything else runs.
+import './src/services/siteGeofence';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';

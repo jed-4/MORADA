@@ -20,6 +20,7 @@ import { goBackOrHome } from '../navigation/back';
 import { useAuth } from '../contexts/AuthContext';
 import { buildLabel } from '../lib/sentry';
 import { readableFrame } from '../components/ui/ReadableColumn';
+import ArrivingOnSiteSetting from '../components/ArrivingOnSiteSetting';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -244,6 +245,9 @@ export default function SettingsScreen({ navigation }: Props) {
             );
           })}
         </View>
+
+        {/* Arriving on site (#46): opt-in arrival alerts */}
+        <ArrivingOnSiteSetting />
 
         <View style={styles.sectionBlock}>
           <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>

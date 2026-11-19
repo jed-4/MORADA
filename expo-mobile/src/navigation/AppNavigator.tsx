@@ -3,7 +3,7 @@ import { NavigationContainer, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, StyleSheet, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, AppState, Pressable, StyleSheet, View, useColorScheme } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { usePolling } from '../lib/usePolling';
 import { haptic } from '../lib/haptics';
@@ -11,6 +11,8 @@ import MorePanel, { type MorePanelHandle } from '../components/MorePanel';
 import { apiFetch } from '../services/api';
 import { navigationRef, navigateFromPush } from './navigationRef';
 import { setAppBadgeCount } from '../services/pushNotifications';
+import { handleNotificationAction, registerNotificationCategories } from '../services/notificationActions';
+import { refreshSiteFences } from '../services/siteGeofence';
 import { useTheme, type Theme } from '../theme';
 import { goBackOrHome, isFirstRoute } from './back';
 import OfflineFrame from '../components/ui/OfflineBanner';
@@ -267,25 +269,42 @@ function MainTabs() {
     const receivedSub = Notifications.addNotificationReceivedListener(() => {
       syncBadge().catch(() => {});
     });
+    // Action buttons (Clock in, Approve, Reply…) are handled first; a plain
+    // tap, or an action nothing claims, routes to the screen as before.
+    const navigate = (name: string, params?: any) => {
+      if (navigationRef.isReady()) (navigationRef.navigate as (n: string, p?: any) => void)(name, params);
+    };
+    const routeResponse = (response: Notifications.NotificationResponse) => {
+      handleNotificationAction(response, navigate)
+        .catch(() => false)
+        .then((handled) => {
+          if (!handled) navigateFromPush(response?.notification?.request?.content?.data as any);
+        });
+    };
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      navigateFromPush(response?.notification?.request?.content?.data as any);
+      routeResponse(response);
       syncBadge().catch(() => {});
     });
 
-    // Cold start: app launched by tapping a notification banner.
+    // Cold start: app launched by tapping a notification banner (or one of its buttons).
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response && !cancelled) {
-        setTimeout(
-          () => navigateFromPush(response.notification?.request?.content?.data as any),
-          400,
-        );
+        setTimeout(() => routeResponse(response), 400);
       }
+    });
+
+    // Arriving on site (#46): button categories, and the fence list on open.
+    registerNotificationCategories().catch(() => {});
+    refreshSiteFences().catch(() => {});
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshSiteFences().catch(() => {});
     });
 
     return () => {
       cancelled = true;
       receivedSub.remove();
       responseSub.remove();
+      appStateSub.remove();
     };
   }, []);
 

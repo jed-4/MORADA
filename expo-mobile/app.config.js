@@ -73,6 +73,22 @@ module.exports = {
       "expo-notifications",
       "expo-apple-authentication",
       "@react-native-community/datetimepicker",
+      // Arriving on site (#46): iOS region monitoring for up to 20 job sites.
+      // Region monitoring works with "Always" permission and does NOT need the
+      // continuous background-location mode, so isIosBackgroundLocationEnabled
+      // stays false (no blue location pill, no UIBackgroundModes "location").
+      // Android geofencing needs ACCESS_BACKGROUND_LOCATION, hence true there.
+      [
+        "expo-location",
+        {
+          locationWhenInUsePermission:
+            "Morada uses your location to set a job's site location when you're standing on site, and to notice when you arrive at one of your company's job sites so it can ask if you want to clock in.",
+          locationAlwaysAndWhenInUsePermission:
+            "Morada notices when you arrive at or leave one of your company's job sites, so it can ask if you want to clock in or out. It only records arrivals and departures at job sites, never where else you go. Only you and your timesheet approvers can see them.",
+          isIosBackgroundLocationEnabled: false,
+          isAndroidBackgroundLocationEnabled: true,
+        },
+      ],
       [
         "expo-image-picker",
         {

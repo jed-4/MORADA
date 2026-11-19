@@ -29,6 +29,7 @@ import { useDirtyGuard } from '../lib/useDirtyGuard';
 import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { haptic } from '../lib/haptics';
+import { refreshSiteFences } from '../services/siteGeofence';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackButton from '../components/ui/BackButton';
 
@@ -893,6 +894,8 @@ export default function TimesheetsScreen() {
       }
       // Clocked in/out: confirm with a tap you can feel without looking.
       haptic.success();
+      // Arriving on site: re-rank the fences around the new clock state.
+      refreshSiteFences().catch(() => {});
 
       await fetchData();
       setClockInProjectId('');
@@ -947,6 +950,8 @@ export default function TimesheetsScreen() {
       }
       // Clocked in/out: confirm with a tap you can feel without looking.
       haptic.success();
+      // Arriving on site: re-rank the fences around the new clock state.
+      refreshSiteFences().catch(() => {});
 
       await fetchData();
     } catch (e: unknown) {

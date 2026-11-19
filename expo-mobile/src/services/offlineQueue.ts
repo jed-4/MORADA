@@ -11,7 +11,7 @@ const MAX_RETRIES = 5;
 
 export interface QueuedAction {
   id: string;
-  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry' | 'update-checklist-item' | 'complete-checklist' | 'create-receipt' | 'create-defect' | 'create-delivery';
+  type: 'clock-in' | 'clock-out' | 'log-hours' | 'edit-timesheet' | 'delete-timesheet' | 'create-diary-entry' | 'edit-diary-entry' | 'delete-diary-entry' | 'update-checklist-item' | 'complete-checklist' | 'create-receipt' | 'create-defect' | 'create-delivery' | 'site-arrive' | 'site-leave';
   payload: any;
   photoUri?: string;
   createdAt: string;
@@ -449,6 +449,25 @@ const processAction = async (action: QueuedAction): Promise<ProcessResult> => {
           ...payload.docketPhotos.map(p => deletePersistedPhoto(p.uri)),
           ...payload.items.flatMap(item => item.photos.map(p => deletePersistedPhoto(p.uri))),
         ]);
+        return 'success';
+      }
+      case 'site-arrive':
+      case 'site-leave': {
+        // Arriving on site (#46). Idempotent on the server (clientRequestId),
+        // so a replay after a lost response is harmless. A rejection (too old,
+        // job gone, feature switched off) is dropped, not kept as a failure:
+        // a missed sign-in row isn't worth bothering anyone about.
+        const kind = action.type === 'site-arrive' ? 'arrive' : 'leave';
+        try {
+          await apiRequest(`/api/site-visits/${kind}`, 'POST', {
+            projectId: action.payload.projectId,
+            at: action.payload.at ?? action.createdAt,
+            clientRequestId: action.payload.clientRequestId,
+          });
+        } catch (err) {
+          if (isPermanentError(err)) return 'success';
+          throw err;
+        }
         return 'success';
       }
       default:
