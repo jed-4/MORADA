@@ -19,6 +19,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { useTheme, MAX_FONT_SCALE } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermission } from '../lib/usePermission';
+import SetSiteLocationButton from '../components/SetSiteLocationButton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReturnToTwoPane } from '../lib/twoPane';
 import { readableFrame } from '../components/ui/ReadableColumn';
@@ -545,6 +546,8 @@ const colors = {
                   </View>
                 </View>
               )}
+              {/* Arriving on site (#46): capture the site point from this phone */}
+              <SetSiteLocationButton projectId={projectId} />
               {(clientContact?.email) && (
                 <View style={styles.infoRow}>
                   <Ionicons name="mail-outline" size={16} color={colors.secondary} />
