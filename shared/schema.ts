@@ -1008,6 +1008,16 @@ export const projects = pgTable("projects", {
   color: text("color").default("#A890D4"), // Default lavender — primary BuildPro accent
   icon: text("icon").default("Building2"), // Lucide icon name
   location: text("location"), // Project address/location (displayed as "Address")
+  // ── Site location (0133) ────────────────────────────────────────────────
+  // Coordinates of the job site. Written ONLY by PUT /api/projects/:id/site-location
+  // (omitted from insertProjectSchema so the generic PATCH can't set them, or
+  // forge who set them). Shared with the planned "arriving on site" geofence.
+  siteLatitude: doublePrecision("site_latitude"),
+  siteLongitude: doublePrecision("site_longitude"),
+  siteRadiusM: integer("site_radius_m").default(150), // geofence radius, metres
+  siteLocationSource: text("site_location_source"), // SITE_LOCATION_SOURCES: 'pin' | 'on_site' | 'geocoded'
+  siteLocationSetAt: timestamp("site_location_set_at"),
+  siteLocationSetBy: varchar("site_location_set_by"), // users.id (no FK — a deleted user must not block)
   status: text("status").notNull().default("active"), // Legacy field - kept for backwards compatibility
   
   // New hierarchical status fields
@@ -1082,6 +1092,14 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  // Site location has its own route with its own rules (never let a geocode
+  // overwrite a dropped pin; stamp who set it from the session).
+  siteLatitude: true,
+  siteLongitude: true,
+  siteRadiusM: true,
+  siteLocationSource: true,
+  siteLocationSetAt: true,
+  siteLocationSetBy: true,
 }).extend({
   invoicingMethod: z.enum(["progress_payments", "cost_plus"]).default("progress_payments"),
   status: z.enum(["active", "on_hold", "completed"]).default("active"),
@@ -1092,6 +1110,32 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
 
 export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Project = typeof projects.$inferSelect;
+
+/** How a project's site coordinates were set. Manual sources outrank 'geocoded'. */
+export const SITE_LOCATION_SOURCES = ["pin", "on_site", "geocoded"] as const;
+export type SiteLocationSource = typeof SITE_LOCATION_SOURCES[number];
+export const SITE_RADIUS_DEFAULT_M = 150;
+export const SITE_RADIUS_MIN_M = 20;
+export const SITE_RADIUS_MAX_M = 5000;
+
+/** Body of PUT /api/projects/:id/site-location. */
+export const siteLocationUpdateSchema = z.object({
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  source: z.enum(SITE_LOCATION_SOURCES).optional(),
+  radiusM: z.number().int().min(SITE_RADIUS_MIN_M).max(SITE_RADIUS_MAX_M).optional(),
+  /** Explicit "Use address" — the user chose to replace a pin with the geocode. */
+  replaceManual: z.boolean().optional(),
+  /** Remove the location entirely. */
+  clear: z.boolean().optional(),
+}).refine(
+  (b) => (b.latitude === undefined) === (b.longitude === undefined),
+  { message: "latitude and longitude must be sent together" },
+).refine(
+  (b) => b.latitude === undefined || !!b.source,
+  { message: "source is required when setting coordinates" },
+);
+export type SiteLocationUpdate = z.infer<typeof siteLocationUpdateSchema>;
 
 // Task Views (saved filters and view settings)
 export const taskViews = pgTable("task_views", {

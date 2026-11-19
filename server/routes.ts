@@ -6561,9 +6561,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("[PATCH /api/projects/:id] Error stack:", error.stack);
       res.status(500).json({ 
         error: "Failed to update project",
-        details: error.message 
+        details: error.message
       });
     }
+  });
+
+  // ── Site location (0133) ──────────────────────────────────────────────────
+  // Coordinates for the job site, used by the Site map / Job map widgets and,
+  // later, the "arriving on site" geofence. Same gates as editing the project
+  // (requireAuth + requireTeamMember + enforceProjectCompany) — the PATCH above
+  // can't touch these columns (they're omitted from insertProjectSchema).
+  //
+  // Rule: a 'geocoded' point never replaces a 'pin' or 'on_site' one unless the
+  // user explicitly pressed "Use address" (replaceManual). Automatic geocodes
+  // (address save, the Job map backfill) come back with skipped: true instead.
+  const siteLocationView = async (p: typeof projectsTable.$inferSelect) => {
+    let setByName: string | null = null;
+    if (p.siteLocationSetBy) {
+      const u = await storage.getUser(p.siteLocationSetBy).catch(() => undefined);
+      if (u) setByName = `${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email || null;
+    }
+    return {
+      projectId: p.id,
+      latitude: p.siteLatitude,
+      longitude: p.siteLongitude,
+      radiusM: p.siteRadiusM ?? schema.SITE_RADIUS_DEFAULT_M,
+      source: p.siteLocationSource,
+      setAt: p.siteLocationSetAt,
+      setById: p.siteLocationSetBy,
+      setByName,
+      address: p.location,
+    };
+  };
+
+  app.get("/api/projects/:id/site-location", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      res.json(await siteLocationView(project));
+    } catch (error: any) {
+      console.error("[GET /api/projects/:id/site-location]", error);
+      res.status(500).json({ error: "Failed to load site location" });
+    }
+  });
+
+  app.put("/api/projects/:id/site-location", requireAuth, requireTeamMember, async (req, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.id, "Project not found"))) return;
+      const parsed = schema.siteLocationUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid site location", details: fromZodError(parsed.error).toString() });
+      }
+      const body = parsed.data;
+      const companyId = getSessionCompanyId(req);
+      const userId = (req.user as any)?.id ?? (req.session as any)?.userId ?? null;
+      const existing = await storage.getProject(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Project not found" });
+
+      const set: Partial<typeof projectsTable.$inferInsert> = {};
+      let skipped = false;
+
+      if (body.clear) {
+        Object.assign(set, {
+          siteLatitude: null, siteLongitude: null, siteLocationSource: null,
+          siteLocationSetAt: new Date(), siteLocationSetBy: userId,
+        });
+      } else if (body.latitude !== undefined && body.longitude !== undefined) {
+        const manual = existing.siteLocationSource === "pin" || existing.siteLocationSource === "on_site";
+        if (body.source === "geocoded" && manual && !body.replaceManual) {
+          skipped = true;
+        } else {
+          Object.assign(set, {
+            siteLatitude: body.latitude,
+            siteLongitude: body.longitude,
+            siteLocationSource: body.source,
+            siteLocationSetAt: new Date(),
+            siteLocationSetBy: userId,
+          });
+        }
+      }
+      if (body.radiusM !== undefined) set.siteRadiusM = body.radiusM;
+
+      let project = existing;
+      if (Object.keys(set).length > 0) {
+        const where = companyId
+          ? and(eq(projectsTable.id, existing.id), eq(projectsTable.companyId, companyId))
+          : eq(projectsTable.id, existing.id);
+        const [row] = await db.update(projectsTable).set({ ...set, updatedAt: new Date() }).where(where).returning();
+        if (!row) return res.status(404).json({ error: "Project not found" });
+        project = row;
+      }
+      res.json({ skipped, location: await siteLocationView(project) });
+    } catch (error: any) {
+      console.error("[PUT /api/projects/:id/site-location]", error);
+      res.status(500).json({ error: "Failed to save site location" });
+    }
+  });
+
+  // Google Maps browser key. A Maps JavaScript API key is a PUBLIC browser key
+  // by design — Google's protection is the HTTP-referrer + API restriction set
+  // on the key in Cloud Console, not secrecy. It's served at runtime (rather
+  // than baked into the bundle as VITE_*) so it can be added or rotated in
+  // Replit Secrets without a rebuild. Signed-in users with a company only.
+  // null = not set up; the map components show a "not set up yet" placeholder.
+  app.get("/api/maps/config", requireAuth, async (req, res) => {
+    const companyId = getSessionCompanyId(req);
+    if (!companyId) return res.json({ apiKey: null });
+    res.json({ apiKey: process.env.GOOGLE_MAPS_API_KEY?.trim() || null });
   });
 
   app.delete("/api/projects/:id", async (req, res) => {
