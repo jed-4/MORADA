@@ -51,6 +51,7 @@ import {
   type JobStage,
   type StageCounts,
 } from '../lib/defects';
+import { PageHeader } from '../components/ui/PageHeader';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -244,7 +245,9 @@ export default function DefectsListScreen({ navigation, route }: Props) {
   );
 
   const header = (
-    <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border, paddingTop: insets.top + 8 }]}>
+    <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border, paddingTop: isWide ? 8 : insets.top + 8 }]}>
+      {/* Phone: back + title here. Unfolded: in the full-width PageHeader. */}
+      {!isWide && (
       <View style={styles.headerTop}>
         <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
@@ -270,6 +273,7 @@ export default function DefectsListScreen({ navigation, route }: Props) {
           </Pressable>
         )}
       </View>
+      )}
 
       <View style={[styles.search, { backgroundColor: theme.subtle }]}>
         <Ionicons name="search" size={15} color={theme.textMuted} />
@@ -437,8 +441,9 @@ export default function DefectsListScreen({ navigation, route }: Props) {
     </View>
   );
 
-  return (
+  const pane = (
     <TwoPane
+      key="pane"
       {...paneProps}
       list={list}
       detail={
@@ -455,6 +460,29 @@ export default function DefectsListScreen({ navigation, route }: Props) {
       emptyTitle="Select a defect"
       emptyIcon="construct-outline"
     />
+  );
+
+  // Unfolded: one header across both columns, back always top-left. Keyed
+  // so the header appearing on unfold never remounts the pane.
+  return (
+    <View style={styles.screen}>
+      {isWide && (
+        <PageHeader
+          key="header"
+          navigation={navigation}
+          title={isMine ? 'My defects' : 'Defects'}
+          projectName={`${projectName && !isMine ? `${projectName} · ` : ''}${totalCount} ${totalCount === 1 ? 'defect' : 'defects'}${activeFilterCount ? ` · ${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'}` : ''}`}
+          right={
+            activeFilterCount > 0 ? (
+              <Pressable onPress={() => { haptic.select(); setFilters(EMPTY_FILTERS); }} style={styles.clearBtn} accessibilityRole="button">
+                <Text style={[styles.clearText, { color: theme.primary }]}>Clear</Text>
+              </Pressable>
+            ) : undefined
+          }
+        />
+      )}
+      {pane}
+    </View>
   );
 }
 

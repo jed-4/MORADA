@@ -3,7 +3,7 @@ import { NavigationContainer, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, AppState, Linking, Pressable, StyleSheet, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { usePolling } from '../lib/usePolling';
 import { haptic } from '../lib/haptics';
@@ -137,6 +137,29 @@ function WorkspaceStack() {
   );
 }
 
+/**
+ * Native header title for a project page: the page name with the project
+ * underneath, so it's always clear which job you're in (Jed, 11-21:
+ * "a minimalist header for the project title").
+ */
+function projectPageOptions(page: string) {
+  return ({ route }: any) => {
+    const projectName: string | undefined = route.params?.projectName;
+    return {
+      headerShown: true,
+      title: page,
+      headerTitle: projectName
+        ? ({ tintColor }: { tintColor?: string }) => (
+            <View style={{ alignItems: 'center', maxWidth: 260 }}>
+              <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ fontSize: 16, fontWeight: '600', color: tintColor }}>{page}</Text>
+              <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ fontSize: 12, opacity: 0.65, color: tintColor }}>{projectName}</Text>
+            </View>
+          )
+        : undefined,
+    };
+  };
+}
+
 function ProjectsStack() {
   const theme = useTheme();
 
@@ -158,14 +181,14 @@ function ProjectsStack() {
       <Stack.Screen
         name="SiteDiary"
         component={SiteDiaryScreen}
-        options={({ route }: any) => ({ title: `${route.params?.projectName || 'Project'} - Site Diary` })}
+        options={projectPageOptions('Site Diary')}
       />
-      <Stack.Screen name="Checklists" component={ChecklistsScreen} options={{ title: 'Checklists' }} />
-      <Stack.Screen name="Schedule" component={ScheduleScreen} options={{ title: 'Schedule' }} />
-      <Stack.Screen name="Scope" component={ScopeScreen} options={{ title: 'Scope' }} />
+      <Stack.Screen name="Checklists" component={ChecklistsScreen} options={projectPageOptions('Checklists')} />
+      <Stack.Screen name="Schedule" component={ScheduleScreen} options={projectPageOptions('Schedule')} />
+      <Stack.Screen name="Scope" component={ScopeScreen} options={projectPageOptions('Scope')} />
       <Stack.Screen name="Selections" component={SelectionsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="SelectionDetail" component={SelectionDetailScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Notes" component={NotesListScreen} options={{ headerShown: true, title: 'Notes' }} />
+      <Stack.Screen name="Notes" component={NotesListScreen} options={projectPageOptions('Notes')} />
       <Stack.Screen name="NoteEditor" component={NoteEditorScreen} options={{ headerShown: false }} />
       <Stack.Screen
         name="ProjectTasks"
@@ -175,19 +198,19 @@ function ProjectsStack() {
       <Stack.Screen
         name="ReceiptCapture"
         component={ReceiptCaptureScreen}
-        options={{ headerShown: true, title: 'Capture Receipt' }}
+        options={projectPageOptions('Capture Receipt')}
       />
       <Stack.Screen
         name="LabourHours"
         component={LabourHoursScreen}
-        options={{ headerShown: true, title: 'Labour Hours' }}
+        options={projectPageOptions('Labour Hours')}
       />
       <Stack.Screen name="DefectsList" component={DefectsListScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DefectDetail" component={DefectDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen
         name="DefectCapture"
         component={DefectCaptureScreen}
-        options={{ headerShown: true, title: 'Add defects' }}
+        options={projectPageOptions('Add defects')}
       />
       {/* Deliveries: params { projectId, projectName? } / { projectId, poId, poNumber? } */}
       <Stack.Screen name="DeliveriesList" component={DeliveriesListScreen} options={{ headerShown: false }} />

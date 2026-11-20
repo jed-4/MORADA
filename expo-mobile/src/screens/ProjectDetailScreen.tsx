@@ -330,10 +330,10 @@ const colors = {
         navigation.navigate('SiteDiary', { projectId, projectName: project.name });
         break;
       case 'schedule':
-        navigation.navigate('Schedule', { projectId });
+        navigation.navigate('Schedule', { projectId, projectName: project?.name });
         break;
       case 'checklists':
-        navigation.navigate('Checklists', { projectId });
+        navigation.navigate('Checklists', { projectId, projectName: project?.name });
         break;
       case 'scope':
         navigation.navigate('Scope', { projectId, projectName: project.name });
@@ -691,7 +691,7 @@ const colors = {
                 )}
                 <TouchableOpacity
                   style={[styles.viewAllBtn, { borderColor: colors.border }]}
-                  onPress={() => navigation.navigate('Schedule', { projectId })}
+                  onPress={() => navigation.navigate('Schedule', { projectId, projectName: project?.name })}
                   activeOpacity={0.7}
                 >
                   <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewAllBtnText, { color: colors.accent }]}>View Full Schedule</Text>

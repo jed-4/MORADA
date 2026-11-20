@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,7 @@ import { useLayout } from '../lib/useLayout';
 import { sheetFrame } from '../components/ui/Sheet';
 import type { ScrollViewInstance } from 'react-native';
 import type { JSX } from 'react';
+import { goBackOrHome } from '../navigation/back';
 interface ScheduleItem {
   id: string;
   scheduleId: string;
@@ -246,13 +247,36 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const isDark = colorScheme === 'dark';
   const isProjectContext = !!route?.params?.projectId;
 
+  // Always a back chevron, top-left, wherever Schedule was opened from
+  // (project page, More menu, home, a notification). The native one only
+  // appears when there's a screen underneath in the same stack (Jed, 11-21:
+  // "Schedule screen doesn't have a back button").
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: true,
+      headerLeft: ({ tintColor }: { tintColor?: string }) => (
+        <TouchableOpacity
+          onPress={() => goBackOrHome(navigation as any)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={{ width: 44, height: 44, marginLeft: -10, alignItems: 'center', justifyContent: 'center' }}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="chevron-back" size={26} color={tintColor} />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [items, setItems] = useState<ScheduleItem[]>([]);
   const [scheduleId, setScheduleId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  // Gantt is the default (Jed, 11-21). The remembered choice moved to a new
+  // key so everyone starts on Gantt once, then their own pick sticks.
+  const [viewMode, setViewMode] = useState<ViewMode>('gantt');
   const [statusOptions, setStatusOptions] = useState<{ key: string; name: string; color: string }[]>([]);
 
   const [showProjectPicker, setShowProjectPicker] = useState(false);
@@ -307,6 +331,8 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [showAddStatusPicker, setShowAddStatusPicker] = useState(false);
 
   const ganttScrollRef = useRef<ScrollViewInstance>(null);
+  // Vertical body of the Gantt — opens scrolled down to today's tasks.
+  const ganttBodyRef = useRef<ScrollViewInstance>(null);
   const ganttScrolledRef = useRef(false);
   const ganttHeaderScrollRef = useRef<ScrollViewInstance>(null);
   const isSyncingRef = useRef(false);
@@ -366,7 +392,7 @@ const colors = {
       return;
     }
     AsyncStorage.multiGet([
-      '@buildpro/schedule_view_mode',
+      '@buildpro/schedule_view_mode_v2',
       '@buildpro/schedule_project_id',
       '@buildpro/gantt_show_names',
       '@buildpro/gantt_show_status',
@@ -380,7 +406,7 @@ const colors = {
   }, []);
 
   useEffect(() => {
-    if (viewMode) AsyncStorage.setItem('@buildpro/schedule_view_mode', viewMode);
+    if (viewMode) AsyncStorage.setItem('@buildpro/schedule_view_mode_v2', viewMode);
   }, [viewMode]);
 
   useEffect(() => {
@@ -964,7 +990,7 @@ const colors = {
         </View>
 
         {/* Scrollable body */}
-        <ScrollView style={styles.flex1} showsVerticalScrollIndicator>
+        <ScrollView ref={ganttBodyRef} style={styles.flex1} showsVerticalScrollIndicator>
           <View style={styles.ganttContainer}>
             {showNamesCol && (
               <View style={[styles.ganttNamesCol, isWide && { width: NAME_COL_WIDTH_WIDE }, { borderRightColor: colors.border, borderRightWidth: 1 }]}>
@@ -995,6 +1021,21 @@ const colors = {
                 const scrollX = Math.max(0, todayOffset - screenWidth / 3);
                 ganttScrollRef.current?.scrollTo({ x: scrollX, animated: false });
                 ganttHeaderScrollRef.current?.scrollTo({ x: scrollX, animated: false });
+                // And down to today's work: the first row running today, else
+                // the next one to start, else the last row. A couple of rows
+                // of context stay above it.
+                const todayMidnight = new Date(today);
+                todayMidnight.setHours(0, 0, 0, 0);
+                const todayMs = todayMidnight.getTime();
+                let row = sortedItems.findIndex(it => {
+                  const s0 = parseLocalMidnight(it.startDate).getTime();
+                  const e0 = parseLocalMidnight(it.endDate).getTime();
+                  return s0 <= todayMs && todayMs <= e0;
+                });
+                if (row < 0) row = sortedItems.findIndex(it => parseLocalMidnight(it.startDate).getTime() >= todayMs);
+                if (row < 0) row = sortedItems.length - 1;
+                const scrollY = Math.max(0, (row - 2) * GANTT_ROW_HEIGHT);
+                ganttBodyRef.current?.scrollTo({ y: scrollY, animated: false });
               }}
             >
               <View style={{ width: totalWidth, height: barAreaHeight, position: 'relative' }}>

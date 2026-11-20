@@ -102,6 +102,19 @@ export function TwoPane({
     <View style={styles.row}>
       {railMode ? (
         <View key="rail" style={[styles.rail, { backgroundColor: theme.card, borderRightColor: theme.border, paddingTop: insets.top + 8 }]}>
+          {/* Back to the full list — top-left, where back is on every other
+              screen (Jed, 11-21: back buttons weren't consistently placed). */}
+          {onCloseDetail ? (
+            <Pressable
+              onPress={onCloseDetail}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Back to the full list"
+              style={styles.railToggle}
+            >
+              <Ionicons name="chevron-back" size={26} color={theme.textPrimary} />
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={() => setExpanded((v) => !v)}
             hitSlop={8}
@@ -109,19 +122,8 @@ export function TwoPane({
             accessibilityLabel={expanded ? 'Collapse list' : 'Show full list'}
             style={[styles.railToggle, { backgroundColor: expanded ? theme.primaryLight : 'transparent' }]}
           >
-            <Ionicons name={expanded ? 'chevron-back' : 'menu'} size={24} color={theme.textPrimary} />
+            <Ionicons name={expanded ? 'close' : 'menu'} size={24} color={theme.textSecondary} />
           </Pressable>
-          {onCloseDetail ? (
-            <Pressable
-              onPress={onCloseDetail}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Close and show the full list"
-              style={styles.railToggle}
-            >
-              <Ionicons name="close" size={24} color={theme.textSecondary} />
-            </Pressable>
-          ) : null}
           <View style={[styles.railDivider, { backgroundColor: theme.border }]} />
           <RailContext.Provider value={{ expand: () => setExpanded(true) }}>{rail}</RailContext.Provider>
         </View>
