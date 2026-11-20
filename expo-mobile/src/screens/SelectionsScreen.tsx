@@ -33,6 +33,7 @@ import {
   type Selection,
   type SelectionGroup,
 } from '../lib/selections';
+import { PageHeader } from '../components/ui/PageHeader';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -165,9 +166,12 @@ export default function SelectionsScreen({ navigation, route }: Props) {
       <View
         style={[
           styles.header,
-          { backgroundColor: theme.card, borderBottomColor: theme.border, paddingTop: insets.top + 8 },
+          // Unfolded, the full-width PageHeader above holds the safe area.
+          { backgroundColor: theme.card, borderBottomColor: theme.border, paddingTop: isWide ? 8 : insets.top + 8 },
         ]}
       >
+        {/* Phone: back + title live here. Unfolded: in the PageHeader. */}
+        {!isWide && (
         <View style={styles.headerTop}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
@@ -184,6 +188,7 @@ export default function SelectionsScreen({ navigation, route }: Props) {
             </Text>
           </View>
         </View>
+        )}
 
         <View style={[styles.search, { backgroundColor: theme.subtle }]}>
           <Ionicons name="search" size={15} color={theme.textMuted} />
@@ -275,8 +280,11 @@ export default function SelectionsScreen({ navigation, route }: Props) {
   // list (scroll position, search text) stays mounted across fold/unfold.
   // The detail is keyed by id so each item starts fresh (no comment draft or
   // photo page carried over from the previous one).
-  return (
+  // Keyed: the PageHeader appearing before it on unfold must not shift its
+  // position and remount the list (scroll, search) or the open item.
+  const pane = (
     <TwoPane
+      key="pane"
       {...paneProps}
       list={list}
       detail={
@@ -292,6 +300,22 @@ export default function SelectionsScreen({ navigation, route }: Props) {
       emptyTitle="Select an item to see what's going in"
       emptyIcon="albums-outline"
     />
+  );
+
+  // Unfolded: one header across both columns, back always top-left.
+  // The wrapper View is always there so the pane never remounts on fold.
+  return (
+    <View style={styles.screen}>
+      {isWide && (
+        <PageHeader
+          key="header"
+          navigation={navigation}
+          title="Selections"
+          projectName={`${projectName ? `${projectName} · ` : ''}${settledTotal} of ${selections.length} selected`}
+        />
+      )}
+      {pane}
+    </View>
   );
 }
 

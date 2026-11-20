@@ -701,6 +701,8 @@ const colors = {
         // folding/unfolding never remounts it. The board stays full width.
         <TwoPane
           {...paneProps}
+          // Slimmer list than the default 360 so the open task gets the room (Jed, 11-21).
+          listWidth={300}
           emptyTitle="Select a task"
           emptyIcon="checkbox-outline"
           detail={paneTask ? (
