@@ -300,11 +300,11 @@ export default function ProjectBudgetVsActualWidget({
   // The bar can't draw a negative segment (a period of net credits).
   const labour = Math.max(0, t.labourCents);
   const bills = Math.max(0, t.billsCents);
-  const committed = Math.max(0, t.committedCents);
 
   const hasBudget = budget > 0;
-  // Same as the Budget page: revised budget − spent − committed.
-  const remaining = t.remainingCents;
+  // Same as the Budget page's Costs tab (cost to date): revised budget −
+  // spent. Purchase orders are not in it — they live on the Forecast tab.
+  const remaining = budget - actual;
   const pct = hasBudget ? Math.round((actual / budget) * 100) : 0;
   const overBudget = hasBudget && actual > budget;
   const nearLimit = hasBudget && !overBudget && pct >= 90;
@@ -344,9 +344,7 @@ export default function ProjectBudgetVsActualWidget({
           {hasBudget
             ? remaining >= 0
               ? "Remaining"
-              : actual > budget
-                ? "Over budget"
-                : "Over budget once committed is spent"
+              : "Over budget"
             : "Spent"}
         </p>
         <div className="flex items-baseline gap-1.5">
@@ -381,7 +379,7 @@ export default function ProjectBudgetVsActualWidget({
             bands={bands}
           />
         ) : (
-          <SegmentedBar budget={budget} bills={bills} labour={labour} committed={committed} />
+          <SegmentedBar budget={budget} bills={bills} labour={labour} committed={0} />
         )}
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <span className="text-muted-foreground" data-testid="text-actual-amount">
@@ -411,13 +409,6 @@ export default function ProjectBudgetVsActualWidget({
           dot={DOT.teal}
           testId="row-labour"
         />
-        {committed > 0 && (
-          <LedgerRow
-            label="Committed"
-            value={formatCurrency(committed)}
-            testId="row-committed"
-          />
-        )}
         <LedgerRow
           label={remaining >= 0 ? "Remaining" : "Over"}
           value={formatCurrency(Math.abs(remaining))}

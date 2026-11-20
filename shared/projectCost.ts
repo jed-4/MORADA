@@ -55,7 +55,15 @@ export interface ProjectCostRow {
   spentCents: number;
   committedCents: number;
   remainingCents: number;
+  /**
+   * What this row is expected to cost in the end. Not complete: the larger of
+   * its budget and spent + committed (work still to come is assumed to use the
+   * budget). Complete: spent + committed — what it actually cost, so an
+   * underspend on a finished code counts as a saving.
+   */
   forecastFinalCents: number;
+  /** Ticked Complete on the Forecast tab. */
+  complete: boolean;
 }
 
 export interface ProjectCostTotals {
@@ -90,6 +98,8 @@ export interface ProjectCostInputs {
   labour: { costCodeId: string | null; cents: number }[];
   /** Committed cents per cost code (null = no code). */
   committed: { costCodeId: string | null; cents: number }[];
+  /** Row keys ticked Complete on the Forecast tab. */
+  completeKeys?: Iterable<string>;
 }
 
 const ZERO_TOTALS = (): ProjectCostTotals => ({
@@ -141,7 +151,7 @@ export function computeProjectCost(input: ProjectCostInputs): ProjectCost {
     return cat ? `${cat.code} - ${cat.title}` : "";
   };
 
-  type Acc = Omit<ProjectCostRow, "revisedBudgetCents" | "spentCents" | "remainingCents" | "forecastFinalCents">;
+  type Acc = Omit<ProjectCostRow, "revisedBudgetCents" | "spentCents" | "remainingCents" | "forecastFinalCents" | "complete">;
   const rows = new Map<string, Acc>();
 
   const blank = (key: string, kind: ProjectCostRowKind, costCodeId: string | null, label: string, categoryId: string | null): Acc => ({
@@ -212,17 +222,22 @@ export function computeProjectCost(input: ProjectCostInputs): ProjectCost {
   for (const l of input.labour) rowFor(l.costCodeId).labourCents += l.cents;
   for (const c of input.committed) rowFor(c.costCodeId).committedCents += c.cents;
 
+  const complete = new Set(input.completeKeys ?? []);
   const totals = ZERO_TOTALS();
   const out: ProjectCostRow[] = [];
   for (const r of Array.from(rows.values())) {
     const revisedBudgetCents = r.originalBudgetCents + r.variationsCents;
     const spentCents = r.billsCents + r.labourCents;
+    const isComplete = complete.has(r.key);
     const row: ProjectCostRow = {
       ...r,
       revisedBudgetCents,
       spentCents,
       remainingCents: revisedBudgetCents - spentCents - r.committedCents,
-      forecastFinalCents: Math.max(revisedBudgetCents, spentCents + r.committedCents),
+      forecastFinalCents: isComplete
+        ? spentCents + r.committedCents
+        : Math.max(revisedBudgetCents, spentCents + r.committedCents),
+      complete: isComplete,
     };
     // Drop rows with nothing in them at all.
     if (
@@ -346,12 +361,14 @@ export function summariseProjectCost(cost: Pick<ProjectCost, "rows" | "totals">)
     const label = r.categoryId ? (r.categoryLabel || "Unknown category") : "Other";
     const g = groups.get(key) ?? { label, revised: 0, used: 0 };
     g.revised += r.revisedBudgetCents;
-    g.used += r.spentCents + r.committedCents;
+    // Cost to date: spent only. Purchase orders (committed) belong to the
+    // Forecast tab, not the simple budget.
+    g.used += r.spentCents;
     groups.set(key, g);
   }
   const keys = Array.from(groups.keys()).filter((k) => k !== SUMMARY_OTHER_KEY);
   if (groups.has(SUMMARY_OTHER_KEY)) keys.push(SUMMARY_OTHER_KEY);
-  const totalUsed = cost.totals.spentCents + cost.totals.committedCents;
+  const totalUsed = cost.totals.spentCents;
   return {
     access: "summary",
     categories: keys.map((key) => {

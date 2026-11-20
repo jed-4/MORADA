@@ -259,12 +259,37 @@ check("$0 timesheets (subcontractors) add nothing — no flag check needed", () 
   assert.deepStrictEqual(out, []);
 });
 
+// ── Forecast: Complete ──────────────────────────────────────────────────────
+check("forecast: not complete = max(budget, spent + committed); complete = spent + committed", () => {
+  const base = {
+    estimateItems: [
+      { costCode: CARP, quantity: 1, unitCostExTax: 1000, wastagePercent: 0, priceIncTax: 0, taxAmount: 0 } as any,
+      { costCode: ELEC, quantity: 1, unitCostExTax: 500, wastagePercent: 0, priceIncTax: 0, taxAmount: 0 } as any,
+    ],
+    labour: [{ costCodeId: CARP, cents: 60000 }, { costCodeId: ELEC, cents: 70000 }],
+    committed: [{ costCodeId: CARP, cents: 10000 }],
+  };
+  const open = computeProjectCost(inputs(base));
+  // Carpentry $1,000 budget, $700 spent+committed → still forecast at budget.
+  assert.strictEqual(row(open, CARP).forecastFinalCents, 100000);
+  assert.strictEqual(row(open, CARP).complete, false);
+  // Electrical $500 budget, $700 spent → over: forecast at actual.
+  assert.strictEqual(row(open, ELEC).forecastFinalCents, 70000);
+
+  const done = computeProjectCost(inputs({ ...base, completeKeys: [CARP] }));
+  // Carpentry ticked complete: the $300 underspend is now a saving.
+  assert.strictEqual(row(done, CARP).forecastFinalCents, 70000);
+  assert.strictEqual(row(done, CARP).complete, true);
+  assert.strictEqual(done.totals.forecastFinalCents, 140000);
+  assertTotalsAreSumOfRows(done);
+});
+
 // ── Summary Only ────────────────────────────────────────────────────────────
 function summaryRow(over: Partial<ProjectCostRow>): ProjectCostRow {
   return {
     key: "k", kind: "costCode", costCodeId: "k", label: "L", categoryId: null, categoryLabel: "",
     originalBudgetCents: 0, variationsCents: 0, revisedBudgetCents: 0, billsCents: 0, labourCents: 0,
-    spentCents: 0, committedCents: 0, remainingCents: 0, forecastFinalCents: 0, ...over,
+    spentCents: 0, committedCents: 0, remainingCents: 0, forecastFinalCents: 0, complete: false, ...over,
   };
 }
 
@@ -278,7 +303,7 @@ check("budget tone bands: <95 under, <100 near, ≤105 at, >105 over; no budget 
   assert.strictEqual(budgetTone(0, 0), "neutral");
 });
 
-check("summary only: % used by category (spent + committed), Other last, no dollar figures", () => {
+check("summary only: % used by category (spent only — no POs), Other last, no dollar figures", () => {
   const rows = [
     summaryRow({ key: "a", categoryId: "c1", categoryLabel: "1 - Prelims", revisedBudgetCents: 10000, spentCents: 4000, committedCents: 1000 }),
     summaryRow({ key: "b", categoryId: "c1", categoryLabel: "1 - Prelims", revisedBudgetCents: 10000, spentCents: 5000 }),
@@ -291,11 +316,11 @@ check("summary only: % used by category (spent + committed), Other last, no doll
   };
   const out = summariseProjectCost({ rows, totals });
   assert.deepStrictEqual(out.categories, [
-    { key: "c1", label: "1 - Prelims", usedPct: 50, tone: "under" },
+    { key: "c1", label: "1 - Prelims", usedPct: 45, tone: "under" },
     { key: "c2", label: "2 - Structure", usedPct: 110, tone: "over" },
     { key: "other", label: "Other", usedPct: null, tone: "unbudgeted" },
   ]);
-  assert.deepStrictEqual(out.total, { usedPct: 82, tone: "under" });
+  assert.deepStrictEqual(out.total, { usedPct: 79, tone: "under" });
   // Nothing in the summary is money: only keys, labels, whole percents, tones.
   const json = JSON.stringify(out);
   assert.ok(!/Cents/.test(json), "summary must not carry any cents field");

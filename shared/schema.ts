@@ -4233,6 +4233,36 @@ export const insertBudgetLineItemSchema = createInsertSchema(budgetLineItems).om
 export type InsertBudgetLineItem = z.infer<typeof insertBudgetLineItemSchema>;
 export type BudgetLineItem = typeof budgetLineItems.$inferSelect;
 
+// Budget page, Forecast tab (migration 0139). A cost row ticked Complete is
+// forecast at what it actually cost. row_key is a ProjectCostRow.key: a cost
+// code id, "uncategorised", "variations" or "cat:<categoryId>".
+export const projectCostCompletions = pgTable("project_cost_completions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  rowKey: text("row_key").notNull(),
+  completedAt: timestamp("completed_at").notNull().defaultNow(),
+  completedById: varchar("completed_by_id").references(() => users.id, { onDelete: "set null" }),
+}, (t) => ({
+  projectRowKey: uniqueIndex("project_cost_completions_project_row_key").on(t.projectId, t.rowKey),
+}));
+export type ProjectCostCompletion = typeof projectCostCompletions.$inferSelect;
+
+// "Mark reviewed" on the Forecast tab: a stamp of the forecast at that moment
+// (ex GST cents), so the tab can show how far it has moved since.
+export const projectForecastReviews = pgTable("project_forecast_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  reviewedAt: timestamp("reviewed_at").notNull().defaultNow(),
+  reviewedById: varchar("reviewed_by_id").references(() => users.id, { onDelete: "set null" }),
+  contractCents: integer("contract_cents").notNull(),
+  forecastCostCents: integer("forecast_cost_cents").notNull(),
+  forecastMarginCents: integer("forecast_margin_cents").notNull(),
+  note: text("note"),
+}, (t) => ({
+  projectAt: index("project_forecast_reviews_project_at").on(t.projectId, t.reviewedAt),
+}));
+export type ProjectForecastReview = typeof projectForecastReviews.$inferSelect;
+
 export const updateBudgetLineItemSchema = insertBudgetLineItemSchema.partial();
 export type UpdateBudgetLineItem = z.infer<typeof updateBudgetLineItemSchema>;
 

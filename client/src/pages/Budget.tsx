@@ -18,7 +18,10 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { RefreshCw, DollarSign, AlertCircle, AlertTriangle, Clock, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown, TrendingUp, ClipboardCheck } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
+import { formatDistanceToNowStrict, differenceInCalendarDays } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { CostCategory, CostCode, LabourHoursBudget, Project } from "@shared/schema";
 import type { ContractMetrics } from "@shared/projectMetrics";
@@ -30,6 +33,23 @@ import { usePermission, useBudgetAccess } from "@/hooks/use-permission";
 import { useAuth } from "@/hooks/use-auth";
 
 type BudgetTone = SharedBudgetTone;
+
+/** Forecast tab extras served with cost-summary (server/services/projectCostService.ts). */
+type ForecastMeta = {
+  completeKeys: string[];
+  lastReview: {
+    reviewedAt: string;
+    reviewedByName: string | null;
+    contractCents: number;
+    forecastCostCents: number;
+    forecastMarginCents: number;
+    note: string | null;
+  } | null;
+  possibleDoubleCounts: { billId: string; billNumber: string; billTotalIncCents: number; poId: string; poLabel: string }[];
+};
+
+/** A forecast older than this many days gets an amber "review due" chip. */
+const FORECAST_REVIEW_DUE_DAYS = 30;
 
 type HoursSort = { id: string; dir: "asc" | "desc" } | null;
 
@@ -131,12 +151,16 @@ export default function BudgetPage() {
   const canViewActuals = budgetAccess !== "none";
   const isDark = useIsDark();
 
-  const [activeTab, setActiveTab] = useState<"costs" | "hours">("costs");
+  // Costs = cost to date (budget vs bills + approved timesheets, no POs).
+  // Forecast = the live WIP: committed POs, forecast final cost per code,
+  // Complete ticks, margin and the "reviewed" stamp.
+  const [activeTab, setActiveTab] = useState<"costs" | "forecast" | "hours">("costs");
+  const { toast } = useToast();
 
   // If the currently active tab is not accessible, switch to the first accessible one.
   // This also handles the initial render where permissions load asynchronously.
   useEffect(() => {
-    if (activeTab === "costs" && !canViewActuals && canViewLabour) {
+    if ((activeTab === "costs" || activeTab === "forecast") && !canViewActuals && canViewLabour) {
       setActiveTab("hours");
     } else if (activeTab === "hours" && !canViewLabour && canViewActuals) {
       setActiveTab("costs");
@@ -187,6 +211,7 @@ export default function BudgetPage() {
         rows: ProjectCostRow[];
         totals: ProjectCostTotals;
         billsWithoutLines: { billId: string; cents: number }[];
+        forecast?: ForecastMeta;
       }
     | ProjectCostSummaryOnly
   >({
@@ -196,6 +221,30 @@ export default function BudgetPage() {
   });
   const summaryOnly = costSummary?.access === "summary";
   const fullCost = costSummary && costSummary.access !== "summary" ? costSummary : undefined;
+  const forecastMeta = fullCost?.forecast;
+  // The Forecast tab is dollars throughout — never for a Summary Only role.
+  useEffect(() => {
+    if (activeTab === "forecast" && summaryOnly) setActiveTab("costs");
+  }, [activeTab, summaryOnly]);
+
+  const invalidateCost = () =>
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "cost-summary"] });
+
+  const completeMutation = useMutation({
+    mutationFn: ({ key, complete }: { key: string; complete: boolean }) =>
+      apiRequest(`/api/projects/${projectId}/cost-forecast/complete`, "PUT", { key, complete }),
+    onSuccess: invalidateCost,
+    onError: (e: Error) => toast({ title: "Couldn't update", description: e.message, variant: "destructive" }),
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: () => apiRequest(`/api/projects/${projectId}/cost-forecast/reviews`, "POST", {}),
+    onSuccess: () => {
+      invalidateCost();
+      toast({ title: "Forecast marked as reviewed" });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't save the review", description: e.message, variant: "destructive" }),
+  });
 
   const { data: labourHours = [], isLoading: labourHoursLoading } = useQuery<LabourHoursBudget[]>({
     queryKey: [`/api/projects/${projectId}/labour-hours-budget`],
@@ -457,6 +506,9 @@ export default function BudgetPage() {
     remainingCents: 0,
     forecastFinalCents: 0,
   };
+  // Cost to date (Costs tab): what's left of the budget after what's been
+  // SPENT — bills + approved timesheets. Purchase orders are not in it.
+  const toDateRemainingCents = costTotals.revisedBudgetCents - costTotals.spentCents;
 
   /** Group key + label for a row. Rows with no category share one "Other" group, listed last. */
   const NO_CATEGORY = "none";
@@ -465,10 +517,10 @@ export default function BudgetPage() {
 
   type CostSums = Pick<
     ProjectCostRow,
-    "originalBudgetCents" | "variationsCents" | "revisedBudgetCents" | "billsCents" | "labourCents" | "spentCents" | "committedCents" | "remainingCents"
+    "originalBudgetCents" | "variationsCents" | "revisedBudgetCents" | "billsCents" | "labourCents" | "spentCents" | "committedCents" | "remainingCents" | "forecastFinalCents"
   >;
   type CostRow =
-    | ({ kind: "category"; id: string; groupKey: string; label: string; count: number } & CostSums)
+    | ({ kind: "category"; id: string; groupKey: string; label: string; count: number; completeCount: number } & CostSums)
     | { kind: "item"; id: string; item: ProjectCostRow; zebra: boolean };
 
   const costRows = useMemo<CostRow[]>(() => {
@@ -495,6 +547,7 @@ export default function BudgetPage() {
         groupKey,
         label,
         count: items.length,
+        completeCount: items.filter((i) => i.complete).length,
         originalBudgetCents: sum(items, "originalBudgetCents"),
         variationsCents: sum(items, "variationsCents"),
         revisedBudgetCents: sum(items, "revisedBudgetCents"),
@@ -503,6 +556,7 @@ export default function BudgetPage() {
         spentCents: sum(items, "spentCents"),
         committedCents: sum(items, "committedCents"),
         remainingCents: sum(items, "remainingCents"),
+        forecastFinalCents: sum(items, "forecastFinalCents"),
       });
       if (!collapsedCategories.has(groupKey)) {
         items.forEach((item) => {
@@ -617,19 +671,17 @@ export default function BudgetPage() {
         setLabourDrill({ costCodeId: item.costCodeId, title: item.label }),
     }),
     moneyColumn("spent", "Spent", "spentCents", { width: 120, strong: true }),
-    // Open POs not yet billed + subbie hours waiting for a PO. Promised, not
-    // spent, so it sits beside Spent rather than inside it.
-    moneyColumn("committed", "Committed", "committedCents", { tone: "text-[hsl(var(--amber))] font-medium" }),
+    // Cost to date only. Purchase orders (committed) live on the Forecast tab.
     {
       id: "remaining",
       header: "Remaining",
       enableSorting: false,
       cell: ({ row }) => {
         const s = sumsOf(row.original);
-        // Revised budget − spent − committed: what's left to spend on this code.
+        // Revised budget − spent: what's left of this code's budget.
         return (
           <span data-testid={`text-remaining-${row.original.id}`}>
-            {renderVarianceChip(formatCurrency(s.remainingCents), s.revisedBudgetCents, s.spentCents + s.committedCents)}
+            {renderVarianceChip(formatCurrency(s.revisedBudgetCents - s.spentCents), s.revisedBudgetCents, s.spentCents)}
           </span>
         );
       },
@@ -642,13 +694,77 @@ export default function BudgetPage() {
       enableSorting: false,
       cell: ({ row }) => {
         const s = sumsOf(row.original);
-        return renderStatusChip(s.revisedBudgetCents, s.spentCents + s.committedCents);
+        return renderStatusChip(s.revisedBudgetCents, s.spentCents);
       },
       size: 90,
       meta: { defaultWidth: 90, align: "right", headerLabel: "Status" },
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [collapsedCategories]);
+
+  // ── Forecast table ─────────────────────────────────────────────────────────
+  // Same rows, read forward: what each code is expected to cost in the end.
+  // Not complete → the larger of budget and spent + committed (work to come
+  // is assumed to use its budget). Complete → what it actually cost.
+  const forecastColumns = useMemo<ColumnDef<CostRow, unknown>[]>(() => [
+    costColumns[0],
+    moneyColumn("f-revised", "Budget", "revisedBudgetCents", { strong: true }),
+    moneyColumn("f-spent", "Spent", "spentCents", { width: 120 }),
+    // Open POs not yet billed + subbie hours waiting for a PO.
+    moneyColumn("f-committed", "Committed (POs)", "committedCents", { width: 120, tone: "text-[hsl(var(--amber))] font-medium" }),
+    moneyColumn("f-forecast", "Forecast cost", "forecastFinalCents", { width: 120, strong: true }),
+    {
+      id: "f-variance",
+      header: "Over / under",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const s = sumsOf(row.original);
+        // Positive = saving against budget, negative = overrun.
+        const v = s.revisedBudgetCents - s.forecastFinalCents;
+        if (row.original.kind === "category") return renderCategoryAmountChip(v, true);
+        return (
+          <span
+            className={cn("text-xs tabular-nums font-semibold", v === 0 ? "text-muted-foreground" : getVarianceColor(v))}
+            data-testid={`text-f-variance-${row.original.id}`}
+          >
+            {v === 0 ? "—" : `${v > 0 ? "+" : "−"}${formatCurrency(Math.abs(v))}`}
+          </span>
+        );
+      },
+      size: 110,
+      meta: { defaultWidth: 110, align: "right", headerLabel: "Over / under" },
+    },
+    {
+      id: "f-complete",
+      header: "Complete",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original;
+        if (r.kind === "category") {
+          return (
+            <span className="text-[10px] text-muted-foreground tabular-nums">
+              {r.completeCount}/{r.count}
+            </span>
+          );
+        }
+        return (
+          <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={r.item.complete}
+              disabled={completeMutation.isPending}
+              onCheckedChange={(v) => completeMutation.mutate({ key: r.item.key, complete: v === true })}
+              aria-label={`Mark ${r.item.label} complete`}
+              title="Complete: forecast this code at what it actually cost"
+              data-testid={`checkbox-complete-${r.id}`}
+            />
+          </div>
+        );
+      },
+      size: 80,
+      meta: { defaultWidth: 80, align: "center", headerLabel: "Complete" },
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [collapsedCategories, completeMutation.isPending]);
 
   const filteredLabourHours = hideEmptyCostCodes
     ? labourHours.filter(item => {
@@ -1143,6 +1259,17 @@ export default function BudgetPage() {
   const forecastMarginPct = pctOfContract(forecastMarginCents);
   const money = (cents: number, known = true) => (known ? formatCurrency(cents) : "—");
   const pct = (value: number | null) => (value === null ? "—" : `${value.toFixed(1)}%`);
+  // Cost to date: how much of the budget has been spent.
+  const spentPctOfBudget = costTotals.revisedBudgetCents > 0
+    ? Math.round((costTotals.spentCents / costTotals.revisedBudgetCents) * 100)
+    : null;
+
+  // "Reviewed 12 days ago" — and how far the margin has moved since.
+  const lastReview = forecastMeta?.lastReview ?? null;
+  const reviewAgeDays = lastReview ? differenceInCalendarDays(new Date(), new Date(lastReview.reviewedAt)) : null;
+  const reviewDue = reviewAgeDays === null || reviewAgeDays > FORECAST_REVIEW_DUE_DAYS;
+  const marginMovedCents = lastReview && contractKnown ? forecastMarginCents - lastReview.forecastMarginCents : null;
+  const doubleCounts = forecastMeta?.possibleDoubleCounts ?? [];
 
   return (
     <div className="flex flex-col h-full" data-testid="page-budget">
@@ -1165,6 +1292,24 @@ export default function BudgetPage() {
                 <DollarSign className="w-3 h-3" />
                 <span>Costs</span>
                 {activeTab === "costs" && (
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
+                )}
+              </button>
+            )}
+            {canViewActuals && !summaryOnly && (
+              <button
+                onClick={() => setActiveTab("forecast")}
+                className={cn(
+                  "relative h-full px-3 text-[12px] font-medium transition-colors flex items-center gap-1",
+                  activeTab === "forecast"
+                    ? "text-[hsl(var(--bp-purple))]"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                data-testid="tab-forecast"
+              >
+                <TrendingUp className="w-3 h-3" />
+                <span>Forecast</span>
+                {activeTab === "forecast" && (
                   <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[hsl(var(--bp-purple))] rounded-t-sm" />
                 )}
               </button>
@@ -1220,9 +1365,21 @@ export default function BudgetPage() {
                       { id: "bills", label: "Bills" },
                       { id: "labour", label: "Labour" },
                       { id: "spent", label: "Spent" },
-                      { id: "committed", label: "Committed" },
                       { id: "remaining", label: "Remaining" },
                       { id: "status", label: "Status" },
+                    ]}
+                  />
+                ) : activeTab === "forecast" ? (
+                  <DataTableColumnPicker
+                    storageKey="budget-forecast-v1"
+                    columns={[
+                      { id: "category", label: "Cost Code", pinned: true },
+                      { id: "f-revised", label: "Budget" },
+                      { id: "f-spent", label: "Spent" },
+                      { id: "f-committed", label: "Committed (POs)" },
+                      { id: "f-forecast", label: "Forecast cost" },
+                      { id: "f-variance", label: "Over / under" },
+                      { id: "f-complete", label: "Complete" },
                     ]}
                   />
                 ) : (
@@ -1266,6 +1423,35 @@ export default function BudgetPage() {
           {activeTab === "costs" && canViewActuals && !summaryOnly && (
             <>
               <div className="flex flex-col leading-none">
+                <span className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Budget spent</span>
+                <span
+                  className="text-3xl font-bold tabular-nums leading-none text-foreground"
+                  data-testid="header-spent-percent"
+                >
+                  {spentPctOfBudget === null ? "—" : `${spentPctOfBudget}%`}
+                </span>
+              </div>
+              <div className="h-8 w-px bg-border flex-shrink-0" />
+              <div className="flex items-center gap-6 min-w-0 flex-wrap">
+                {[
+                  { label: "Revised Budget", value: formatCurrency(costTotals.revisedBudgetCents), color: "text-foreground" },
+                  { label: "Spent", value: formatCurrency(costTotals.spentCents), color: "text-foreground" },
+                  { label: "Remaining", value: formatCurrency(toDateRemainingCents), color: getVarianceColor(toDateRemainingCents) },
+                ].map((stat) => (
+                  <div key={stat.label} className="flex flex-col leading-tight">
+                    <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                      {stat.label} <span className="normal-case font-normal">ex GST</span>
+                    </span>
+                    <span className={cn("text-sm font-semibold tabular-nums", stat.color)}>{stat.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {activeTab === "forecast" && canViewActuals && !summaryOnly && (
+            <>
+              <div className="flex flex-col leading-none">
                 <span className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Forecast margin</span>
                 <span
                   className={cn(
@@ -1281,13 +1467,16 @@ export default function BudgetPage() {
               <div className="flex items-center gap-6 min-w-0 flex-wrap">
                 {[
                   { label: "Revised Contract", value: money(revisedContractCents, contractKnown), color: "text-foreground" },
-                  { label: "Revised Budget", value: formatCurrency(costTotals.revisedBudgetCents), color: "text-foreground" },
-                  { label: "Spent", value: formatCurrency(costTotals.spentCents), color: "text-foreground" },
-                  { label: "Committed", value: formatCurrency(costTotals.committedCents), color: "text-foreground" },
+                  { label: "Forecast Cost", value: formatCurrency(costTotals.forecastFinalCents), color: "text-foreground" },
                   {
                     label: "Forecast Margin",
                     value: money(forecastMarginCents, contractKnown),
                     color: contractKnown ? getVarianceColor(forecastMarginCents) : "text-muted-foreground",
+                  },
+                  {
+                    label: "Planned Margin",
+                    value: `${money(plannedMarginCents, contractKnown)} (${pct(plannedMarginPct)})`,
+                    color: "text-muted-foreground",
                   },
                 ].map((stat) => (
                   <div key={stat.label} className="flex flex-col leading-tight">
@@ -1339,11 +1528,50 @@ export default function BudgetPage() {
           />
         </button>
 
-        {/* EXPANDED DETAIL — Costs. Three lines, each a sum that adds up. */}
+        {/* EXPANDED DETAIL — Costs (cost to date): budget, spent, remaining. */}
         {headerExpanded && activeTab === "costs" && canViewActuals && !summaryOnly && (
           <div
-            className="px-3 pb-2.5 pt-1.5 flex flex-col gap-2 text-[11px] bg-[hsl(var(--bp-subtle))] border-t border-border"
+            className="px-3 pb-2.5 pt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] bg-[hsl(var(--bp-subtle))] border-t border-border"
             data-testid="header-detail-costs"
+          >
+            <span className="w-16 flex-shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
+              Cost
+              <span className="block normal-case font-normal">ex GST</span>
+            </span>
+            <HeaderSum
+              parts={[
+                { label: "Original budget", value: formatCurrency(costTotals.originalBudgetCents), testid: "stat-budget-original" },
+                { op: "+", label: "Variations", value: formatCurrency(costTotals.variationsCents), testid: "stat-budget-variations" },
+                { op: "=", label: "Revised budget", value: formatCurrency(costTotals.revisedBudgetCents), strong: true, testid: "stat-budget" },
+              ]}
+            />
+            <span className="text-muted-foreground">·</span>
+            <HeaderSum
+              parts={[
+                {
+                  label: "Spent",
+                  value: formatCurrency(costTotals.spentCents),
+                  note: `Bills ${formatCurrency(costTotals.billsCents)} · Labour ${formatCurrency(costTotals.labourCents)}`,
+                  testid: "stat-spent",
+                },
+                {
+                  op: "·",
+                  label: "Remaining",
+                  value: formatCurrency(toDateRemainingCents),
+                  color: getVarianceColor(toDateRemainingCents),
+                  strong: true,
+                  testid: "stat-remaining",
+                },
+              ]}
+            />
+          </div>
+        )}
+
+        {/* EXPANDED DETAIL — Forecast. Three lines, each a sum that adds up. */}
+        {headerExpanded && activeTab === "forecast" && canViewActuals && !summaryOnly && (
+          <div
+            className="px-3 pb-2.5 pt-1.5 flex flex-col gap-2 text-[11px] bg-[hsl(var(--bp-subtle))] border-t border-border"
+            data-testid="header-detail-forecast"
           >
             {/* Contract — the client's price, ex GST */}
             <div className="flex items-center gap-x-3 gap-y-1 flex-wrap" data-testid="band-contract">
@@ -1385,14 +1613,13 @@ export default function BudgetPage() {
                     note: `Bills ${formatCurrency(costTotals.billsCents)} · Labour ${formatCurrency(costTotals.labourCents)}`,
                     testid: "stat-spent",
                   },
-                  { op: "·", label: "Committed", value: formatCurrency(costTotals.committedCents), testid: "stat-committed" },
+                  { op: "+", label: "Committed", value: formatCurrency(costTotals.committedCents), testid: "stat-committed" },
                   {
-                    op: "·",
-                    label: "Remaining",
-                    value: formatCurrency(costTotals.remainingCents),
-                    color: getVarianceColor(costTotals.remainingCents),
+                    op: "→",
+                    label: "Forecast cost",
+                    value: formatCurrency(costTotals.forecastFinalCents),
                     strong: true,
-                    testid: "stat-remaining",
+                    testid: "stat-forecast-cost",
                   },
                 ]}
               />
@@ -1419,7 +1646,7 @@ export default function BudgetPage() {
               <div
                 className="flex items-center gap-1.5"
                 data-testid="margin-forecast"
-                title="Revised contract less forecast final cost. Each cost code is forecast at the larger of its budget and spent + committed."
+                title="Revised contract less forecast final cost. Each cost code is forecast at the larger of its budget and spent + committed — or, once ticked Complete, at what it actually cost."
               >
                 <span className="text-muted-foreground">Forecast</span>
                 <span className={cn("font-semibold tabular-nums", contractKnown ? getVarianceColor(forecastMarginCents) : "text-muted-foreground")}>
@@ -1598,11 +1825,10 @@ export default function BudgetPage() {
                         { label: "Bills", value: formatCurrency(costTotals.billsCents) },
                         { label: "Labour", value: formatCurrency(costTotals.labourCents) },
                         { label: "Spent", value: formatCurrency(costTotals.spentCents) },
-                        { label: "Committed", value: formatCurrency(costTotals.committedCents) },
                         {
                           label: "Remaining",
-                          value: formatCurrency(costTotals.remainingCents),
-                          color: getVarianceColor(costTotals.remainingCents),
+                          value: formatCurrency(toDateRemainingCents),
+                          color: getVarianceColor(toDateRemainingCents),
                         },
                       ]}
                     />
@@ -1612,6 +1838,149 @@ export default function BudgetPage() {
               </CardContent>
             </Card>
           </>
+        )}
+
+        {activeTab === "forecast" && canViewActuals && !summaryOnly && (
+          <Card className="flex flex-col h-full" data-testid="card-forecast">
+            <CardHeader className="py-1.5 px-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 min-w-0">
+                  <CardTitle className="text-sm">Forecast by Cost Code</CardTitle>
+                  {/* Reviewed stamp: when someone last checked this forecast,
+                      and how far the margin has moved since. */}
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 h-5 px-2 rounded-md text-[10px] font-medium",
+                      reviewDue
+                        ? "bg-[hsl(var(--status-warning-bg))] text-[hsl(var(--status-warning-fg))]"
+                        : "bg-[hsl(var(--status-success-bg))] text-[hsl(var(--status-success-fg))]",
+                    )}
+                    title={lastReview?.note ?? undefined}
+                    data-testid="chip-forecast-reviewed"
+                  >
+                    <ClipboardCheck className="w-3 h-3" />
+                    {lastReview
+                      ? `Reviewed ${reviewAgeDays === 0 ? "today" : `${formatDistanceToNowStrict(new Date(lastReview.reviewedAt))} ago`}${lastReview.reviewedByName ? ` by ${lastReview.reviewedByName}` : ""}`
+                      : "Never reviewed"}
+                  </span>
+                  {marginMovedCents !== null && marginMovedCents !== 0 && (
+                    <span
+                      className={cn("text-[10px] font-medium tabular-nums", getVarianceColor(marginMovedCents))}
+                      data-testid="text-margin-moved"
+                    >
+                      margin {marginMovedCents > 0 ? "+" : "−"}{formatCurrency(Math.abs(marginMovedCents))} since
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1.5 text-xs"
+                    onClick={() => reviewMutation.mutate()}
+                    disabled={reviewMutation.isPending}
+                    title="Record that this forecast has been checked and is right as of now"
+                    data-testid="button-mark-reviewed"
+                  >
+                    <ClipboardCheck className="h-3.5 w-3.5" />
+                    {reviewMutation.isPending ? "Saving…" : "Mark reviewed"}
+                  </Button>
+                  {allCategoryKeys.length > 0 && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={toggleCollapseAll}
+                      className="h-7 w-7"
+                      title={allCollapsed ? "Expand all" : "Collapse all"}
+                      aria-label={allCollapsed ? "Expand all" : "Collapse all"}
+                      data-testid="button-forecast-collapse-all"
+                    >
+                      {allCollapsed ? <ChevronsUpDown className="h-3.5 w-3.5" /> : <ChevronsDownUp className="h-3.5 w-3.5" />}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            {doubleCounts.length > 0 && (
+              <div
+                className="mx-3 mb-2 flex items-start gap-2 rounded-md border p-2.5 text-xs"
+                style={{ backgroundColor: "hsl(var(--amber-light))", borderColor: "hsl(var(--amber))" }}
+                data-testid="banner-possible-double-count"
+              >
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: "hsl(var(--amber))" }} />
+                <div>
+                  <p className="font-medium">Possibly counted twice</p>
+                  {doubleCounts.map((d) => (
+                    <p key={d.billId} className="text-muted-foreground mt-0.5">
+                      <Link href={`/bills/${d.billId}`} className="underline underline-offset-2 text-foreground">{d.billNumber}</Link>
+                      {" "}({formatCurrency(d.billTotalIncCents)} inc GST) isn't matched to a PO, and {d.poLabel} has exactly that left to bill.
+                      It counts as spent and again as committed. Match the bill to the PO to fix it.
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+            <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+              {costLoading ? (
+                <div className="p-3 space-y-2">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : costItems.length === 0 ? (
+                <EmptyState
+                  icon={AlertCircle}
+                  title="No forecast available"
+                  description="The forecast starts from the Contract estimate and adds bills, timesheets and open purchase orders as the job runs."
+                  variant="inline"
+                  className="py-8"
+                />
+              ) : (
+                <>
+                  <div className="flex-1 min-h-0">
+                    <DataTable
+                      data={costRows}
+                      columns={forecastColumns}
+                      headerVariant="plain"
+                      storageKey="budget-forecast-v1"
+                      rowKey={(row) => row.id}
+                      onRowClick={(row) => {
+                        if (row.kind === "category") {
+                          setCollapsedCategories((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(row.groupKey)) next.delete(row.groupKey);
+                            else next.add(row.groupKey);
+                            return next;
+                          });
+                        }
+                      }}
+                      rowStyle={(row) =>
+                        row.kind === "category"
+                          ? financialRowBgStyle(rowTints.category)
+                          : financialRowBgStyle(row.zebra ? rowTints.zebra : null)
+                      }
+                    />
+                  </div>
+                  <FinancialTotalsBar
+                    segments={[
+                      { label: "Budget", value: formatCurrency(costTotals.revisedBudgetCents) },
+                      { label: "Spent", value: formatCurrency(costTotals.spentCents) },
+                      { label: "Committed", value: formatCurrency(costTotals.committedCents) },
+                      { label: "Forecast cost", value: formatCurrency(costTotals.forecastFinalCents) },
+                      {
+                        label: "Over / under",
+                        value: formatCurrency(costTotals.revisedBudgetCents - costTotals.forecastFinalCents),
+                        color: getVarianceColor(costTotals.revisedBudgetCents - costTotals.forecastFinalCents),
+                      },
+                    ]}
+                  />
+                  <p className="px-3 py-1.5 text-[10px] text-muted-foreground border-t border-border">
+                    Each cost code is forecast at its budget until it costs more than that. Tick <span className="font-medium">Complete</span> once a code is finished and it is forecast at what it actually cost, so any saving counts.
+                  </p>
+                </>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         {activeTab === "hours" && canViewLabour && (
