@@ -9,11 +9,14 @@
 import assert from "node:assert";
 import {
   allocateLabourCents,
+  budgetTone,
   computeProjectCost,
+  summariseProjectCost,
   UNCATEGORISED_KEY,
   VARIATIONS_KEY,
   variationRowKeyResolver,
   type ProjectCostInputs,
+  type ProjectCostRow,
   type ProjectCostTotals,
 } from "@shared/projectCost";
 
@@ -254,6 +257,49 @@ check("$0 timesheets (subcontractors) add nothing — no flag check needed", () 
     workItemCostCode: new Map(),
   });
   assert.deepStrictEqual(out, []);
+});
+
+// ── Summary Only ────────────────────────────────────────────────────────────
+function summaryRow(over: Partial<ProjectCostRow>): ProjectCostRow {
+  return {
+    key: "k", kind: "costCode", costCodeId: "k", label: "L", categoryId: null, categoryLabel: "",
+    originalBudgetCents: 0, variationsCents: 0, revisedBudgetCents: 0, billsCents: 0, labourCents: 0,
+    spentCents: 0, committedCents: 0, remainingCents: 0, forecastFinalCents: 0, ...over,
+  };
+}
+
+check("budget tone bands: <95 under, <100 near, ≤105 at, >105 over; no budget is unbudgeted", () => {
+  assert.strictEqual(budgetTone(10000, 9499), "under");
+  assert.strictEqual(budgetTone(10000, 9500), "near");
+  assert.strictEqual(budgetTone(10000, 10000), "at");
+  assert.strictEqual(budgetTone(10000, 10500), "at");
+  assert.strictEqual(budgetTone(10000, 10501), "over");
+  assert.strictEqual(budgetTone(0, 1), "unbudgeted");
+  assert.strictEqual(budgetTone(0, 0), "neutral");
+});
+
+check("summary only: % used by category (spent + committed), Other last, no dollar figures", () => {
+  const rows = [
+    summaryRow({ key: "a", categoryId: "c1", categoryLabel: "1 - Prelims", revisedBudgetCents: 10000, spentCents: 4000, committedCents: 1000 }),
+    summaryRow({ key: "b", categoryId: "c1", categoryLabel: "1 - Prelims", revisedBudgetCents: 10000, spentCents: 5000 }),
+    summaryRow({ key: "u", categoryId: null, revisedBudgetCents: 0, spentCents: 700 }),
+    summaryRow({ key: "c", categoryId: "c2", categoryLabel: "2 - Structure", revisedBudgetCents: 20000, spentCents: 22000 }),
+  ];
+  const totals = {
+    originalBudgetCents: 40000, variationsCents: 0, revisedBudgetCents: 40000, billsCents: 0, labourCents: 0,
+    spentCents: 31700, committedCents: 1000, remainingCents: 0, forecastFinalCents: 0,
+  };
+  const out = summariseProjectCost({ rows, totals });
+  assert.deepStrictEqual(out.categories, [
+    { key: "c1", label: "1 - Prelims", usedPct: 50, tone: "under" },
+    { key: "c2", label: "2 - Structure", usedPct: 110, tone: "over" },
+    { key: "other", label: "Other", usedPct: null, tone: "unbudgeted" },
+  ]);
+  assert.deepStrictEqual(out.total, { usedPct: 82, tone: "under" });
+  // Nothing in the summary is money: only keys, labels, whole percents, tones.
+  const json = JSON.stringify(out);
+  assert.ok(!/Cents/.test(json), "summary must not carry any cents field");
+  assert.ok(!json.includes("31700") && !json.includes("40000"), "summary must not carry totals");
 });
 
 console.log(`\n${passed} passed`);

@@ -22,13 +22,14 @@ import { RefreshCw, DollarSign, AlertCircle, Clock, ChevronDown, ChevronRight, C
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { CostCategory, CostCode, LabourHoursBudget, Project } from "@shared/schema";
 import type { ContractMetrics } from "@shared/projectMetrics";
-import type { ProjectCostRow, ProjectCostTotals } from "@shared/projectCost";
+import type { ProjectCostRow, ProjectCostTotals, ProjectCostSummaryOnly, BudgetTone as SharedBudgetTone } from "@shared/projectCost";
+import { budgetTone as sharedBudgetTone } from "@shared/projectCost";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
-import { usePermission } from "@/hooks/use-permission";
+import { usePermission, useBudgetAccess } from "@/hooks/use-permission";
 import { useAuth } from "@/hooks/use-auth";
 
-type BudgetTone = "under" | "near" | "at" | "over" | "unbudgeted" | "neutral";
+type BudgetTone = SharedBudgetTone;
 
 type HoursSort = { id: string; dir: "asc" | "desc" } | null;
 
@@ -122,7 +123,12 @@ export default function BudgetPage() {
   const pageTitle = usePageTitle({ pageName: "Budget" });
   const { isLoading: authLoading } = useAuth();
   const canViewLabour = usePermission("financial.budget_labour", "view");
-  const canViewActuals = usePermission("financial.budget_actuals", "view");
+  // A role with "Summary Only" and no "View" on the cost budget: the server
+  // answers cost-summary with % used and status per category, and refuses
+  // every dollar route. The page follows what the server sent
+  // (costSummary.access), so the rule is enforced there, not here.
+  const budgetAccess = useBudgetAccess();
+  const canViewActuals = budgetAccess !== "none";
   const isDark = useIsDark();
 
   const [activeTab, setActiveTab] = useState<"costs" | "hours">("costs");
@@ -175,15 +181,21 @@ export default function BudgetPage() {
   // The project's cost, row by row, from the one server calculation
   // (shared/projectCost.ts). Every cost figure on this page comes from here, and
   // the totals are the sum of the rows. Ex GST cents, cost only.
-  const { data: costSummary, isLoading: costLoading } = useQuery<{
-    rows: ProjectCostRow[];
-    totals: ProjectCostTotals;
-    billsWithoutLines: { billId: string; cents: number }[];
-  }>({
+  const { data: costSummary, isLoading: costLoading } = useQuery<
+    | {
+        access: "full";
+        rows: ProjectCostRow[];
+        totals: ProjectCostTotals;
+        billsWithoutLines: { billId: string; cents: number }[];
+      }
+    | ProjectCostSummaryOnly
+  >({
     queryKey: ["/api/projects", projectId, "cost-summary"],
     queryFn: () => apiRequest(`/api/projects/${projectId}/cost-summary`, "GET"),
     enabled: !!projectId && canViewActuals,
   });
+  const summaryOnly = costSummary?.access === "summary";
+  const fullCost = costSummary && costSummary.access !== "summary" ? costSummary : undefined;
 
   const { data: labourHours = [], isLoading: labourHoursLoading } = useQuery<LabourHoursBudget[]>({
     queryKey: [`/api/projects/${projectId}/labour-hours-budget`],
@@ -203,7 +215,8 @@ export default function BudgetPage() {
   const { data: contractMetrics } = useQuery<ContractMetrics>({
     queryKey: ["/api/projects", projectId, "contract-metrics"],
     queryFn: () => apiRequest(`/api/projects/${projectId}/contract-metrics`, "GET"),
-    enabled: !!projectId && canViewActuals,
+    // The contract price is only shown beside the margin, which Summary Only hides.
+    enabled: !!projectId && canViewActuals && budgetAccess === "full" && !summaryOnly,
   });
 
   // Drill-down: which cost code's Bills are being inspected (null = closed).
@@ -317,14 +330,8 @@ export default function BudgetPage() {
   // Spend against no budget is its own state, not "over": most projects carry
   // unbudgeted cost codes, and colouring them all red makes the page read as
   // one solid wall of failure and stops meaning anything.
-  const budgetTone = (budgeted: number, used: number): BudgetTone => {
-    if (budgeted <= 0) return used > 0 ? "unbudgeted" : "neutral";
-    const percent = (used / budgeted) * 100;
-    if (percent < 95) return "under";
-    if (percent < 100) return "near";
-    if (percent <= 105) return "at";
-    return "over";
-  };
+  // Banding lives in shared/projectCost.ts so the Summary Only view agrees.
+  const budgetTone = sharedBudgetTone;
 
   const TONE_CLASS: Record<BudgetTone, string> = {
     under: "bg-[hsl(var(--status-success-bg))] text-[hsl(var(--status-success-fg))]",
@@ -438,8 +445,8 @@ export default function BudgetPage() {
   // Rows come straight from the server (one per cost code, plus category-only,
   // uncoded-variation and Uncategorized rows), already labelled. The page only
   // groups them — by category ID, never by a label it builds itself.
-  const costItems = costSummary?.rows ?? [];
-  const costTotals: ProjectCostTotals = costSummary?.totals ?? {
+  const costItems = fullCost?.rows ?? [];
+  const costTotals: ProjectCostTotals = fullCost?.totals ?? {
     originalBudgetCents: 0,
     variationsCents: 0,
     revisedBudgetCents: 0,
@@ -1200,7 +1207,9 @@ export default function BudgetPage() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-auto p-0">
-                {activeTab === "costs" ? (
+                {activeTab === "costs" && summaryOnly ? (
+                  <div className="p-3 text-xs text-muted-foreground">No columns in the budget summary.</div>
+                ) : activeTab === "costs" ? (
                   <DataTableColumnPicker
                     storageKey="budget-costs-v3"
                     columns={[
@@ -1246,7 +1255,15 @@ export default function BudgetPage() {
           aria-expanded={headerExpanded}
           title={headerExpanded ? "Hide detail" : "Show detail"}
         >
-          {activeTab === "costs" && canViewActuals && (
+          {activeTab === "costs" && summaryOnly && costSummary?.access === "summary" && (
+            <div className="flex flex-col leading-none">
+              <span className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Budget used</span>
+              <span className="text-3xl font-bold tabular-nums leading-none text-foreground" data-testid="header-summary-used">
+                {costSummary.total.usedPct === null ? "—" : `${costSummary.total.usedPct}%`}
+              </span>
+            </div>
+          )}
+          {activeTab === "costs" && canViewActuals && !summaryOnly && (
             <>
               <div className="flex flex-col leading-none">
                 <span className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Forecast margin</span>
@@ -1323,7 +1340,7 @@ export default function BudgetPage() {
         </button>
 
         {/* EXPANDED DETAIL — Costs. Three lines, each a sum that adds up. */}
-        {headerExpanded && activeTab === "costs" && canViewActuals && (
+        {headerExpanded && activeTab === "costs" && canViewActuals && !summaryOnly && (
           <div
             className="px-3 pb-2.5 pt-1.5 flex flex-col gap-2 text-[11px] bg-[hsl(var(--bp-subtle))] border-t border-border"
             data-testid="header-detail-costs"
@@ -1444,7 +1461,69 @@ export default function BudgetPage() {
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-hidden p-2">
-        {activeTab === "costs" && canViewActuals && (
+        {activeTab === "costs" && costSummary?.access === "summary" && (
+          <Card className="flex flex-col h-full" data-testid="card-budget-summary">
+            <CardHeader className="py-1.5 px-3">
+              <CardTitle className="text-sm">Budget Summary</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                How far through its budget each category is, counting spent and committed cost. Your role shows the summary only.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 min-h-0 overflow-y-auto">
+              {costSummary.categories.length === 0 ? (
+                <EmptyState
+                  icon={AlertCircle}
+                  title="No budget breakdown available"
+                  description="The budget is built automatically from the Contract estimate, approved variations, bills and timesheets."
+                  variant="inline"
+                  className="py-8"
+                />
+              ) : (
+                <div className="divide-y divide-border">
+                  {costSummary.categories.map((c) => (
+                    <div key={c.key} className="flex items-center gap-3 px-3 py-2" data-testid={`summary-row-${c.key}`}>
+                      <span className="text-sm flex-1 min-w-0 truncate">{c.label}</span>
+                      <Progress
+                        value={Math.min(c.usedPct ?? 0, 100)}
+                        className={cn("h-1.5 w-32 flex-shrink-0", TONE_BAR[c.tone])}
+                      />
+                      <span className="w-12 text-right text-xs tabular-nums text-muted-foreground">
+                        {c.usedPct === null ? "—" : `${c.usedPct}%`}
+                      </span>
+                      <span
+                        className={cn(
+                          "inline-flex items-center justify-center w-[68px] h-5 rounded-md text-[10px] font-medium flex-shrink-0",
+                          TONE_CLASS[c.tone],
+                        )}
+                      >
+                        {TONE_LABEL[c.tone]}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-3 px-3 py-2 font-semibold" data-testid="summary-row-total">
+                    <span className="text-sm flex-1">Whole project</span>
+                    <Progress
+                      value={Math.min(costSummary.total.usedPct ?? 0, 100)}
+                      className={cn("h-1.5 w-32 flex-shrink-0", TONE_BAR[costSummary.total.tone])}
+                    />
+                    <span className="w-12 text-right text-xs tabular-nums">
+                      {costSummary.total.usedPct === null ? "—" : `${costSummary.total.usedPct}%`}
+                    </span>
+                    <span
+                      className={cn(
+                        "inline-flex items-center justify-center w-[68px] h-5 rounded-md text-[10px] font-medium flex-shrink-0",
+                        TONE_CLASS[costSummary.total.tone],
+                      )}
+                    >
+                      {TONE_LABEL[costSummary.total.tone]}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+        {activeTab === "costs" && canViewActuals && !summaryOnly && (
           <>
             {/* Cost Code Breakdown Table */}
             <Card className="flex flex-col h-full">

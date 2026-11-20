@@ -183,8 +183,6 @@ import {
   insertChecklistInstanceSchema,
   insertChecklistInstanceGroupSchema,
   insertChecklistInstanceItemSchema,
-  updateBudgetSchema,
-  updateBudgetLineItemSchema,
   insertScheduleSchema,
   updateScheduleSchema,
   insertScheduleItemSchema,
@@ -375,7 +373,7 @@ import { PasswordUtils } from "./utils/auth";
 import { followedDates, invoiceDateChanged, itemClaimDate, shiftedDueDate } from "@shared/invoiceScheduleDates";
 import { syncInvoice, syncInvoicesForItemsQuietly } from "./services/invoiceScheduleSync";
 import { PO_MOUNT, PO_MOUNTS, PO_SERVER_MANAGED_FIELDS, decidePOAccess, narrowPOList, poActionFor } from "./poAccessPolicy";
-import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requirePlatformStaff, toSafeUser, toSafeCompany, isAdminRole, getSessionCompanyId } from "./middleware/auth";
+import { requireAuth, requireAdmin, requireTeamMember, requireTeamMemberOrClient, requirePermission, requireTeamPermission, userHasPermission, requireBudgetAccess, getBudgetAccess, requirePlatformStaff, toSafeUser, toSafeCompany, isAdminRole, getSessionCompanyId } from "./middleware/auth";
 import { clientAccessGate, getClientUser } from "./middleware/clientAccess";
 import { isPublicProposalShareRoute } from "./middleware/publicProposalRoutes";
 import { requireActivePlan } from "./middleware/plan";
@@ -6438,7 +6436,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get(
     "/api/projects/:id/actual-costs",
     requireAuth,
-    requirePermission("financial.budget_actuals", "view"),
+    requireBudgetAccess("full"),
     async (req, res) => {
       try {
         const projectId = req.params.id;
@@ -6489,7 +6487,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get(
     "/api/projects/:id/committed-costs",
     requireAuth,
-    requirePermission("financial.budget_actuals", "view"),
+    requireBudgetAccess("full"),
     async (req, res) => {
       try {
         const projectId = req.params.id;
@@ -8231,8 +8229,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     (id) => storage.getMessage(id), (m) => m?.channelId, getOwnedChannel, "Message not found");
   const getOwnedBudget = makeOwnedViaParent(
     loadBudget, (b) => b?.projectId, projectGuard, "Budget not found");
-  const getOwnedBudgetLineItem = makeOwnedViaParent(
-    (id) => storage.getBudgetLineItem(id), (i) => i?.budgetId, getOwnedBudget, "Budget line item not found");
   const getOwnedSchedule: any = async (req: any, res: any, id: string, notFound = "Schedule not found") => {
     if (!id) { res.status(404).json({ error: notFound }); return null; }
     const schedule = await storage.getScheduleById(id);
@@ -15256,7 +15252,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const [canViewInvoices, canViewBudget, canViewBills] = await Promise.all([
         storage.checkUserPermission(user.id, "dashboard.financial", "view").catch(() => false),
-        storage.checkUserPermission(user.id, "financial.budget_actuals", "view").catch(() => false),
+        // Summary Only users see no budget dollars, so they don't count here.
+        getBudgetAccess(user).then((a) => a === "full").catch(() => false),
         storage.checkUserPermission(user.id, "financial.bills", "view").catch(() => false),
       ]);
       const hasFinancialAccess = canViewInvoices || canViewBudget || canViewBills;
@@ -15615,7 +15612,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ---- Composite endpoints -------------------------------------------
 
-  app.get("/api/kpis/budget-variance", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.get("/api/kpis/budget-variance", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -15709,7 +15706,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/kpis/avg-margin", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.get("/api/kpis/avg-margin", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -16224,7 +16221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/business/project-profitability", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.get("/api/business/project-profitability", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       const user = req.user as any;
       const companyId = user?.companyId;
@@ -23949,7 +23946,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─────────── Budget actual-cost drill-down (bills behind a row) ───────────
   // Returns the bills (with matching line items) that make up a budget row's
   // Actual figure for a given cost code. Credit notes subtract. Ex-GST cents.
-  app.get("/api/projects/:projectId/budget-actuals", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.get("/api/projects/:projectId/budget-actuals", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       const { projectId } = req.params;
       const costCodeId = (req.query.costCodeId as string) || null;
@@ -24025,7 +24022,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Labour cost breakdown by cost code (ex-GST cents) — powers the Budget cost
   // table's Labour column. Split-aware; its total reconciles with the labour
   // figure in the gross-margin bar (actual-costs.timesheetCostCents).
-  app.get("/api/projects/:projectId/labour-costs", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.get("/api/projects/:projectId/labour-costs", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       const { projectId } = req.params;
       const companyId = (req as any).user?.companyId;
@@ -24044,7 +24041,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Labour drill-down — the individual timesheets contributing to a cost code's
   // labour spend. Pass ?costCodeId=; omit it for the uncategorized bucket.
-  app.get("/api/projects/:projectId/labour-actuals", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.get("/api/projects/:projectId/labour-actuals", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       const { projectId } = req.params;
       const costCodeId = (req.query.costCodeId as string) || null;
@@ -35782,7 +35779,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Budget routes
-  app.get("/api/projects/:projectId/budget", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.get("/api/projects/:projectId/budget", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       // Computed live from the one cost calculation (shared/projectCost.ts) so
@@ -35807,7 +35804,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // The project's cost, row by row (cost code, category-only lines, uncoded
   // variations, uncategorised) with totals that are the sum of the rows.
   // Ex GST cents, cost only. See shared/projectCost.ts.
-  app.get("/api/projects/:projectId/cost-summary", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  //
+  // A role with "Summary Only" gets { access: "summary", categories, total }
+  // instead: % used and status per category, no dollar figures. The full
+  // figures are reduced HERE so they never reach that user's browser.
+  app.get("/api/projects/:projectId/cost-summary", requireAuth, requireBudgetAccess("summary"), async (req, res) => {
     try {
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const { loadProjectCost, saveProjectCostSnapshot } = await import("./services/projectCostService");
@@ -35817,7 +35818,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // when something changed. Best effort — the page still gets its figures.
       await saveProjectCostSnapshot(cost, { onlyIfChanged: true }).catch((e) =>
         console.warn("[cost-summary] snapshot save failed:", e?.message || e));
-      res.json({ projectId: cost.projectId, rows: cost.rows, totals: cost.totals, billsWithoutLines: cost.billsWithoutLines });
+      if ((req as any).budgetAccess !== "full") {
+        const { summariseProjectCost } = await import("@shared/projectCost");
+        return res.json({ projectId: cost.projectId, ...summariseProjectCost(cost) });
+      }
+      res.json({ access: "full", projectId: cost.projectId, rows: cost.rows, totals: cost.totals, billsWithoutLines: cost.billsWithoutLines });
     } catch (error: any) {
       console.error("[GET /api/projects/:projectId/cost-summary] Error:", error);
       res.status(500).json({ error: "Failed to compute project cost" });
@@ -35827,7 +35832,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Variations drill-down: the approved variation lines behind one cost row's
   // Variations figure. ?key= is the row key from cost-summary (a cost code id,
   // or "variations" for lines with no recognised cost code). Builder cost, ex GST cents.
-  app.get("/api/projects/:projectId/variation-costs", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.get("/api/projects/:projectId/variation-costs", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const key = typeof req.query.key === "string" ? req.query.key : "";
@@ -35842,7 +35847,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/projects/:projectId/budget/calculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.post("/api/projects/:projectId/budget/calculate", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       // Ownership: requirePermission is a role gate, not a tenant gate.
       // calculateBudget CREATES or OVERWRITES the budget for the project.
@@ -35857,50 +35862,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/budgets/:id", async (req, res) => {
-    try {
-      // Ownership: budget → project → company. This route had no middleware
-      // at all beyond the global auth/requireCompany mount.
-      if (!(await getOwnedBudget(req, res, req.params.id))) return;
-      const validationResult = updateBudgetSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-      
-      const budget = await storage.updateBudget(req.params.id, validationResult.data);
-      if (!budget) {
-        return res.status(404).json({ error: "Budget not found" });
-      }
-      res.json(budget);
-    } catch (error: any) {
-      res.status(500).json({ 
-        error: "Failed to update budget",
-        details: error.message 
-      });
-    }
-  });
-
-  app.delete("/api/budgets/:id", async (req, res) => {
-    try {
-      if (!(await getOwnedBudget(req, res, req.params.id))) return;
-      const success = await storage.deleteBudget(req.params.id);
-      if (!success) {
-        return res.status(404).json({ error: "Budget not found" });
-      }
-      res.status(204).send();
-    } catch (error: any) {
-      res.status(500).json({ 
-        error: "Failed to delete budget",
-        details: error.message 
-      });
-    }
-  });
+  // The budget is computed from the estimate, variations, bills and labour
+  // (shared/projectCost.ts) and stored only as a snapshot, so there are no
+  // routes to edit or delete it by hand: an edit would be overwritten on the
+  // next read. The old PATCH/DELETE /api/budgets/:id and
+  // PATCH /api/budget-line-items/:id had no callers and no permission gate.
 
   // Budget Line Items routes
-  app.get("/api/budgets/:budgetId/line-items", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.get("/api/budgets/:budgetId/line-items", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       const [budgetRow] = await db.select({ projectId: schema.budgets.projectId })
         .from(schema.budgets).where(eq(schema.budgets.id, req.params.budgetId)).limit(1);
@@ -35916,7 +35885,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/budgets/:budgetId/line-items/recalculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+  app.post("/api/budgets/:budgetId/line-items/recalculate", requireAuth, requireBudgetAccess("full"), async (req, res) => {
     try {
       const owned = await getOwnedBudget(req, res, req.params.budgetId);
       if (!owned) return;
@@ -35926,31 +35895,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to recalculate budget line items",
-        details: error.message 
-      });
-    }
-  });
-
-  app.patch("/api/budget-line-items/:id", async (req, res) => {
-    try {
-      // Ownership: line item → budget → project → company.
-      if (!(await getOwnedBudgetLineItem(req, res, req.params.id))) return;
-      const validationResult = updateBudgetLineItemSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
-        });
-      }
-      
-      const lineItem = await storage.updateBudgetLineItem(req.params.id, validationResult.data);
-      if (!lineItem) {
-        return res.status(404).json({ error: "Budget line item not found" });
-      }
-      res.json(lineItem);
-    } catch (error: any) {
-      res.status(500).json({ 
-        error: "Failed to update budget line item",
         details: error.message 
       });
     }
@@ -53155,7 +53099,7 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
 
     // The job's side: what vehicles have charged it, for the Budget page's
     // Internal column. Same permission as the job's actual costs.
-    app.get("/api/projects/:id/internal-costs", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+    app.get("/api/projects/:id/internal-costs", requireAuth, requireBudgetAccess("full"), async (req, res) => {
       try {
         const companyId = sessionCompanyId(req);
         if (!companyId) return res.status(401).json({ error: "Unauthorized" });
