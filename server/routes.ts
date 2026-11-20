@@ -35810,13 +35810,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/projects/:projectId/cost-summary", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
-      const { loadProjectCost } = await import("./services/projectCostService");
+      const { loadProjectCost, saveProjectCostSnapshot } = await import("./services/projectCostService");
       const cost = await loadProjectCost(req.params.projectId, { includeCommitted: true });
       if (!cost) return res.status(404).json({ error: "Project not found" });
+      // Keep the stored snapshot (cash flow forecast, KPIs) in step; writes only
+      // when something changed. Best effort — the page still gets its figures.
+      await saveProjectCostSnapshot(cost, { onlyIfChanged: true }).catch((e) =>
+        console.warn("[cost-summary] snapshot save failed:", e?.message || e));
       res.json({ projectId: cost.projectId, rows: cost.rows, totals: cost.totals, billsWithoutLines: cost.billsWithoutLines });
     } catch (error: any) {
       console.error("[GET /api/projects/:projectId/cost-summary] Error:", error);
       res.status(500).json({ error: "Failed to compute project cost" });
+    }
+  });
+
+  // Variations drill-down: the approved variation lines behind one cost row's
+  // Variations figure. ?key= is the row key from cost-summary (a cost code id,
+  // or "variations" for lines with no recognised cost code). Builder cost, ex GST cents.
+  app.get("/api/projects/:projectId/variation-costs", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const key = typeof req.query.key === "string" ? req.query.key : "";
+      if (!key) return res.status(400).json({ error: "key is required" });
+      const companyId = (req as any).user?.companyId as string;
+      const { loadVariationLinesForRow } = await import("./services/projectCostService");
+      const result = await loadVariationLinesForRow(req.params.projectId, companyId, key);
+      res.json({ projectId: req.params.projectId, key, ...result });
+    } catch (error: any) {
+      console.error("[GET /api/projects/:projectId/variation-costs] Error:", error);
+      res.status(500).json({ error: "Failed to fetch variation costs" });
     }
   });
 
