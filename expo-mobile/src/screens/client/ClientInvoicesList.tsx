@@ -10,6 +10,7 @@ import { useTheme, fontSize, fontWeight, radius } from '../../theme';
 import { formatDay, groupInvoices, invoiceStatus, outstandingBalance, type ClientInvoice } from '../../lib/clientPortal';
 import { PressableScale } from '../../components/ui/PressableScale';
 import { ClientEmpty, ClientLoading, ClientOfflineNote, ClientStatusPill } from '../../components/client/ClientUI';
+import { readableFrame } from '../../components/ui/ReadableColumn';
 
 /**
  * Progress claims the client has actually been sent — the server hides
@@ -58,7 +59,7 @@ export default function ClientInvoicesList() {
         sections={sections}
         keyExtractor={(i) => i.id}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, readableFrame]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
         ListHeaderComponent={
           invoices.length ? (

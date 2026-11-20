@@ -21,6 +21,9 @@ import { useTheme, fontSize, fontWeight, radius } from '../theme';
 import { haptic } from '../lib/haptics';
 import { PressableScale } from '../components/ui/PressableScale';
 import SpecRow from '../components/selections/SpecRow';
+import { TwoPane } from '../components/ui/TwoPane';
+import { useTwoPaneSelection } from '../lib/twoPane';
+import SelectionDetailScreen from './SelectionDetailScreen';
 import {
   getSelectionState,
   groupByCategory,
@@ -127,16 +130,21 @@ export default function SelectionsScreen({ navigation, route }: Props) {
     [selections],
   );
 
+  // Phone: a tap pushes SelectionDetail, as before. Duo unfolded: the item
+  // opens on the right and the spec list stays put on the left.
+  const { selectedId, open, isWide, paneProps } = useTwoPaneSelection({
+    navigation,
+    route,
+    detailRoute: 'SelectionDetail',
+    paramsFor: (id) => ({ selectionId: id, projectId, projectName }),
+  });
+
   const openSelection = useCallback(
     (selection: Selection) => {
       haptic.select();
-      navigation.navigate('SelectionDetail', {
-        selectionId: selection.id,
-        projectId,
-        projectName,
-      });
+      open(selection.id);
     },
-    [navigation, projectId, projectName],
+    [open],
   );
 
   const switchMode = (mode: GroupMode) => {
@@ -152,7 +160,7 @@ export default function SelectionsScreen({ navigation, route }: Props) {
     );
   }
 
-  return (
+  const list = (
     <View style={[styles.screen, { backgroundColor: theme.background }]}>
       <View
         style={[
@@ -238,7 +246,10 @@ export default function SelectionsScreen({ navigation, route }: Props) {
             </Text>
           </View>
         )}
-        renderItem={({ item }) => <SpecRow selection={item} onPress={openSelection} />}
+        extraData={isWide ? selectedId : null}
+        renderItem={({ item }) => (
+          <SpecRow selection={item} onPress={openSelection} selected={isWide && item.id === selectedId} />
+        )}
         SectionSeparatorComponent={() => <View style={styles.sectionGap} />}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
@@ -258,6 +269,29 @@ export default function SelectionsScreen({ navigation, route }: Props) {
         }
       />
     </View>
+  );
+
+  // Always rendered through TwoPane — on a phone it is just the list — so the
+  // list (scroll position, search text) stays mounted across fold/unfold.
+  // The detail is keyed by id so each item starts fresh (no comment draft or
+  // photo page carried over from the previous one).
+  return (
+    <TwoPane
+      {...paneProps}
+      list={list}
+      detail={
+        selectedId ? (
+          <SelectionDetailScreen
+            key={selectedId}
+            embedded
+            navigation={navigation}
+            route={{ key: `embedded-${selectedId}`, name: 'SelectionDetail', params: { selectionId: selectedId, projectId, projectName } }}
+          />
+        ) : null
+      }
+      emptyTitle="Select an item to see what's going in"
+      emptyIcon="albums-outline"
+    />
   );
 }
 

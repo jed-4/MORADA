@@ -15,9 +15,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme } from '../theme';
+import { useTheme, MAX_FONT_SCALE } from '../theme';
+import { goBackOrHome } from '../navigation/back';
 import { useAuth } from '../contexts/AuthContext';
 import { buildLabel } from '../lib/sentry';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { authenticate, getBiometricSupport, setAppLockEnabled, useAppLockEnabled, type BiometricSupport } from '../lib/appLock';
+import { haptic } from '../lib/haptics';
+import ArrivingOnSiteSetting from '../components/ArrivingOnSiteSetting';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -111,6 +116,22 @@ export default function SettingsScreen({ navigation }: Props) {
   const { deleteAccount } = useAuth();
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Face ID lock (per device — see lib/appLock.ts). Switching it ON asks for
+  // Face ID once, so nobody turns on a lock they can't open.
+  const appLockEnabled = useAppLockEnabled();
+  const [biometrics, setBiometrics] = useState<BiometricSupport | null>(null);
+  useEffect(() => {
+    getBiometricSupport().then(setBiometrics).catch(() => {});
+  }, []);
+  const toggleAppLock = useCallback(async (next: boolean) => {
+    haptic.select();
+    if (next) {
+      const ok = await authenticate(`Turn on ${biometrics?.label ?? 'Face ID'} for Morada`);
+      if (!ok) return;
+    }
+    await setAppLockEnabled(next);
+  }, [biometrics?.label]);
+
   // Two steps on purpose: deletion can't be undone. The server refuses the
   // only Owner of a company that still has a team, and we show its message.
   const confirmDeleteAccount = () => {
@@ -201,17 +222,17 @@ export default function SettingsScreen({ navigation }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
+        <TouchableOpacity onPress={() => goBackOrHome(navigation)} style={styles.backBtn} activeOpacity={0.7} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={24} color={colors.secondary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
         <View style={styles.backBtn} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, readableFrame]}>
         <View style={styles.sectionBlock}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Push notifications</Text>
-          <Text style={[styles.sectionSubtitle, { color: colors.secondary }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>Push notifications</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionSubtitle, { color: colors.secondary }]}>
             Choose which alerts can show up on your phone. Turning one off stops those banners — you'll still see them in the app.
           </Text>
 
@@ -226,8 +247,8 @@ export default function SettingsScreen({ navigation }: Props) {
                   <Ionicons name={group.icon} size={18} color={colors.accent} />
                 </View>
                 <View style={styles.itemText}>
-                  <Text style={[styles.itemLabel, { color: colors.text }]}>{group.label}</Text>
-                  <Text style={[styles.itemDescription, { color: colors.secondary }]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemLabel, { color: colors.text }]}>{group.label}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemDescription, { color: colors.secondary }]}>
                     {group.description}
                   </Text>
                 </View>
@@ -243,8 +264,44 @@ export default function SettingsScreen({ navigation }: Props) {
           })}
         </View>
 
+        {/* Arriving on site (#46): opt-in arrival alerts */}
+        <ArrivingOnSiteSetting />
+
         <View style={styles.sectionBlock}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>Security</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionSubtitle, { color: colors.secondary }]}>
+            Only on this phone. Morada asks when it opens, and when you come back after more than 5 minutes away.
+          </Text>
+          <View style={[styles.itemRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.itemIconWrap, { backgroundColor: colors.accent + '15' }]}>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.accent} />
+            </View>
+            <View style={styles.itemText}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemLabel, { color: colors.text }]}>
+                Require {biometrics?.label ?? 'Face ID'}
+              </Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemDescription, { color: colors.secondary }]}>
+                {biometrics && !biometrics.available
+                  ? biometrics.reason
+                  : "Your phone's passcode works too if it can't see you."}
+              </Text>
+            </View>
+            <Switch
+              value={!!appLockEnabled}
+              onValueChange={toggleAppLock}
+              // Can't switch it on without Face ID / Touch ID set up; can
+              // always switch it off.
+              disabled={!appLockEnabled && !biometrics?.available}
+              trackColor={{ false: colors.muted, true: colors.accent + '80' }}
+              thumbColor={appLockEnabled ? colors.accent : isDark ? '#94a3b8' : '#f4f3f4'}
+              style={styles.switchStyle}
+              accessibilityLabel={`Require ${biometrics?.label ?? 'Face ID'}`}
+            />
+          </View>
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
           <TouchableOpacity
             style={[styles.itemRow, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={confirmDeleteAccount}
@@ -256,8 +313,8 @@ export default function SettingsScreen({ navigation }: Props) {
               <Ionicons name="trash-outline" size={18} color={theme.statusDanger} />
             </View>
             <View style={styles.itemText}>
-              <Text style={[styles.itemLabel, { color: theme.statusDanger }]}>Delete account</Text>
-              <Text style={[styles.itemDescription, { color: colors.secondary }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemLabel, { color: theme.statusDanger }]}>Delete account</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemDescription, { color: colors.secondary }]}>
                 Removes your login and personal details. Work you recorded stays with your company.
               </Text>
             </View>
@@ -268,7 +325,7 @@ export default function SettingsScreen({ navigation }: Props) {
         {/* Build identity. Every build so far has reported version "1.0.2", so
             nothing on screen distinguished build 13 from build 16 — which made
             "is the new build actually running?" unanswerable from the device. */}
-        <Text style={[styles.buildInfo, { color: colors.secondary }]}>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.buildInfo, { color: colors.secondary }]}>
           Morada {buildLabel}
         </Text>
       </ScrollView>
@@ -303,8 +360,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   backBtn: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
+    marginLeft: -10,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   scroll: {
@@ -357,7 +416,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 16,
   },
+  // Full-size switch (was scaled to 0.85) — an easier target in gloves.
   switchStyle: {
-    transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }],
+    marginLeft: 8,
   },
 });

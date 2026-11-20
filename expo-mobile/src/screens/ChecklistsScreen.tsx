@@ -24,8 +24,12 @@ import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme, lightTheme } from '../theme';
+import { useTheme, lightTheme, MAX_FONT_SCALE } from '../theme';
+import { SwipeRow } from '../components/ui/SwipeRow';
 import { sheetFrame } from '../components/ui/Sheet';
+import { TwoPane } from '../components/ui/TwoPane';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { useLayout } from '../lib/useLayout';
 interface Project {
   id: string;
   name: string;
@@ -147,6 +151,9 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
   const [loadingTeam, setLoadingTeam] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const { user } = useAuth();
+  // Big screen (Duo unfolded): checklists on the left, the open checklist's
+  // items on the right. Phone: items expand inline under the card, as before.
+  const { isWide } = useLayout();
 
   const theme = useTheme();
 const colors = {
@@ -208,9 +215,17 @@ const colors = {
     setRefreshing(true);
     setItemsByInstance({});
     setLoadingItems({});
-    await Promise.all([fetchMeta(), fetchInstances()]);
+    // Reload the open checklist's items too — the cache was just cleared, and
+    // nothing else would refetch them until another card was tapped.
+    const openId = expandedId;
+    const reloadOpen = openId
+      ? apiFetch<ChecklistItem[]>(`/api/checklist-instances/${openId}/items`)
+          .then(items => setItemsByInstance(prev => ({ ...prev, [openId]: (items || []).sort(compareItems) })))
+          .catch(() => {})
+      : Promise.resolve();
+    await Promise.all([fetchMeta(), fetchInstances(), reloadOpen]);
     setRefreshing(false);
-  }, [fetchMeta, fetchInstances]);
+  }, [fetchMeta, fetchInstances, expandedId]);
 
   const fetchItems = useCallback(async (instanceId: string) => {
     if (itemsByInstance[instanceId]) return;
@@ -227,6 +242,9 @@ const colors = {
   }, [itemsByInstance]);
 
   const toggleExpand = (instanceId: string) => {
+    // Side by side, tapping the open checklist again keeps it open (there is
+    // nothing inline to collapse); on a phone it folds the card shut.
+    if (expandedId === instanceId && isWide) return;
     if (expandedId === instanceId) {
       setExpandedId(null);
     } else {
@@ -237,7 +255,14 @@ const colors = {
 
   const toggleItemStatus = (item: ChecklistItem) => {
     if (item.status === 'na') return;
-    const newStatus = item.status === 'completed' ? 'pending' : 'completed';
+    setItemStatus(item, item.status === 'completed' ? 'pending' : 'completed');
+  };
+
+  // N/A counts as done in completedCount (server: "na" counts as done).
+  const countsDone = (status: ChecklistItem['status']) => status === 'completed' || status === 'na';
+
+  const setItemStatus = (item: ChecklistItem, newStatus: ChecklistItem['status']) => {
+    if (newStatus === item.status) return;
     setItemsByInstance(prev => {
       const items = prev[item.instanceId] || [];
       return {
@@ -245,7 +270,7 @@ const colors = {
         [item.instanceId]: items.map(i => i.id === item.id ? { ...i, status: newStatus } : i),
       };
     });
-    const delta = newStatus === 'completed' ? 1 : -1;
+    const delta = (countsDone(newStatus) ? 1 : 0) - (countsDone(item.status) ? 1 : 0);
     setInstances(prev =>
       prev.map(inst =>
         inst.id === item.instanceId
@@ -486,19 +511,42 @@ const colors = {
     }
   };
 
+  // Swipe right: tick / untick. Swipe left: set N/A / clear N/A. Same calls
+  // (and the same offline queue) as the checkbox; tapping is unchanged.
   const renderItemRow = (item: ChecklistItem) => (
-    <View key={item.id} style={[styles.itemRow, { borderColor: colors.border }]}>
+    <SwipeRow
+      key={item.id}
+      left={item.status === 'na' ? null : {
+        label: item.status === 'completed' ? 'Untick' : 'Tick',
+        icon: item.status === 'completed' ? 'arrow-undo' : 'checkmark',
+        color: item.status === 'completed' ? theme.textSecondary : theme.statusSuccessSolid,
+        haptic: item.status === 'completed' ? 'select' : 'success',
+        onAction: () => toggleItemStatus(item),
+      }}
+      right={{
+        label: item.status === 'na' ? 'Clear N/A' : 'N/A',
+        icon: item.status === 'na' ? 'arrow-undo' : 'remove-circle-outline',
+        color: theme.textSecondary,
+        haptic: 'select',
+        onAction: () => setItemStatus(item, item.status === 'na' ? 'pending' : 'na'),
+      }}
+    >
+    <View style={[styles.itemRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
       <TouchableOpacity
         style={styles.itemCheckBtn}
         onPress={() => toggleItemStatus(item)}
         activeOpacity={0.7}
         disabled={item.status === 'na'}
-        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+        // Box is 34 x 22 (22pt icon + padding); this makes the target 48 x 44.
+        hitSlop={{ top: 11, bottom: 11, left: 10, right: 4 }}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: item.status === 'completed', disabled: item.status === 'na' }}
+        accessibilityLabel={item.description}
       >
         <Ionicons name={getCheckboxIcon(item.status)} size={22} color={getCheckboxColor(item.status)} />
       </TouchableOpacity>
       <View style={styles.itemContent}>
-        <Text
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
           style={[
             styles.itemDescription,
             { color: item.status === 'completed' ? colors.muted : colors.text },
@@ -509,14 +557,14 @@ const colors = {
           {item.description}
         </Text>
         {item.assigneeName && (
-          <Text style={[styles.itemAssigneeText, { color: colors.secondary }]} numberOfLines={1}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemAssigneeText, { color: colors.secondary }]} numberOfLines={1}>
             {item.assigneeName.split(' ')[0]}
           </Text>
         )}
       </View>
       {item.isRequired && (
-        <View style={[styles.requiredBadge, { backgroundColor: '#ef444420' }]}>
-          <Text style={[styles.requiredText, { color: '#ef4444' }]}>Req</Text>
+        <View style={[styles.requiredBadge, { backgroundColor: theme.statusDangerBg }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.requiredText, { color: theme.statusDanger }]}>Req</Text>
         </View>
       )}
       <View style={styles.itemRightActions}>
@@ -526,19 +574,23 @@ const colors = {
         {Array.isArray(item.attachmentIds) && item.attachmentIds.length > 0 && (
           <View style={styles.attachCountBadge}>
             <Ionicons name="attach" size={12} color={colors.accent} />
-            <Text style={[styles.attachCountText, { color: colors.accent }]}>{item.attachmentIds.length}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.attachCountText, { color: colors.accent }]}>{item.attachmentIds.length}</Text>
           </View>
         )}
         <TouchableOpacity
           style={styles.itemMenuBtn}
           onPress={() => openItemMenu(item)}
           activeOpacity={0.6}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          // 24pt button + 10 each side = 44pt.
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Item actions"
         >
           <Ionicons name="ellipsis-vertical" size={16} color={colors.secondary} />
         </TouchableOpacity>
       </View>
     </View>
+    </SwipeRow>
   );
 
   const toggleGroup = (groupKey: string) => {
@@ -557,7 +609,7 @@ const colors = {
     if (items.length === 0) {
       return (
         <View style={styles.itemsEmpty}>
-          <Text style={[styles.itemsEmptyText, { color: colors.secondary }]}>No items</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemsEmptyText, { color: colors.secondary }]}>No items</Text>
         </View>
       );
     }
@@ -577,8 +629,8 @@ const colors = {
                 activeOpacity={0.7}
               >
                 <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={14} color={colors.accent} />
-                <Text style={[styles.groupHeader, { color: colors.accent }]} numberOfLines={1}>{groupName}</Text>
-                <Text style={[styles.groupCount, { color: colors.secondary }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.groupHeader, { color: colors.accent }]} numberOfLines={1}>{groupName}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.groupCount, { color: colors.secondary }]}>
                   {completedInGroup}/{grpItems.length}
                 </Text>
               </TouchableOpacity>
@@ -590,14 +642,12 @@ const colors = {
     );
   };
 
-  const renderInstance = (instance: ChecklistInstance) => {
-    const isExpanded = expandedId === instance.id;
-    const progress = instance.totalCount > 0 ? instance.completedCount / instance.totalCount : 0;
-    const statusColor = statusColors[instance.status] || theme.textMuted;
-
-    const items = itemsByInstance[instance.id] || [];
+  // Expand/Collapse All for one checklist's groups. Shared by the inline card
+  // (phone) and the right-hand panel header (big screen).
+  const groupCollapseFor = (instanceId: string) => {
+    const items = itemsByInstance[instanceId] || [];
     const { groups: instanceGroups } = groupItems(items);
-    const groupKeys = Object.keys(instanceGroups).map(g => `${instance.id}:${g}`);
+    const groupKeys = Object.keys(instanceGroups).map(g => `${instanceId}:${g}`);
     const allGroupsCollapsed = groupKeys.length > 0 && groupKeys.every(k => collapsedGroups[k]);
     const hasGroups = groupKeys.length > 1;
 
@@ -609,9 +659,88 @@ const colors = {
         return updated;
       });
     };
+    return { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups };
+  };
+
+  const renderInstance = (instance: ChecklistInstance) => {
+    const isExpanded = expandedId === instance.id;
+    const progress = instance.totalCount > 0 ? instance.completedCount / instance.totalCount : 0;
+    const statusColor = statusColors[instance.status] || theme.textMuted;
+
+    const { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups } = groupCollapseFor(instance.id);
+
+    const collapseAllButton = (
+      <TouchableOpacity
+        onPress={toggleAllInstanceGroups}
+        style={styles.collapseAllBelowBtn}
+        activeOpacity={0.7}
+        hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
+      >
+        <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.collapseAllText, { color: colors.secondary }]}>
+          {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
+        </Text>
+      </TouchableOpacity>
+    );
+
+    // Phone / Duo folded: a compact card — name, status and chevron on one
+    // line, then ONE short line of facts and the progress bar. The description
+    // and Expand/Collapse All move into the opened card. Big screen keeps the
+    // full card (below). Rows are stateless, so switching on fold loses nothing.
+    if (!isWide) {
+      const facts = [
+        `${instance.completedCount}/${instance.totalCount} done`,
+        instance.dueDate ? `Due ${formatDate(instance.dueDate)}` : null,
+        instance.assigneeName || null,
+      ].filter(Boolean).join(' · ');
+      return (
+        <View
+          key={instance.id}
+          style={[styles.instanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <TouchableOpacity
+            style={styles.instanceHeader}
+            onPress={() => toggleExpand(instance.id)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: isExpanded }}
+          >
+            <View style={styles.instanceTitleRow}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.instanceName, { color: colors.text }]} numberOfLines={1}>{instance.name}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusBadgeText, { color: statusColor }]}>
+                  {statusLabels[instance.status] || instance.status}
+                </Text>
+              </View>
+              <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+            </View>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.compactFacts, { color: colors.secondary }]} numberOfLines={1}>{facts}</Text>
+            <View style={[styles.progressBar, styles.compactProgress, { backgroundColor: colors.border }]}>
+              <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? theme.statusSuccessSolid : colors.accent }]} />
+            </View>
+          </TouchableOpacity>
+
+          {isExpanded && (!!instance.description || hasGroups) && (
+            <View style={[styles.compactIntro, { borderTopColor: colors.border }]}>
+              {!!instance.description && (
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.instanceDesc, styles.compactDesc, { color: colors.secondary }]}>{instance.description}</Text>
+              )}
+              {hasGroups && <View style={styles.compactCollapseRow}>{collapseAllButton}</View>}
+            </View>
+          )}
+          {isExpanded && renderExpandedItems(instance.id)}
+        </View>
+      );
+    }
 
     return (
-      <View key={instance.id} style={[styles.instanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View
+        key={instance.id}
+        style={[
+          styles.instanceCard,
+          { backgroundColor: colors.card, borderColor: isWide && isExpanded ? colors.accent : colors.border },
+        ]}
+      >
         <TouchableOpacity
           style={styles.instanceHeader}
           onPress={() => toggleExpand(instance.id)}
@@ -620,25 +749,25 @@ const colors = {
           <View style={styles.instanceTop}>
             <View style={styles.instanceTitleRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
-                <Text style={[styles.instanceName, { color: colors.text }]} numberOfLines={1}>{instance.name}</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.instanceName, { color: colors.text }]} numberOfLines={1}>{instance.name}</Text>
                 <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-                  <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusBadgeText, { color: statusColor }]}>
                     {statusLabels[instance.status] || instance.status}
                   </Text>
                 </View>
               </View>
             </View>
             {instance.description && (
-              <Text style={[styles.instanceDesc, { color: colors.secondary }]} numberOfLines={1}>{instance.description}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.instanceDesc, { color: colors.secondary }]} numberOfLines={1}>{instance.description}</Text>
             )}
           </View>
 
           <View style={styles.instanceMeta}>
             <View style={styles.progressSection}>
               <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-                <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? '#22c55e' : colors.accent }]} />
+                <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? theme.statusSuccessSolid : colors.accent }]} />
               </View>
-              <Text style={[styles.progressText, { color: colors.secondary }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.progressText, { color: colors.secondary }]}>
                 {instance.completedCount}/{instance.totalCount} completed
               </Text>
             </View>
@@ -646,13 +775,13 @@ const colors = {
               {instance.dueDate && (
                 <View style={styles.metaItem}>
                   <Ionicons name="calendar-outline" size={13} color={colors.secondary} />
-                  <Text style={[styles.metaText, { color: colors.secondary }]}>{formatDate(instance.dueDate)}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.metaText, { color: colors.secondary }]}>{formatDate(instance.dueDate)}</Text>
                 </View>
               )}
               {instance.assigneeName && (
                 <View style={styles.metaItem}>
                   <Ionicons name="person-outline" size={13} color={colors.secondary} />
-                  <Text style={[styles.metaText, { color: colors.secondary }]}>{instance.assigneeName}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.metaText, { color: colors.secondary }]}>{instance.assigneeName}</Text>
                 </View>
               )}
             </View>
@@ -661,18 +790,22 @@ const colors = {
           <View style={styles.expandIndicatorRow}>
             <View style={styles.expandIndicatorSpacer} />
             <View style={styles.expandIndicatorCenter}>
-              <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+              <Ionicons
+                name={isWide ? 'chevron-forward' : isExpanded ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={isWide && isExpanded ? colors.accent : colors.muted}
+              />
             </View>
             <View style={styles.expandIndicatorRight}>
-              {isExpanded && hasGroups && (
+              {isExpanded && hasGroups && !isWide && (
                 <TouchableOpacity
                   onPress={(e) => { e.stopPropagation(); toggleAllInstanceGroups(); }}
                   style={styles.collapseAllBelowBtn}
                   activeOpacity={0.7}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
                 >
                   <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
-                  <Text style={[styles.collapseAllText, { color: colors.secondary }]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.collapseAllText, { color: colors.secondary }]}>
                     {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
                   </Text>
                 </TouchableOpacity>
@@ -681,8 +814,67 @@ const colors = {
           </View>
         </TouchableOpacity>
 
-        {isExpanded && renderExpandedItems(instance.id)}
+        {/* Big screen: the items show in the right-hand panel instead. */}
+        {isExpanded && !isWide && renderExpandedItems(instance.id)}
       </View>
+    );
+  };
+
+  // Right-hand panel on a big screen: the open checklist's items. Rows are
+  // stateless (their data lives in this screen), so showing them here or
+  // inline under the card on fold/unfold loses nothing.
+  const renderDetail = () => {
+    const instance = expandedId ? instances.find(i => i.id === expandedId) : undefined;
+    if (!instance) return null;
+    const progress = instance.totalCount > 0 ? instance.completedCount / instance.totalCount : 0;
+    const statusColor = statusColors[instance.status] || theme.textMuted;
+    const { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups } = groupCollapseFor(instance.id);
+    return (
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, readableFrame]}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+      >
+        <View style={[styles.instanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.instanceHeader}>
+            <View style={styles.instanceTop}>
+              <View style={styles.instanceTitleRow}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailTitle, { color: colors.text }]}>{instance.name}</Text>
+                <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusBadgeText, { color: statusColor }]}>
+                    {statusLabels[instance.status] || instance.status}
+                  </Text>
+                </View>
+              </View>
+              {!!instance.description && (
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.instanceDesc, { color: colors.secondary }]}>{instance.description}</Text>
+              )}
+            </View>
+            <View style={styles.progressSection}>
+              <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+                <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? theme.statusSuccessSolid : colors.accent }]} />
+              </View>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.progressText, { color: colors.secondary }]}>
+                {instance.completedCount}/{instance.totalCount} completed
+              </Text>
+            </View>
+            {hasGroups && (
+              <TouchableOpacity
+                onPress={toggleAllInstanceGroups}
+                style={[styles.collapseAllBelowBtn, { alignSelf: 'flex-end', marginTop: 6 }]}
+                activeOpacity={0.7}
+                hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
+              >
+                <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.collapseAllText, { color: colors.secondary }]}>
+                  {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {renderExpandedItems(instance.id)}
+        </View>
+      </ScrollView>
     );
   };
 
@@ -713,8 +905,9 @@ const colors = {
             ]}
             onPress={() => setSelectedProjectId(null)}
             activeOpacity={0.7}
+            hitSlop={{ top: 6, bottom: 6 }}
           >
-            <Text style={[styles.filterPillText, { color: !selectedProjectId ? colors.accent : colors.secondary }]}>All</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterPillText, { color: !selectedProjectId ? colors.accent : colors.secondary }]}>All</Text>
           </TouchableOpacity>
           {projects.map(p => (
             <TouchableOpacity
@@ -728,8 +921,9 @@ const colors = {
               ]}
               onPress={() => setSelectedProjectId(p.id)}
               activeOpacity={0.7}
+              hitSlop={{ top: 6, bottom: 6 }}
             >
-              <Text
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
                 style={[styles.filterPillText, { color: selectedProjectId === p.id ? colors.accent : colors.secondary }]}
                 numberOfLines={1}
               >
@@ -740,22 +934,31 @@ const colors = {
         </ScrollView>
       )}
 
-      <FlatList
-        data={instances}
-        keyExtractor={inst => inst.id}
-        renderItem={({ item }) => renderInstance(item)}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        automaticallyAdjustContentInsets={false}
-        contentInsetAdjustmentBehavior="never"
-        ListEmptyComponent={
-          <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="checkmark-done-outline" size={40} color={colors.muted} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No checklists</Text>
-            <Text style={[styles.emptyDesc, { color: colors.secondary }]}>
-              {projectId || selectedProjectId ? 'No checklists found for this project' : 'No checklists have been created yet'}
-            </Text>
-          </View>
+      {/* Always wrapped in TwoPane so the list keeps its place in the tree —
+          folding/unfolding never remounts it (scroll position survives). */}
+      <TwoPane
+        emptyTitle="Select a checklist"
+        emptyIcon="checkmark-done-outline"
+        detail={renderDetail()}
+        list={
+          <FlatList
+            data={instances}
+            keyExtractor={inst => inst.id}
+            renderItem={({ item }) => renderInstance(item)}
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+            automaticallyAdjustContentInsets={false}
+            contentInsetAdjustmentBehavior="never"
+            ListEmptyComponent={
+              <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Ionicons name="checkmark-done-outline" size={40} color={colors.muted} />
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>No checklists</Text>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyDesc, { color: colors.secondary }]}>
+                  {projectId || selectedProjectId ? 'No checklists found for this project' : 'No checklists have been created yet'}
+                </Text>
+              </View>
+            }
+          />
         }
       />
 
@@ -773,17 +976,17 @@ const colors = {
 
                 {menuMode === 'actions' && menuItem && (
                   <View>
-                    <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={2}>{menuItem.description}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalTitle, { color: colors.text }]} numberOfLines={2}>{menuItem.description}</Text>
                     <TouchableOpacity
                       style={styles.modalAction}
                       onPress={() => setMenuMode('activity')}
                       activeOpacity={0.7}
                     >
                       <Ionicons name="chatbubbles-outline" size={20} color={menuItem.notes ? colors.accent : colors.secondary} />
-                      <Text style={[styles.modalActionText, { color: colors.text }]}>Notes</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalActionText, { color: colors.text }]}>Notes</Text>
                       {menuItem.notes && (
                         <View style={[styles.menuBadge, { backgroundColor: colors.accent + '20' }]}>
-                          <Text style={{ color: colors.accent, fontSize: 10, fontWeight: '600' }}>{parseNoteFeed(menuItem.notes).length}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 10, fontWeight: '600' }}>{parseNoteFeed(menuItem.notes).length}</Text>
                         </View>
                       )}
                       <Ionicons name="chevron-forward" size={16} color={colors.muted} />
@@ -794,7 +997,7 @@ const colors = {
                       activeOpacity={0.7}
                     >
                       <Ionicons name={menuItem.assigneeName ? 'person' : 'person-outline'} size={20} color={menuItem.assigneeName ? colors.accent : colors.secondary} />
-                      <Text style={[styles.modalActionText, { color: colors.text }]}>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalActionText, { color: colors.text }]}>
                         {menuItem.assigneeName ? `Assigned: ${menuItem.assigneeName}` : 'Assign'}
                       </Text>
                       <Ionicons name="chevron-forward" size={16} color={colors.muted} />
@@ -805,12 +1008,12 @@ const colors = {
                       activeOpacity={0.7}
                     >
                       <Ionicons name="attach" size={20} color={Array.isArray(menuItem.attachmentIds) && menuItem.attachmentIds.length > 0 ? colors.accent : colors.secondary} />
-                      <Text style={[styles.modalActionText, { color: colors.text }]}>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalActionText, { color: colors.text }]}>
                         Attachments
                       </Text>
                       {Array.isArray(menuItem.attachmentIds) && menuItem.attachmentIds.length > 0 && (
                         <View style={[styles.menuBadge, { backgroundColor: colors.accent + '20' }]}>
-                          <Text style={{ color: colors.accent, fontSize: 10, fontWeight: '600' }}>{menuItem.attachmentIds.length}</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 10, fontWeight: '600' }}>{menuItem.attachmentIds.length}</Text>
                         </View>
                       )}
                       <Ionicons name="chevron-forward" size={16} color={colors.muted} />
@@ -821,10 +1024,10 @@ const colors = {
                 {menuMode === 'activity' && menuItem && (
                   <View>
                     <View style={styles.modalSubHeader}>
-                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
+                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} accessibilityLabel='Back'>
                         <Ionicons name="arrow-back" size={22} color={colors.text} />
                       </TouchableOpacity>
-                      <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Notes</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Notes</Text>
                     </View>
                     <ScrollView style={{ maxHeight: 220, marginBottom: 12 }}>
                       {(() => {
@@ -833,23 +1036,23 @@ const colors = {
                           return (
                             <View style={{ paddingVertical: 24, alignItems: 'center' }}>
                               <Ionicons name="chatbubbles-outline" size={28} color={colors.muted} />
-                              <Text style={{ color: colors.secondary, fontSize: 13, marginTop: 8 }}>No notes yet</Text>
+                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 13, marginTop: 8 }}>No notes yet</Text>
                             </View>
                           );
                         }
                         return entries.map((entry, idx) => (
                           <View key={idx} style={styles.feedEntry}>
                             <View style={[styles.feedAvatar, { backgroundColor: colors.accent + '20' }]}>
-                              <Text style={{ color: colors.accent, fontSize: 10, fontWeight: '700' }}>
+                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 10, fontWeight: '700' }}>
                                 {entry.author.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                               </Text>
                             </View>
                             <View style={{ flex: 1 }}>
                               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
-                                <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>{entry.author}</Text>
-                                <Text style={{ color: colors.secondary, fontSize: 10 }}>{formatFeedDate(entry.date)}</Text>
+                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>{entry.author}</Text>
+                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 10 }}>{formatFeedDate(entry.date)}</Text>
                               </View>
-                              <Text style={{ color: colors.text, fontSize: 13, marginTop: 2 }}>{entry.text}</Text>
+                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.text, fontSize: 13, marginTop: 2 }}>{entry.text}</Text>
                             </View>
                           </View>
                         ));
@@ -857,10 +1060,11 @@ const colors = {
                     </ScrollView>
                     <View style={[styles.feedInputRow, { borderTopColor: colors.border }]}>
                       <TextInput
-                        style={[styles.feedInput, { color: colors.text, borderColor: colors.border, backgroundColor: isDark ? '#0f172a' : '#f8fafc' }]}
+                        style={[styles.feedInput, { color: colors.text, borderColor: colors.border, backgroundColor: theme.background }]}
                         placeholder="Add a note..."
                         placeholderTextColor={colors.muted}
                         value={noteText}
+                        autoCapitalize="sentences"
                         onChangeText={setNoteText}
                         multiline
                         textAlignVertical="top"
@@ -884,10 +1088,10 @@ const colors = {
                 {menuMode === 'attachments' && menuItem && (
                   <View>
                     <View style={styles.modalSubHeader}>
-                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
+                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} accessibilityLabel='Back'>
                         <Ionicons name="arrow-back" size={22} color={colors.text} />
                       </TouchableOpacity>
-                      <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Attachments</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Attachments</Text>
                     </View>
                     {(() => {
                       const attachments = Array.isArray(menuItem.attachmentIds) ? menuItem.attachmentIds as any[] : [];
@@ -895,7 +1099,7 @@ const colors = {
                         return (
                           <View style={{ paddingVertical: 24, alignItems: 'center' }}>
                             <Ionicons name="cloud-upload-outline" size={28} color={colors.muted} />
-                            <Text style={{ color: colors.secondary, fontSize: 13, marginTop: 8 }}>No attachments</Text>
+                            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 13, marginTop: 8 }}>No attachments</Text>
                           </View>
                         );
                       }
@@ -909,8 +1113,8 @@ const colors = {
                                 color={colors.accent}
                               />
                               <View style={{ flex: 1, marginLeft: 8 }}>
-                                <Text style={{ color: colors.text, fontSize: 13 }} numberOfLines={1}>{att.name}</Text>
-                                <Text style={{ color: colors.secondary, fontSize: 10 }}>
+                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.text, fontSize: 13 }} numberOfLines={1}>{att.name}</Text>
+                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 10 }}>
                                   {att.uploadedBy} {att.uploadedAt ? `- ${formatFeedDate(att.uploadedAt)}` : ''}
                                 </Text>
                               </View>
@@ -936,7 +1140,7 @@ const colors = {
                       ) : (
                         <>
                           <Ionicons name="add" size={18} color="#fff" />
-                          <Text style={styles.saveBtnText}>Add Attachment</Text>
+                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.saveBtnText}>Add Attachment</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -946,10 +1150,10 @@ const colors = {
                 {menuMode === 'assignee' && menuItem && (
                   <View>
                     <View style={styles.modalSubHeader}>
-                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7}>
+                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} accessibilityLabel='Back'>
                         <Ionicons name="arrow-back" size={22} color={colors.text} />
                       </TouchableOpacity>
-                      <Text style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Assign To</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Assign To</Text>
                     </View>
                     {menuItem.assigneeId && (
                       <TouchableOpacity
@@ -959,13 +1163,13 @@ const colors = {
                         disabled={savingAssignee}
                       >
                         <Ionicons name="close-circle-outline" size={20} color={colors.secondary} />
-                        <Text style={[styles.assignRowText, { color: colors.secondary }]}>Unassign</Text>
+                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.assignRowText, { color: colors.secondary }]}>Unassign</Text>
                       </TouchableOpacity>
                     )}
                     {loadingTeam ? (
                       <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 20 }} />
                     ) : teamMembers.length === 0 ? (
-                      <Text style={{ color: colors.secondary, fontSize: 13, textAlign: 'center', paddingVertical: 20 }}>No team members available</Text>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 13, textAlign: 'center', paddingVertical: 20 }}>No team members available</Text>
                     ) : (
                       <ScrollView style={{ maxHeight: 300 }}>
                         {teamMembers.map(member => (
@@ -977,11 +1181,11 @@ const colors = {
                             disabled={savingAssignee}
                           >
                             <View style={[styles.assignAvatar, { backgroundColor: colors.accent + '20' }]}>
-                              <Text style={[styles.assignAvatarText, { color: colors.accent }]}>
+                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.assignAvatarText, { color: colors.accent }]}>
                                 {member.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                               </Text>
                             </View>
-                            <Text style={[styles.assignRowText, { color: colors.text }]}>{member.displayName}</Text>
+                            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.assignRowText, { color: colors.text }]}>{member.displayName}</Text>
                             {menuItem.assigneeId === member.id && (
                               <Ionicons name="checkmark" size={18} color={colors.accent} style={{ marginLeft: 'auto' }} />
                             )}
@@ -1003,7 +1207,8 @@ const colors = {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { justifyContent: 'center', alignItems: 'center' },
-  filterScroll: { borderBottomWidth: 1, height: 52, flexShrink: 0, flexGrow: 0 },
+  // minHeight (not height) so the chips can grow with Larger Text instead of clipping.
+  filterScroll: { borderBottomWidth: 1, minHeight: 52, flexShrink: 0, flexGrow: 0 },
   filterRow: { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
   filterPill: {
     borderRadius: 16,
@@ -1031,9 +1236,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   instanceName: { fontSize: 15, fontWeight: '600', flex: 1 },
+  detailTitle: { fontSize: 18, fontWeight: '700', flex: 1 },
   statusBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   statusBadgeText: { fontSize: 11, fontWeight: '600' },
   instanceDesc: { fontSize: 12, marginTop: 4 },
+  // Phone (compact) card
+  compactFacts: { fontSize: 12, marginTop: 4 },
+  compactProgress: { marginTop: 8 },
+  compactIntro: { borderTopWidth: 1, paddingHorizontal: 14, paddingTop: 8, gap: 4 },
+  compactDesc: { marginTop: 0, fontSize: 13, lineHeight: 18 },
+  compactCollapseRow: { alignItems: 'flex-end' },
   instanceMeta: { gap: 6 },
   progressSection: { gap: 3 },
   progressBar: {
@@ -1084,6 +1296,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    minHeight: 44,
     paddingVertical: 10,
     marginTop: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,11 +23,14 @@ import { haptic } from '../lib/haptics';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, fontSize, fontWeight, radius } from '../theme';
+import { useTheme, fontSize, fontWeight, radius, MAX_FONT_SCALE } from '../theme';
 import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
 import { useToast } from '../components/ui/Toast';
 import { Skeleton } from '../components/ui/Skeleton';
 import { PressableScale } from '../components/ui/PressableScale';
+import BackButton from '../components/ui/BackButton';
+import { isInStack } from '../navigation/back';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   EVENT_COLORS,
   SCHEDULE_STATUS_COLORS,
@@ -39,7 +42,7 @@ import {
   type EventsByDay,
 } from '../components/calendar/shared';
 import { FeedView } from '../components/calendar/FeedView';
-import { WeekView, useWeekColWidth, HOUR_HEIGHT, WEEK_TOTAL_DAYS, WEEK_VISIBLE_DAYS } from '../components/calendar/WeekView';
+import { WeekView, useWeekColWidth, useWeekVisibleDays, HOUR_HEIGHT, WEEK_TOTAL_DAYS, WEEK_VISIBLE_DAYS_WIDE } from '../components/calendar/WeekView';
 import { MonthView, type MonthCell } from '../components/calendar/MonthView';
 import { FilterSheet, EVENT_TYPE_OPTIONS } from '../components/calendar/FilterSheet';
 import { EventPeekSheet } from '../components/calendar/EventPeekSheet';
@@ -130,6 +133,10 @@ export default function CalendarScreen({ navigation }: Props) {
   const { user } = useAuth();
   const theme = useTheme();
   const toast = useToast();
+  const insets = useSafeAreaInsets();
+  // Same component as the Calendar TAB (no back) and More > My Calendar (a
+  // stack screen, usually its only route — needs its own back control).
+  const showBack = isInStack(navigation as any);
 
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [loading, setLoading] = useState(true);
@@ -209,6 +216,9 @@ export default function CalendarScreen({ navigation }: Props) {
 
   // Follows the screen size (fold/unfold) — must match WeekView's columns.
   const GRID_COL_WIDTH = useWeekColWidth();
+  // 3 on a phone, 7 (a whole Mon–Sun week) on a wide screen. Changes live.
+  const WEEK_VISIBLE = useWeekVisibleDays();
+  const isFullWeek = WEEK_VISIBLE >= WEEK_VISIBLE_DAYS_WIDE;
 
   const todayWeekIndex = useMemo(() => {
     const today = new Date();
@@ -216,9 +226,25 @@ export default function CalendarScreen({ navigation }: Props) {
     return weekDays.findIndex(d => isSameDay(d, today));
   }, [weekDays]);
 
+  /** Index (in weekDays) of the Monday on or before day `idx`. May be < 0. */
+  const mondayIndexOf = useCallback((idx: number) => {
+    const i = Math.max(0, Math.min(weekDays.length - 1, Math.round(idx)));
+    return i - ((weekDays[i].getDay() + 6) % 7);
+  }, [weekDays]);
+
+  /** Left-most visible day for "today": phone shows yesterday|today|tomorrow,
+   *  the full-week view starts on this week's Monday. */
+  const todayLeftIndex = useCallback(
+    (visible: number) => (visible >= WEEK_VISIBLE_DAYS_WIDE ? mondayIndexOf(todayWeekIndex) : todayWeekIndex - 1),
+    [mondayIndexOf, todayWeekIndex],
+  );
+
   // Initialise to the real starting offset so secondary refs sync correctly
   // even before the first onScroll event fires from weekScrollRef.
-  const weekScrollOffset = useRef(Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH));
+  const weekScrollOffset = useRef(Math.max(0, todayLeftIndex(WEEK_VISIBLE) * GRID_COL_WIDTH));
+  // The same position in DAYS (fractional). Pixels go stale when a fold or
+  // unfold changes the column width; days don't, so this is what we restore.
+  const weekLeftDay = useRef(weekScrollOffset.current / GRID_COL_WIDTH);
 
   const buildDateRange = useCallback(() => {
     const now = new Date();
@@ -603,7 +629,48 @@ export default function CalendarScreen({ navigation }: Props) {
     const clamped = Math.max(0, Math.min(offsetX, (WEEK_TOTAL_DAYS - 1) * GRID_COL_WIDTH));
     weekScrollRef.current?.scrollTo({ x: clamped, animated });
     weekScrollOffset.current = clamped;
+    weekLeftDay.current = clamped / GRID_COL_WIDTH;
   };
+
+  // Fold/unfold: the column width (and maybe the 3↔7 day count) just changed,
+  // so the old pixel offset points at a different day. Re-scroll to the same
+  // day instead of letting the view drift or jump back to today. Layout effect
+  // so it lands before the resized grid is painted.
+  const prevWeekLayout = useRef({ col: GRID_COL_WIDTH, visible: WEEK_VISIBLE });
+  useLayoutEffect(() => {
+    const prev = prevWeekLayout.current;
+    if (prev.col === GRID_COL_WIDTH && prev.visible === WEEK_VISIBLE) return;
+    prevWeekLayout.current = { col: GRID_COL_WIDTH, visible: WEEK_VISIBLE };
+    let left = weekLeftDay.current;
+    if (prev.visible !== WEEK_VISIBLE) {
+      // Keep the day the user was looking at on screen: today if it was
+      // visible, otherwise the middle visible day.
+      const prevLeft = Math.round(left);
+      const todayVisible = todayWeekIndex >= prevLeft && todayWeekIndex < prevLeft + prev.visible;
+      const focus = todayVisible ? todayWeekIndex : prevLeft + Math.floor(prev.visible / 2);
+      left = WEEK_VISIBLE >= WEEK_VISIBLE_DAYS_WIDE ? mondayIndexOf(focus) : focus - Math.floor(WEEK_VISIBLE / 2);
+    }
+    scrollWeekTo(left * GRID_COL_WIDTH, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [GRID_COL_WIDTH, WEEK_VISIBLE]);
+
+  // Where the week ScrollView starts when it mounts. Recomputed only when the
+  // column width or view mode changes (NOT every render — it's a contentOffset
+  // prop, and the minute tick re-renders WeekView), from the day ref above.
+  const weekInitialOffset = useMemo(
+    () => Math.max(0, weekLeftDay.current * GRID_COL_WIDTH),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [GRID_COL_WIDTH, viewMode],
+  );
+
+  // Full-week view pages a week at a time, landing on Mondays. The phone has
+  // no snapping (unchanged).
+  const weekSnapOffsets = useMemo(() => {
+    if (!isFullWeek) return undefined;
+    const offsets: number[] = [];
+    weekDays.forEach((d, i) => { if (d.getDay() === 1) offsets.push(i * GRID_COL_WIDTH); });
+    return offsets;
+  }, [isFullWeek, weekDays, GRID_COL_WIDTH]);
 
   const onNavigateMonth = useCallback((direction: number) => {
     haptic.select();
@@ -620,17 +687,25 @@ export default function CalendarScreen({ navigation }: Props) {
       onNavigateMonth(direction);
     } else if (viewMode === 'week') {
       haptic.select();
-      scrollWeekTo(weekScrollOffset.current + direction * WEEK_VISIBLE_DAYS * GRID_COL_WIDTH);
+      if (isFullWeek) {
+        // Whole weeks, Monday-aligned, from the week currently in view.
+        const monday = mondayIndexOf(Math.round(weekLeftDay.current) + Math.floor(WEEK_VISIBLE / 2));
+        scrollWeekTo((monday + direction * 7) * GRID_COL_WIDTH);
+      } else {
+        scrollWeekTo(weekScrollOffset.current + direction * WEEK_VISIBLE * GRID_COL_WIDTH);
+      }
     }
-  }, [viewMode, onNavigateMonth, GRID_COL_WIDTH]);
+  }, [viewMode, onNavigateMonth, GRID_COL_WIDTH, isFullWeek, mondayIndexOf, WEEK_VISIBLE]);
 
   const handleViewModeChange = (mode: ViewMode) => {
     if (mode === viewMode) return;
     haptic.select();
     if (mode === 'week') {
       setWeekStartDate(getMondayOfWeek(new Date()));
+      // Mount the week grid already at today (see weekInitialOffset).
+      weekLeftDay.current = Math.max(0, todayLeftIndex(WEEK_VISIBLE));
       setTimeout(() => {
-        const x = Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH);
+        const x = Math.max(0, todayLeftIndex(WEEK_VISIBLE) * GRID_COL_WIDTH);
         scrollWeekTo(x, false);
         timeGridScrollRef.current?.scrollTo({ y: 7 * HOUR_HEIGHT, animated: false });
       }, 50);
@@ -651,7 +726,7 @@ export default function CalendarScreen({ navigation }: Props) {
     setSelectedDate(now);
     setWeekStartDate(getMondayOfWeek(now));
     if (viewMode === 'week') {
-      const x = Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH);
+      const x = Math.max(0, todayLeftIndex(WEEK_VISIBLE) * GRID_COL_WIDTH);
       scrollWeekTo(x);
     }
   };
@@ -659,8 +734,9 @@ export default function CalendarScreen({ navigation }: Props) {
   const handleWeekScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = e.nativeEvent.contentOffset.x;
     weekScrollOffset.current = offsetX;
+    weekLeftDay.current = offsetX / GRID_COL_WIDTH;
     const leftIndex = Math.round(offsetX / GRID_COL_WIDTH);
-    const centerIndex = Math.min(leftIndex + 1, weekDays.length - 1);
+    const centerIndex = Math.min(leftIndex + Math.floor(WEEK_VISIBLE / 2), weekDays.length - 1);
     const centerDay = weekDays[centerIndex];
     if (centerDay) {
       const monday = getMondayOfWeek(centerDay);
@@ -669,7 +745,7 @@ export default function CalendarScreen({ navigation }: Props) {
         return prev;
       });
     }
-  }, [weekDays, GRID_COL_WIDTH]);
+  }, [weekDays, GRID_COL_WIDTH, WEEK_VISIBLE]);
 
   // ── Saved views ────────────────────────────────────────────────────────────
 
@@ -942,17 +1018,18 @@ export default function CalendarScreen({ navigation }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Animated.View entering={FadeInDown.duration(300)}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          {showBack && <BackButton color={theme.textPrimary} />}
           <View style={styles.headerLeft}>
-            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>My Calendar</Text>
-            <Text style={[styles.headerMonthLabel, { color: theme.textSecondary }]}>{headerMonth}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerTitle, { color: theme.textPrimary }]}>My Calendar</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerMonthLabel, { color: theme.textSecondary }]}>{headerMonth}</Text>
           </View>
-          <PressableScale
+          <PressableScale hitSlop={{ top: 6, bottom: 6 }}
             style={[styles.viewsBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
             onPress={() => { haptic.select(); viewsSheetRef.current?.present(); }}
           >
             <Ionicons name="layers-outline" size={15} color={theme.primary} />
-            <Text style={[styles.viewsBtnText, { color: theme.textPrimary }]} numberOfLines={1}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewsBtnText, { color: theme.textPrimary }]} numberOfLines={1}>
               {currentView?.name || 'Views'}
             </Text>
             <Ionicons name="chevron-down" size={13} color={theme.textSecondary} />
@@ -964,13 +1041,13 @@ export default function CalendarScreen({ navigation }: Props) {
             {VIEW_MODES.map(m => {
               const active = viewMode === m.key;
               return (
-                <TouchableOpacity
+                <TouchableOpacity hitSlop={{ top: 8, bottom: 8 }}
                   key={m.key}
                   style={[styles.segment, active && { backgroundColor: theme.primary }]}
                   onPress={() => handleViewModeChange(m.key)}
                   activeOpacity={0.7}
                 >
-                  <Text style={[
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
                     styles.segmentText,
                     { color: active ? '#FFFFFF' : theme.textSecondary },
                     active && { fontWeight: fontWeight.semibold },
@@ -1001,18 +1078,18 @@ export default function CalendarScreen({ navigation }: Props) {
                 </TouchableOpacity>
               </>
             )}
-            <PressableScale
+            <PressableScale hitSlop={{ top: 6, bottom: 6, left: 3, right: 3 }}
               style={[styles.addBtn, { backgroundColor: theme.primary }]}
               onPress={handleHeaderCreate}
             >
               <Ionicons name="add" size={22} color="#FFFFFF" />
             </PressableScale>
-            <TouchableOpacity
+            <TouchableOpacity hitSlop={{ top: 6, bottom: 6, left: 3, right: 3 }}
               onPress={goToToday}
               style={[styles.todayBadge, { borderColor: theme.primary }]}
               activeOpacity={0.7}
             >
-              <Text style={[styles.todayBadgeText, { color: theme.primary }]}>{todayDate.getDate()}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.todayBadgeText, { color: theme.primary }]}>{todayDate.getDate()}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1039,7 +1116,8 @@ export default function CalendarScreen({ navigation }: Props) {
                 nowMinutes={nowMinutes}
                 anyAllDayEvents={anyAllDayEvents}
                 allDayExpanded={allDayExpanded}
-                initialOffset={Math.max(0, (todayWeekIndex - 1) * GRID_COL_WIDTH)}
+                initialOffset={weekInitialOffset}
+                snapOffsets={weekSnapOffsets}
                 weekScrollRef={weekScrollRef}
                 timeGridScrollRef={timeGridScrollRef}
                 timeLabelScrollRef={timeLabelScrollRef}
@@ -1079,14 +1157,14 @@ export default function CalendarScreen({ navigation }: Props) {
           contentContainerStyle={styles.chipRow}
         >
           {viewMode === 'week' && (
-            <PressableScale
+            <PressableScale hitSlop={{ top: 6, bottom: 6 }}
               style={[
                 styles.chip,
                 { backgroundColor: allDayExpanded ? theme.primary : theme.subtle },
               ]}
               onPress={() => { haptic.select(); setAllDayExpanded(v => !v); }}
             >
-              <Text style={[
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
                 styles.chipLabel,
                 {
                   color: allDayExpanded ? '#FFFFFF' : theme.textSecondary,
@@ -1101,7 +1179,7 @@ export default function CalendarScreen({ navigation }: Props) {
           {EVENT_TYPE_OPTIONS.filter(opt => opt.value !== 'google_cal' || googleConnected).map(opt => {
             const isSelected = activeFilters.eventTypes?.includes(opt.value) ?? false;
             return (
-              <PressableScale
+              <PressableScale hitSlop={{ top: 6, bottom: 6 }}
                 key={opt.value}
                 style={[
                   styles.chip,
@@ -1116,7 +1194,7 @@ export default function CalendarScreen({ navigation }: Props) {
                   setActiveFilters({ ...activeFilters, eventTypes: updated.length > 0 ? updated : undefined });
                 }}
               >
-                <Text style={[
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
                   styles.chipLabel,
                   {
                     color: isSelected ? '#FFFFFF' : theme.textSecondary,
@@ -1129,7 +1207,7 @@ export default function CalendarScreen({ navigation }: Props) {
             );
           })}
 
-          <PressableScale
+          <PressableScale hitSlop={{ top: 6, bottom: 6 }}
             style={[
               styles.chip,
               { backgroundColor: activeFilterCount > 0 ? theme.primary : theme.subtle },
@@ -1141,7 +1219,7 @@ export default function CalendarScreen({ navigation }: Props) {
               size={14}
               color={activeFilterCount > 0 ? '#FFFFFF' : theme.textSecondary}
             />
-            <Text style={[
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
               styles.chipLabel,
               {
                 color: activeFilterCount > 0 ? '#FFFFFF' : theme.textSecondary,
@@ -1172,14 +1250,14 @@ export default function CalendarScreen({ navigation }: Props) {
                 activeOpacity={0.7}
               >
                 <Ionicons name="layers-outline" size={18} color={isActive ? theme.primary : theme.textSecondary} />
-                <Text style={[styles.viewRowText, { color: isActive ? theme.textPrimary : theme.textSecondary }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewRowText, { color: isActive ? theme.textPrimary : theme.textSecondary }]}>
                   {view.name}
                 </Text>
                 {isActive && (
                   <Ionicons name="checkmark-circle" size={18} color={theme.primary} style={{ marginLeft: 'auto' }} />
                 )}
                 {!view.isDefault && !isActive && (
-                  <TouchableOpacity onPress={() => handleDeleteView(view)} style={{ marginLeft: 'auto', padding: 4 }}>
+                  <TouchableOpacity hitSlop={10} onPress={() => handleDeleteView(view)} style={{ marginLeft: 'auto', padding: 4 }}>
                     <Ionicons name="trash-outline" size={16} color={theme.textMuted} />
                   </TouchableOpacity>
                 )}
@@ -1192,7 +1270,7 @@ export default function CalendarScreen({ navigation }: Props) {
             activeOpacity={0.7}
           >
             <Ionicons name="add-circle-outline" size={18} color={theme.textSecondary} />
-            <Text style={[styles.newViewBtnText, { color: theme.textSecondary }]}>New View</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.newViewBtnText, { color: theme.textSecondary }]}>New View</Text>
           </TouchableOpacity>
         </View>
       </Sheet>
@@ -1200,7 +1278,7 @@ export default function CalendarScreen({ navigation }: Props) {
       {/* ── Create-view sheet (stacks over the views sheet) ─────────────── */}
       <Sheet ref={createViewSheetRef} title="Save View" stackBehavior="push">
         <View style={styles.sheetBody}>
-          <Text style={[styles.sheetSubtitle, { color: theme.textSecondary }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sheetSubtitle, { color: theme.textSecondary }]}>
             Save your current filters and view mode as a named view.
           </Text>
           <SheetTextInput
@@ -1208,6 +1286,7 @@ export default function CalendarScreen({ navigation }: Props) {
             placeholder="View name (e.g. My Tasks)"
             placeholderTextColor={theme.textMuted}
             value={newViewName}
+            autoCapitalize="words"
             onChangeText={setNewViewName}
             autoFocus
             returnKeyType="done"
@@ -1219,7 +1298,7 @@ export default function CalendarScreen({ navigation }: Props) {
               onPress={() => { setNewViewName(''); createViewSheetRef.current?.dismiss(); }}
               activeOpacity={0.7}
             >
-              <Text style={[styles.secondaryBtnText, { color: theme.textSecondary }]}>Cancel</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.secondaryBtnText, { color: theme.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.primaryBtn, { backgroundColor: newViewName.trim() ? theme.primary : theme.textMuted }]}
@@ -1229,7 +1308,7 @@ export default function CalendarScreen({ navigation }: Props) {
             >
               {savingView
                 ? <ActivityIndicator size="small" color="#FFFFFF" />
-                : <Text style={styles.primaryBtnText}>Save View</Text>
+                : <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.primaryBtnText}>Save View</Text>
               }
             </TouchableOpacity>
           </View>
@@ -1265,10 +1344,12 @@ export default function CalendarScreen({ navigation }: Props) {
       <Sheet ref={createTaskSheetRef} title="New Task" scrollable snapPoints={['70%', '92%']}>
         <View style={styles.eventSheetBody}>
           <View style={styles.editField}>
-            <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Title</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: theme.textSecondary }]}>Title</Text>
             <SheetTextInput
               style={[styles.editInput, { backgroundColor: theme.background, color: theme.textPrimary, borderColor: theme.border }]}
               value={createTitle}
+              autoCapitalize="sentences"
+              returnKeyType="done"
               onChangeText={setCreateTitle}
               placeholder="Task title"
               placeholderTextColor={theme.textMuted}
@@ -1276,14 +1357,14 @@ export default function CalendarScreen({ navigation }: Props) {
           </View>
 
           <View style={styles.editField}>
-            <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Project</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: theme.textSecondary }]}>Project</Text>
             <TouchableOpacity
               style={[styles.editSelect, { backgroundColor: theme.background, borderColor: theme.border }]}
               onPress={() => { haptic.select(); projectPickerSheetRef.current?.present(); }}
               activeOpacity={0.7}
             >
               <Ionicons name="briefcase-outline" size={16} color={theme.textSecondary} />
-              <Text style={[styles.editSelectText, { color: createProject ? theme.textPrimary : theme.textMuted }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: createProject ? theme.textPrimary : theme.textMuted }]}>
                 {createProject?.name || 'No project'}
               </Text>
               <Ionicons name="chevron-down" size={16} color={theme.textSecondary} />
@@ -1291,14 +1372,14 @@ export default function CalendarScreen({ navigation }: Props) {
           </View>
 
           <View style={styles.editField}>
-            <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Due Date</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: theme.textSecondary }]}>Due Date</Text>
             <TouchableOpacity
               style={[styles.editSelect, { backgroundColor: theme.background, borderColor: showCreateDatePicker ? theme.primary : theme.border }]}
               onPress={() => { setShowCreateTimePicker(false); setShowCreateDatePicker(v => !v); }}
               activeOpacity={0.7}
             >
               <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
-              <Text style={[styles.editSelectText, { color: theme.textPrimary }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: theme.textPrimary }]}>
                 {createDate ? fromLocalDateStr(createDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'Pick a date'}
               </Text>
               <Ionicons name={showCreateDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
@@ -1318,14 +1399,14 @@ export default function CalendarScreen({ navigation }: Props) {
           </View>
 
           <View style={styles.editField}>
-            <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Time (optional)</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: theme.textSecondary }]}>Time (optional)</Text>
             <TouchableOpacity
               style={[styles.editSelect, { backgroundColor: theme.background, borderColor: showCreateTimePicker ? theme.primary : theme.border }]}
               onPress={() => { setShowCreateDatePicker(false); setShowCreateTimePicker(v => !v); }}
               activeOpacity={0.7}
             >
               <Ionicons name="time-outline" size={16} color={theme.textSecondary} />
-              <Text style={[styles.editSelectText, { color: createTime ? theme.textPrimary : theme.textMuted }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: createTime ? theme.textPrimary : theme.textMuted }]}>
                 {createTime || 'No time'}
               </Text>
               {createTime ? (
@@ -1363,12 +1444,12 @@ export default function CalendarScreen({ navigation }: Props) {
           </View>
 
           <View style={styles.editField}>
-            <Text style={[styles.editLabel, { color: theme.textSecondary }]}>Priority</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: theme.textSecondary }]}>Priority</Text>
             <View style={styles.priorityRow}>
               {PRIORITY_OPTIONS.map(p => {
                 const active = createPriority === p.key;
                 return (
-                  <TouchableOpacity
+                  <TouchableOpacity hitSlop={{ top: 6, bottom: 6 }}
                     key={p.key}
                     style={[
                       styles.priorityChip,
@@ -1377,7 +1458,7 @@ export default function CalendarScreen({ navigation }: Props) {
                     onPress={() => { haptic.select(); setCreatePriority(p.key); }}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.priorityChipText, { color: active ? theme.primary : theme.textSecondary }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.priorityChipText, { color: active ? theme.primary : theme.textSecondary }]}>
                       {p.label}
                     </Text>
                   </TouchableOpacity>
@@ -1394,7 +1475,7 @@ export default function CalendarScreen({ navigation }: Props) {
           >
             {creatingTask
               ? <ActivityIndicator size="small" color="#FFFFFF" />
-              : <Text style={styles.primaryBtnText}>Create Task</Text>
+              : <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.primaryBtnText}>Create Task</Text>
             }
           </TouchableOpacity>
         </View>
@@ -1409,7 +1490,7 @@ export default function CalendarScreen({ navigation }: Props) {
             activeOpacity={0.7}
           >
             <View style={[styles.filterColorDot, { backgroundColor: theme.textMuted }]} />
-            <Text style={[styles.pickerOptionText, { color: !createProjectId ? theme.primary : theme.textPrimary }]}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerOptionText, { color: !createProjectId ? theme.primary : theme.textPrimary }]}>
               No project
             </Text>
             {!createProjectId && <Ionicons name="checkmark" size={20} color={theme.primary} />}
@@ -1425,7 +1506,7 @@ export default function CalendarScreen({ navigation }: Props) {
                 activeOpacity={0.7}
               >
                 <View style={[styles.filterColorDot, { backgroundColor: projColor }]} />
-                <Text style={[styles.pickerOptionText, { color: active ? theme.primary : theme.textPrimary }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerOptionText, { color: active ? theme.primary : theme.textPrimary }]}>
                   {proj.name}
                 </Text>
                 {active && <Ionicons name="checkmark" size={20} color={theme.primary} />}
@@ -1446,7 +1527,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 56,
     paddingBottom: 8,
     gap: 10,
   },

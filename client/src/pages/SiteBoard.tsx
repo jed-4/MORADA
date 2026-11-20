@@ -7,7 +7,9 @@ import {
   FileText,
   Folder,
   FolderPlus,
+  ListChecks,
   Loader2,
+  Palette,
   MoreHorizontal,
   QrCode,
   Upload,
@@ -33,6 +35,8 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SiteQrDialog } from "@/components/selections/SiteQrDialog";
+import { SiteSelectionsPanel } from "@/components/siteBoard/SiteSelectionsPanel";
+import { SiteSignDesignDialog } from "@/components/siteBoard/SiteSignDesignDialog";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_FOLDER = "Plans";
@@ -68,6 +72,9 @@ export default function SiteBoard({ projectId: projectIdProp }: { projectId?: st
   const [extraFolders, setExtraFolders] = useState<string[]>([]);
   const [activeFolder, setActiveFolder] = useState(DEFAULT_FOLDER);
   const [showQr, setShowQr] = useState(false);
+  const [showDesign, setShowDesign] = useState(false);
+  // The left column picks a file folder or the Selections settings.
+  const [view, setView] = useState<"files" | "selections">("files");
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [renaming, setRenaming] = useState<ProjectFile | null>(null);
@@ -120,6 +127,7 @@ export default function SiteBoard({ projectId: projectIdProp }: { projectId?: st
         await apiRequest(`/api/projects/${projectId}/site-files`, "POST", {
           name: file.name,
           objectPath: uploaded.objectPath,
+          uploadGrant: uploaded.uploadGrant,
           folder: activeFolder,
           mimeType: file.type || null,
           fileSize: file.size,
@@ -158,6 +166,9 @@ export default function SiteBoard({ projectId: projectIdProp }: { projectId?: st
             </span>
           </div>
           <div className="flex items-center gap-1.5">
+            <button type="button" className={CHIP} onClick={() => setShowDesign(true)} data-testid="button-sign-design">
+              <Palette className="w-3.5 h-3.5" />Sign design
+            </button>
             <button type="button" className={CHIP} onClick={() => setShowQr(true)} data-testid="button-site-qr">
               <QrCode className="w-3.5 h-3.5" />Site QR code
             </button>
@@ -193,10 +204,10 @@ export default function SiteBoard({ projectId: projectIdProp }: { projectId?: st
               <button
                 key={name}
                 type="button"
-                onClick={() => setActiveFolder(name)}
+                onClick={() => { setActiveFolder(name); setView("files"); }}
                 className={cn(
                   "h-7 px-2 rounded-md text-xs flex items-center gap-2 text-left hover-elevate",
-                  activeFolder === name ? "bg-primary/10 text-primary" : "text-foreground",
+                  view === "files" && activeFolder === name ? "bg-primary/10 text-primary" : "text-foreground",
                 )}
                 data-testid={`folder-${name}`}
               >
@@ -216,9 +227,28 @@ export default function SiteBoard({ projectId: projectIdProp }: { projectId?: st
           >
             <FolderPlus className="w-3.5 h-3.5" />New folder
           </button>
+
+          <div className="mt-3 pt-3 border-t border-border">
+            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Also on the QR</p>
+            <button
+              type="button"
+              onClick={() => setView("selections")}
+              className={cn(
+                "w-full h-7 px-2 rounded-md text-xs flex items-center gap-2 text-left hover-elevate",
+                view === "selections" ? "bg-primary/10 text-primary" : "text-foreground",
+              )}
+              data-testid="button-site-selections"
+            >
+              <ListChecks className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate flex-1">Selections</span>
+            </button>
+          </div>
         </div>
 
-        {/* files */}
+        {view === "selections" ? (
+          <div className="flex-1 min-w-0 overflow-auto"><SiteSelectionsPanel projectId={projectId} /></div>
+        ) : (
+        /* files */
         <div
           className={cn("flex-1 min-w-0 overflow-auto relative", dragOver && "bg-primary/5")}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -307,8 +337,10 @@ export default function SiteBoard({ projectId: projectIdProp }: { projectId?: st
             </table>
           )}
         </div>
+        )}
       </div>
 
+      <SiteSignDesignDialog open={showDesign} onOpenChange={setShowDesign} projectId={projectId} />
       <SiteQrDialog projectId={projectId} projectName={currentProject?.name} open={showQr} onOpenChange={setShowQr} />
 
       <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>

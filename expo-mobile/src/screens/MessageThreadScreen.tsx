@@ -47,6 +47,7 @@ import type {
 } from '../components/messages/types';
 import { useTheme } from '../theme';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { readableFrame } from '../components/ui/ReadableColumn';
 
 // route.params is typed loosely (matching the sibling screens) so the component
 // is assignable to the untyped navigator's ScreenComponentType (a strict
@@ -659,7 +660,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
             inverted
             keyExtractor={item => item.id}
             renderItem={renderItem}
-            contentContainerStyle={styles.messageList}
+            contentContainerStyle={[styles.messageList, readableFrame]}
             onScroll={onScroll}
             scrollEventThrottle={16}
             onEndReached={loadOlder}

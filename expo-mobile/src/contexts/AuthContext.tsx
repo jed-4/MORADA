@@ -4,6 +4,8 @@ import { registerForPushNotifications, unregisterPushNotifications } from '../se
 import { startSyncService, stopSyncService } from '../services/syncService';
 import { connectSocket, disconnectSocket } from '../services/socket';
 import { clearCachedSelections } from '../services/selectionsOffline';
+import { clearWidgets } from '../services/widgetSnapshot';
+import { endClockActivityOnLogout } from '../services/liveActivity';
 
 interface User {
   id: string;
@@ -81,6 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearSession();
       stopSyncService();
       disconnectSocket();
+      clearWidgets();
+      endClockActivityOnLogout();
       setUser(null);
     });
     return () => setUnauthorizedHandler(null);
@@ -136,6 +140,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // drop it on the way out so a shared site phone can't serve it to whoever
     // logs in next.
     await clearCachedSelections();
+    // Home Screen widgets + Lock Screen timer: nothing of yours left behind.
+    clearWidgets();
+    endClockActivityOnLogout();
     setUser(null);
   };
 
@@ -150,6 +157,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     disconnectSocket();
     await clearSession();
     await clearCachedSelections();
+    clearWidgets();
+    endClockActivityOnLogout();
     setUser(null);
   };
 

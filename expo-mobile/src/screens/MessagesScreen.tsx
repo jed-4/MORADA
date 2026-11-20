@@ -27,7 +27,7 @@ import { markupToDisplay } from '../components/messages/mentions';
 import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
 import { Skeleton, SkeletonRow } from '../components/ui/Skeleton';
 import { useToast } from '../components/ui/Toast';
-import { useTheme } from '../theme';
+import { useTheme, MAX_FONT_SCALE } from '../theme';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 interface Channel {
@@ -291,7 +291,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
               {clientFacing ? (
                 <Ionicons name="eye" size={18} color={theme.statusWarning} />
               ) : (
-                <Text style={[styles.channelAvatarIcon, { color: colors.accent }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelAvatarIcon, { color: colors.accent }]}>
                   {item.type === 'channel' ? '#' : getInitials(displayName)}
                 </Text>
               )}
@@ -303,35 +303,35 @@ export default function MessagesScreen({ navigation, route }: Props) {
               {item.isPinned && (
                 <Ionicons name="pin" size={12} color={colors.muted} style={styles.pinIcon} />
               )}
-              <Text style={[styles.channelName, { color: colors.text }, unread > 0 && styles.channelNameBold]} numberOfLines={1}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelName, { color: colors.text }, unread > 0 && styles.channelNameBold]} numberOfLines={1}>
                 {displayName}
               </Text>
               {clientFacing && <ClientBadge theme={theme} />}
               {item.lastMessageAt && (
-                <Text style={[styles.channelTime, { color: colors.secondary }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelTime, { color: colors.secondary }]}>
                   {timeAgo(item.lastMessageAt)}
                 </Text>
               )}
             </View>
             {item.lastMessageContent ? (
-              <Text style={[styles.channelDesc, { color: colors.secondary }, unread > 0 && styles.channelDescBold]} numberOfLines={1}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelDesc, { color: colors.secondary }, unread > 0 && styles.channelDescBold]} numberOfLines={1}>
                 {item.lastMessageSender
                   ? `${item.lastMessageSender}: ${markupToDisplay(item.lastMessageContent)}`
                   : markupToDisplay(item.lastMessageContent)}
               </Text>
             ) : item.description ? (
-              <Text style={[styles.channelDesc, { color: colors.secondary }]} numberOfLines={1}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelDesc, { color: colors.secondary }]} numberOfLines={1}>
                 {item.description}
               </Text>
             ) : (
-              <Text style={[styles.channelDesc, { color: colors.muted }]} numberOfLines={1}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelDesc, { color: colors.muted }]} numberOfLines={1}>
                 No messages yet
               </Text>
             )}
           </View>
           {unread > 0 && (
             <View style={[styles.unreadBadge, { backgroundColor: colors.accent }]}>
-              <Text style={styles.unreadBadgeText}>{unread > 99 ? '99+' : unread}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.unreadBadgeText}>{unread > 99 ? '99+' : unread}</Text>
             </View>
           )}
         </PressableScale>
@@ -341,11 +341,13 @@ export default function MessagesScreen({ navigation, route }: Props) {
 
   const header = (
     <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-      <Text style={[styles.headerTitle, { color: colors.text }]}>Messages</Text>
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerTitle, { color: colors.text }]}>Messages</Text>
       <View style={styles.headerActions}>
         <PressableScale
           haptics
           style={[styles.headerBtn, { backgroundColor: colors.input }]}
+          // 36pt circle + 4 each side = 44pt.
+          hitSlop={4}
           onPress={() => { loadTeamUsers(); newDmSheetRef.current?.present(); }}
         >
           <Ionicons name="person-add-outline" size={18} color={colors.accent} />
@@ -353,6 +355,8 @@ export default function MessagesScreen({ navigation, route }: Props) {
         <PressableScale
           haptics
           style={[styles.headerBtn, { backgroundColor: colors.input }]}
+          // 36pt circle + 4 each side = 44pt.
+          hitSlop={4}
           onPress={() => newChannelSheetRef.current?.present()}
         >
           <Ionicons name="add" size={20} color={colors.accent} />
@@ -381,8 +385,8 @@ export default function MessagesScreen({ navigation, route }: Props) {
         {header}
         <Animated.View entering={FadeInDown.duration(300)} style={styles.emptyState}>
           <Ionicons name="chatbubbles-outline" size={56} color={colors.muted} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No channels yet</Text>
-          <Text style={[styles.emptyDesc, { color: colors.secondary }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>No channels yet</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyDesc, { color: colors.secondary }]}>
             Set up your team channels to start communicating.
           </Text>
           <PressableScale
@@ -394,7 +398,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
             {seeding ? (
               <ActivityIndicator color="#ffffff" size="small" />
             ) : (
-              <Text style={styles.emptyBtnText}>Set Up Channels</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.emptyBtnText}>Set Up Channels</Text>
             )}
           </PressableScale>
         </Animated.View>
@@ -422,8 +426,8 @@ export default function MessagesScreen({ navigation, route }: Props) {
                 size={13}
                 color={colors.secondary}
               />
-              <Text style={[styles.sectionTitle, { color: colors.secondary }]}>{section.title}</Text>
-              <Text style={[styles.sectionCount, { color: colors.muted }]}>{(section as any).count}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.secondary }]}>{section.title}</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionCount, { color: colors.muted }]}>{(section as any).count}</Text>
             </Pressable>
           );
         }}
@@ -447,12 +451,13 @@ export default function MessagesScreen({ navigation, route }: Props) {
         }}
       >
         <View style={styles.sheetBody}>
-          <Text style={[styles.sheetLabel, { color: colors.secondary }]}>Channel name</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sheetLabel, { color: colors.secondary }]}>Channel name</Text>
           <SheetTextInput
             style={[styles.sheetInput, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
             placeholder="e.g. site-updates"
             placeholderTextColor={colors.muted}
             value={newChannelName}
+            returnKeyType="done"
             onChangeText={setNewChannelName}
             autoCapitalize="none"
             autoCorrect={false}
@@ -476,11 +481,11 @@ export default function MessagesScreen({ navigation, route }: Props) {
                   size={14}
                   color={newChannelClientFacing ? theme.statusWarning : colors.muted}
                 />
-                <Text style={[styles.clientToggleTitle, { color: colors.text }]}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clientToggleTitle, { color: colors.text }]}>
                   Client-facing channel
                 </Text>
               </View>
-              <Text
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
                 style={[
                   styles.clientToggleHint,
                   { color: newChannelClientFacing ? theme.statusWarning : colors.secondary },
@@ -511,7 +516,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
             {creatingChannel ? (
               <ActivityIndicator color="#ffffff" size="small" />
             ) : (
-              <Text style={styles.sheetBtnText}>Create Channel</Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.sheetBtnText}>Create Channel</Text>
             )}
           </PressableScale>
         </View>
@@ -521,7 +526,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
       <Sheet ref={newDmSheetRef} title="New Message" scrollable>
         <View style={styles.sheetBody}>
           {teamUsers.length === 0 ? (
-            <Text style={[styles.noUsersText, { color: colors.secondary }]}>No other team members found.</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noUsersText, { color: colors.secondary }]}>No other team members found.</Text>
           ) : (
             teamUsers.map(u => {
               const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email;
@@ -534,11 +539,11 @@ export default function MessagesScreen({ navigation, route }: Props) {
                   disabled={creatingDm}
                 >
                   <View style={[styles.dmUserAvatar, { backgroundColor: colors.accent + '30' }]}>
-                    <Text style={[styles.dmUserInitials, { color: colors.accent }]}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dmUserInitials, { color: colors.accent }]}>
                       {getInitials(name)}
                     </Text>
                   </View>
-                  <Text style={[styles.dmUserName, { color: colors.text }]}>{name}</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dmUserName, { color: colors.text }]}>{name}</Text>
                 </PressableScale>
               );
             })
@@ -566,6 +571,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    minHeight: 44,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
