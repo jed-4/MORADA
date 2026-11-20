@@ -34,9 +34,13 @@ import { PressableScale } from '../components/ui/PressableScale';
 import { SectionHeader } from '../components/ui/SectionHeader';
 import { ProgressRing } from '../components/ui/ProgressRing';
 import { haptic } from '../lib/haptics';
+import { useLayout } from '../lib/useLayout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { compareProjects } from '../lib/projects';
 import { SuggestionSheet } from '../components/more/SuggestionSheet';
+import { QuickCaptureRow } from '../components/home/QuickCaptureRow';
+import { clockedOutOnThisPhone } from '../services/liveActivity';
+import { refreshWidgetSnapshot } from '../services/widgetSnapshot';
 import { getInitials, timeAgo } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -283,6 +287,12 @@ export default function DashboardScreen({ navigation }: Props) {
   const { user, logout } = useAuth();
   const theme = useTheme();
   const toast = useToast();
+  // Wide screen (Duo unfolded): widgets flow two to a row. Same children in the
+  // same order with the same keys — only styles change, so a fold never
+  // remounts a widget (horizontal list positions, expanded state survive).
+  const { isWide } = useLayout();
+  const fullW = isWide && styles.sectionFull;
+  const halfW = isWide && styles.sectionHalf;
 
   const [projects, setProjects] = useState<Project[]>(() => getCached<Project[]>('projects') || []);
   const [costCodes, setCostCodes] = useState<CostCode[]>(() => getCached<CostCode[]>('costCodes') || []);
@@ -414,6 +424,8 @@ export default function DashboardScreen({ navigation }: Props) {
       setCached('projects', data.projects || []);
       setCached('costCodes', data.costCodes || []);
       setCached('companySettings', data.companySettings || null);
+      // Home Screen widgets follow the dashboard (own small, money-free fetch).
+      refreshWidgetSnapshot();
     } catch {
       console.error('Failed to fetch dashboard data');
     } finally {
@@ -586,8 +598,10 @@ export default function DashboardScreen({ navigation }: Props) {
       await apiRequest('/api/timesheets/clock-out', 'POST', {
         timesheetId: activeTimesheet.id,
         breakDuration: breakMinutes,
+        clientTime: new Date().toISOString(), // the tap, not when it lands
       });
       setActiveTimesheet(null);
+      clockedOutOnThisPhone();
       clockOutSheetRef.current?.dismiss();
       toast.success(`Clocked out — ${duration} logged`);
       fetchData();
@@ -830,12 +844,12 @@ export default function DashboardScreen({ navigation }: Props) {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, isWide && styles.scrollContentWide]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
         >
           {/* Live clocked-in timer card */}
           {activeTimesheet && (
-            <Animated.View entering={FadeInDown.duration(300)} style={styles.section}>
+            <Animated.View entering={FadeInDown.duration(300)} style={[styles.section, fullW]}>
               <View style={[styles.timerCard, { backgroundColor: theme.primary }]}>
                 <View style={styles.timerCardLeft}>
                   <View style={styles.timerLabelRow}>
@@ -864,9 +878,18 @@ export default function DashboardScreen({ navigation }: Props) {
             </Animated.View>
           )}
 
+          {/* Quick capture: photo to diary, receipt, defect, clock in */}
+          <Animated.View entering={FadeInDown.duration(300).delay(30)} style={[styles.section, fullW]}>
+            <QuickCaptureRow
+              projects={sortedProjects}
+              navigation={navigation}
+              isClockedIn={!!activeTimesheet}
+            />
+          </Animated.View>
+
           {/* Projects */}
           {projects.length > 0 && (
-            <Animated.View entering={FadeInDown.duration(300).delay(60)} style={styles.section}>
+            <Animated.View entering={FadeInDown.duration(300).delay(60)} style={[styles.section, fullW]}>
               <SectionHeader
                 title="Projects"
                 count={projects.length}
@@ -888,7 +911,7 @@ export default function DashboardScreen({ navigation }: Props) {
           )}
 
           {/* Today's Tasks */}
-          <Animated.View entering={FadeInDown.duration(300).delay(120)} style={styles.section} layout={LinearTransition.duration(200)}>
+          <Animated.View entering={FadeInDown.duration(300).delay(120)} style={[styles.section, halfW]} layout={LinearTransition.duration(200)}>
             <SectionHeader
               title="Today's Tasks"
               right={todayTasks.length > 0 ? (
@@ -941,11 +964,11 @@ export default function DashboardScreen({ navigation }: Props) {
           </Animated.View>
 
           {/* Timesheets */}
-          <Animated.View entering={FadeInDown.duration(300).delay(180)} style={styles.section}>
+          <Animated.View entering={FadeInDown.duration(300).delay(180)} style={[styles.section, halfW]}>
             <SectionHeader
               title="Timesheets"
               count={recentTimesheets.length}
-              onPress={() => navigation.navigate('Timesheets')}
+              onPress={() => navigation.navigate('More', { screen: 'Timesheets' })}
             />
             {recentTimesheets.length === 0 ? (
               <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -994,7 +1017,7 @@ export default function DashboardScreen({ navigation }: Props) {
           </Animated.View>
 
           {/* Schedule */}
-          <Animated.View entering={FadeInDown.duration(300).delay(240)} style={styles.section}>
+          <Animated.View entering={FadeInDown.duration(300).delay(240)} style={[styles.section, halfW]}>
             <SectionHeader
               title="Schedule"
               count={upcomingSchedule.length}
@@ -1039,7 +1062,7 @@ export default function DashboardScreen({ navigation }: Props) {
 
           {/* Unread mentions digest */}
           {mentions.length > 0 && (
-            <Animated.View entering={FadeInDown.duration(300).delay(270)} style={styles.section}>
+            <Animated.View entering={FadeInDown.duration(300).delay(270)} style={[styles.section, halfW]}>
               <PressableScale
                 haptics
                 onPress={openMentions}
@@ -1060,7 +1083,7 @@ export default function DashboardScreen({ navigation }: Props) {
           )}
 
           {/* Recent Activity */}
-          <Animated.View entering={FadeInDown.duration(300).delay(300)} style={styles.section}>
+          <Animated.View entering={FadeInDown.duration(300).delay(300)} style={[styles.section, halfW]}>
             <SectionHeader
               title="Recent Activity"
               count={recentActivities.length}
@@ -1231,7 +1254,7 @@ export default function DashboardScreen({ navigation }: Props) {
               style={[styles.sheetPrimaryBtn, { backgroundColor: theme.primary }]}
               onPress={() => {
                 timesheetSheetRef.current?.dismiss();
-                navigation.navigate('Timesheets');
+                navigation.navigate('More', { screen: 'Timesheets' });
               }}
               activeOpacity={0.8}
             >
@@ -1616,6 +1639,15 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 24,
   },
+  // Wide-only: row-wrap container; every child needs an explicit width or it
+  // would shrink to its content.
+  scrollContentWide: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+  },
+  sectionFull: { width: '100%' },
+  sectionHalf: { width: '50%' },
   hListContent: {
     paddingHorizontal: 20,
     gap: CARD_GAP,

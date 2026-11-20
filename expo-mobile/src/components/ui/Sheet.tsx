@@ -6,10 +6,12 @@ import {
   BottomSheetScrollView,
   BottomSheetBackdrop,
   BottomSheetTextInput,
+  BottomSheetFooter,
   type BottomSheetBackdropProps,
+  type BottomSheetFooterProps,
 } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, fontSize, fontWeight } from '../../theme';
+import { useTheme, fontSize, fontWeight, MAX_FONT_SCALE } from '../../theme';
 import { haptic } from '../../lib/haptics';
 import { useLayout } from '../../lib/useLayout';
 
@@ -58,10 +60,16 @@ interface SheetProps {
   /** Pass 'push' for sheets presented on top of another sheet (e.g. pickers inside a form sheet). */
   stackBehavior?: 'push' | 'switch' | 'replace';
   onDismiss?: () => void;
+  /**
+   * A form's primary action(s), pinned to the bottom of the sheet above the
+   * keyboard and the home indicator — in thumb reach on a tall phone. Pass
+   * null/undefined to hide it (e.g. while the sheet shows read-only detail).
+   */
+  footer?: ReactNode;
 }
 
 export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
-  { title, children, snapPoints, scrollable, stackBehavior, onDismiss },
+  { title, children, snapPoints, scrollable, stackBehavior, onDismiss, footer },
   ref,
 ) {
   const theme = useTheme();
@@ -91,11 +99,28 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
 
   const header = title ? (
     <View style={[styles.header, { borderBottomColor: theme.border }]}>
-      <Text style={[styles.title, { color: theme.textPrimary }]}>{title}</Text>
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.title, { color: theme.textPrimary }]}>{title}</Text>
     </View>
   ) : null;
 
-  const contentStyle = { paddingBottom: insets.bottom + 16 };
+  // With a footer, leave room so the last field can scroll clear of it.
+  const contentStyle = { paddingBottom: footer ? FOOTER_SPACE + insets.bottom : insets.bottom + 16 };
+
+  const renderFooter = useCallback(
+    (props: BottomSheetFooterProps) => (
+      <BottomSheetFooter {...props}>
+        <View
+          style={[
+            styles.footer,
+            { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 12) },
+          ]}
+        >
+          {footer}
+        </View>
+      </BottomSheetFooter>
+    ),
+    [footer, theme.card, theme.border, insets.bottom],
+  );
 
   return (
     <BottomSheetModal
@@ -111,6 +136,7 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
       }}
       style={sheetStyle}
       backdropComponent={renderBackdrop}
+      footerComponent={footer ? renderFooter : undefined}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       backgroundStyle={{ backgroundColor: theme.card, borderRadius: 20 }}
@@ -137,7 +163,17 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
 /** TextInput that plays nicely with sheet keyboard handling. */
 export { BottomSheetTextInput as SheetTextInput };
 
+/** Room reserved under sheet content for the footer bar (button + padding). */
+const FOOTER_SPACE = 84;
+
 const styles = StyleSheet.create({
+  footer: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   header: {
     paddingHorizontal: 20,
     paddingTop: 4,

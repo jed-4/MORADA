@@ -1,4 +1,4 @@
-import { useColorScheme } from 'react-native';
+import { Appearance, useColorScheme } from 'react-native';
 
 // ── Colour tokens ─────────────────────────────────────────────────────────
 // Mirrors client/src/index.css (plum rebrand). Interactive purple is
@@ -11,12 +11,16 @@ const light = {
   nav:          '#F5F0E9',
   subtle:       '#F1ECF6',
   // Borders
-  border:       '#EAEAE8',
-  borderStrong: '#D8D7D4',
-  // Text
+  // Borders — a step stronger than the web (#EAEAE8 / #D8D7D4) so card
+  // edges still read in direct sunlight.
+  border:       '#DEDCD8',
+  borderStrong: '#C8C5C0',
+  // Text — darkened for outdoor use. WCAG AA (4.5:1) on background, card
+  // and nav: secondary 7.2 / 7.7 / 6.8, muted 5.0 / 5.4 / 4.7.
+  // (Was #6B6560 = 5.3 / 5.7 and #8A8680 = 3.4 / 3.6 — muted failed.)
   textPrimary:   '#2C2825',
-  textSecondary: '#6B6560',
-  textMuted:     '#8A8680',
+  textSecondary: '#57524D',
+  textMuted:     '#6E6A64',
   // Brand
   primary:      '#87749A',
   primaryHover: '#7E6A92',
@@ -34,18 +38,27 @@ const light = {
   roseLight:    '#F8ECF2',
   lavender:     '#A68AC7',
   lavenderLight:'#F1ECF6',
+  // Accent TEXT inks. The accents above are decorative (1.8–2.4:1 on white)
+  // — use these when a sage/amber/coral/teal hue has to be READ (labels,
+  // counts, small icons). All ≥ 5:1 on background, card and their own wash.
+  sageText:     '#33724F',
+  amberText:    '#80621C',
+  coralText:    '#A44D3C',
+  tealText:     '#24727A',
   // Status — `statusX` is the TEXT/icon colour (on card/background/its own
   // wash); `statusXSolid` is for solid fills that carry white text. In light
   // mode they're the same; in dark mode the text role lightens (see below).
-  statusSuccess:      '#3C8160',
+  // Inks darkened for sunlight: success 5.6 / 6.1 / 5.3 (bg / card / wash),
+  // warning 5.3 / 5.7 / 5.1, info 5.4 / 5.9 / 5.3. Danger already passed.
+  statusSuccess:      '#2F6E50',
   statusSuccessBg:    '#E9F3EE',
-  statusSuccessSolid: '#3C8160',
-  statusWarning:      '#A57A2E',
+  statusSuccessSolid: '#2F6E50',
+  statusWarning:      '#84601E',
   statusWarningBg:    '#F8F2E7',
   statusDanger:       '#B03838',
   statusDangerBg:     '#F8EAEA',
   statusDangerSolid:  '#B03838',
-  statusInfo:         '#597BC0',
+  statusInfo:         '#4563A6',
   statusInfoBg:       '#F1F4FB',
 };
 
@@ -57,8 +70,9 @@ const dark = {
   border:       '#48443E',
   borderStrong: '#3A3835',
   textPrimary:   '#E8E4DC',
-  textSecondary: '#A8A49C',
-  textMuted:     '#8A8680',
+  // Lifted so muted text clears 4.5:1 on the dark card (was 3.2:1).
+  textSecondary: '#B8B4AC',
+  textMuted:     '#A6A29A',
   primary:      '#87749A',
   primaryHover: '#93819F',
   primaryLight: '#4C464A',
@@ -74,6 +88,11 @@ const dark = {
   roseLight:    '#5C4B4F',
   lavender:     '#A68AC7',
   lavenderLight:'#534B54',
+  // On dark surfaces the pastel accents already read (4.9–6.1:1 on card).
+  sageText:     '#82C8A2',
+  amberText:    '#D4B670',
+  coralText:    '#DA988A',
+  tealText:     '#70CAD0',
   // Status in dark mode: the TEXT role lightens to the same hue's pastel and
   // the wash drops to 10% alpha — the light-mode inks (#3C8160 etc.) sit at
   // only 1.7–2.4:1 on a dark card, well under the 4.5:1 minimum. These clear
@@ -108,6 +127,15 @@ export const fontSize = {
   display: 28,
   hero:    36,
 };
+
+/**
+ * Cap on Dynamic Type for dense UI (rows, chips, headers). Text still grows
+ * with the iPhone's Larger Text setting up to 1.4x, so it stays readable
+ * without rows breaking apart at the accessibility sizes. Applied per <Text>
+ * (React 19 dropped defaultProps on function components, so there is no
+ * reliable global default).
+ */
+export const MAX_FONT_SCALE = 1.4;
 
 export const fontWeight = {
   regular:  '400' as const,
@@ -148,6 +176,17 @@ export type Theme = typeof light;
 export function useTheme(): Theme {
   const scheme = useColorScheme();
   return scheme === 'dark' ? dark : light;
+}
+
+/**
+ * The theme for the CURRENT colour scheme, for module-level helpers that
+ * can't call a hook (e.g. getStatusColor(status) outside a component). Read it
+ * at call time — never capture it in a module constant — so a screen that
+ * re-renders on a light/dark switch (every screen does, via useTheme) picks up
+ * the new inks. Prefer useTheme() inside components.
+ */
+export function currentTheme(): Theme {
+  return Appearance.getColorScheme() === 'dark' ? dark : light;
 }
 
 export { light as lightTheme, dark as darkTheme };

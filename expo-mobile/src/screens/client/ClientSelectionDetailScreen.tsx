@@ -25,6 +25,8 @@ import { firstImage, formatMoney, type SelectionOption } from '../../lib/selecti
 import { PORTAL_KEYS, canClientChoose, formatDay, selectionStatus } from '../../lib/clientPortal';
 import CroppedImage from '../../components/selections/CroppedImage';
 import { PressableScale } from '../../components/ui/PressableScale';
+import { readableFrame } from '../../components/ui/ReadableColumn';
+import { useLayout } from '../../lib/useLayout';
 import { ClientCard, ClientEmpty, ClientLoading, ClientStatusPill } from '../../components/client/ClientUI';
 import ClientOptionSheet from '../../components/client/ClientOptionSheet';
 import ClientSuggestOptionSheet, { type SuggestedOption } from '../../components/client/ClientSuggestOptionSheet';
@@ -56,6 +58,7 @@ export default function ClientSelectionDetailScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const { isWide } = useLayout();
   const selectionId: string = route.params?.selectionId;
 
   const canChoosePerm = usePermission(PORTAL_KEYS.selections, 'edit');
@@ -175,7 +178,7 @@ export default function ClientSelectionDetailScreen() {
         <ClientEmpty icon="alert-circle-outline" title="This selection isn't available" body="Ask your builder if you think it should be." />
       ) : (
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+          contentContainerStyle={[styles.content, readableFrame, { paddingBottom: insets.bottom + 32 }]}
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
         >
@@ -230,7 +233,7 @@ export default function ClientSelectionDetailScreen() {
                 return (
                   <PressableScale key={option.id} onPress={() => { haptic.select(); setOpenOptionId(option.id); }}>
                     <ClientCard style={[styles.option, isChosen && { borderColor: theme.primary, borderWidth: 1.5 }]}>
-                      <View style={[styles.optionThumb, { backgroundColor: theme.subtle }]}>
+                      <View style={[styles.optionThumb, isWide && styles.optionThumbWide, { backgroundColor: theme.subtle }]}>
                         {image ? (
                           <CroppedImage filePath={image.filePath} x={image.thumbnailX} y={image.thumbnailY} zoom={image.thumbnailZoom} style={StyleSheet.absoluteFill} />
                         ) : (
@@ -360,6 +363,7 @@ const styles = StyleSheet.create({
   stack: { gap: 8 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 },
   optionThumb: { width: 72, height: 72, borderRadius: radius.lg, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  optionThumbWide: { width: 104, height: 104 },
   optionBody: { flex: 1, gap: 3 },
   optionName: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.medium },
   optionMeta: { fontSize: fontSize.bodySm },

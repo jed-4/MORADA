@@ -13,6 +13,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useTheme } from '../theme';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { SkeletonList } from '../components/ui/Skeleton';
 
 interface LabourHoursRow {
   id: string;
@@ -184,8 +186,8 @@ export default function LabourHoursScreen({ route }: Props) {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.background }]}>
-        <ActivityIndicator color={theme.primary} />
+      <View style={{ backgroundColor: theme.background, flex: 1 }}>
+        <SkeletonList />
       </View>
     );
   }
@@ -227,7 +229,7 @@ export default function LabourHoursScreen({ route }: Props) {
         sections={sections}
         keyExtractor={item => item.id}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, readableFrame]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
         renderSectionHeader={({ section }) => {
           const tone = toneFor(section.budgeted, section.used);

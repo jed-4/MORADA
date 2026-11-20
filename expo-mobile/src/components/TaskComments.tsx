@@ -9,6 +9,8 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SheetTextInput } from './ui/Sheet';
+import { VoiceInputButton } from './VoiceInputButton';
 import { apiFetch, apiRequest } from '../services/api';
 import { timeAgo, getInitials } from '../lib/format';
 import { useTheme } from '../theme';
@@ -58,6 +60,12 @@ interface TaskCommentsProps {
   currentUserId?: string;
   colors: ThemeColors;
   isDark: boolean;
+  /**
+   * Rendered inside a <Sheet> (gorhom bottom sheet): use the sheet's text
+   * input so the sheet lifts above the keyboard instead of the comment box
+   * being hidden under it. Leave unset in a plain ScrollView / Modal.
+   */
+  inSheet?: boolean;
 }
 
 const MENTION_MARKUP = /@\[([^\]]+)\]\(userId:([^)]+)\)/g;
@@ -121,7 +129,8 @@ function renderContent(content: string, accent: string, textColor: string) {
   return <Text style={{ color: textColor, fontSize: 14, lineHeight: 20 }}>{parts}</Text>;
 }
 
-export default function TaskComments({ taskId, currentUserId, colors, isDark }: TaskCommentsProps) {
+export default function TaskComments({ taskId, currentUserId, colors, isDark, inSheet }: TaskCommentsProps) {
+  const Input = inSheet ? SheetTextInput : TextInput;
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [activity, setActivity] = useState<TaskActivityItem[]>([]);
   const [showActivity, setShowActivity] = useState(true);
@@ -264,6 +273,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
           <TouchableOpacity
             onPress={() => setShowActivity((v) => !v)}
             style={styles.activityToggle}
+            hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
           >
             <Ionicons name="pulse-outline" size={14} color={colors.secondary} />
             <Text style={[styles.activityToggleText, { color: colors.secondary }]}>
@@ -313,7 +323,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
 
                 {isEditing ? (
                   <View>
-                    <TextInput
+                    <Input
                       value={editValue}
                       onChangeText={setEditValue}
                       multiline
@@ -355,11 +365,12 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
                         setEditMentions(extractMentions(c.content));
                       }}
                       style={styles.iconAction}
+                      hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
                     >
                       <Ionicons name="pencil" size={14} color={colors.secondary} />
                       <Text style={[styles.iconActionText, { color: colors.secondary }]}>Edit</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => remove(c.id)} style={styles.iconAction}>
+                    <TouchableOpacity onPress={() => remove(c.id)} style={styles.iconAction} hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}>
                       <Ionicons name="trash-outline" size={14} color={danger} />
                       <Text style={[styles.iconActionText, { color: danger }]}>Delete</Text>
                     </TouchableOpacity>
@@ -385,7 +396,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
             ))}
           </View>
         )}
-        <TextInput
+        <Input
           value={input}
           onChangeText={onChangeInput}
           multiline
@@ -393,16 +404,20 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark }: 
           placeholderTextColor={colors.muted}
           style={[styles.input, { backgroundColor: inputBg, color: colors.text, borderColor: colors.border }]}
         />
-        <TouchableOpacity
-          onPress={submit}
-          disabled={!input.trim() || posting}
-          style={[
-            styles.postBtn,
-            { backgroundColor: colors.accent, opacity: !input.trim() || posting ? 0.5 : 1 },
-          ]}
-        >
-          <Text style={styles.btnText}>{posting ? 'Posting…' : 'Comment'}</Text>
-        </TouchableOpacity>
+        <View style={styles.composerActions}>
+          {/* Dictate a comment (#56). */}
+          <VoiceInputButton value={input} onChangeText={onChangeInput} label="Dictate a comment" />
+          <TouchableOpacity
+            onPress={submit}
+            disabled={!input.trim() || posting}
+            style={[
+              styles.postBtn,
+              { backgroundColor: colors.accent, opacity: !input.trim() || posting ? 0.5 : 1 },
+            ]}
+          >
+            <Text style={styles.btnText}>{posting ? 'Posting…' : 'Comment'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -431,6 +446,7 @@ const styles = StyleSheet.create({
   btnGhost: { paddingHorizontal: 16, paddingVertical: 8 },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
   postBtn: { alignSelf: 'flex-end', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
+  composerActions: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   mentionList: { borderWidth: 1, borderRadius: 8, marginBottom: 6, overflow: 'hidden' },
   mentionItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
   mentionAvatar: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

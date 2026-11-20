@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,6 @@ import {
   Alert,
   RefreshControl,
   TextInput,
-  Animated,
-  PanResponder,
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,7 +19,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiRequest, apiFetch, ApiError } from '../services/api';
 import { timeAgo } from '../lib/format';
 
-import { useTheme } from '../theme';
+import { useTheme, MAX_FONT_SCALE } from '../theme';
+import { SwipeRow } from '../components/ui/SwipeRow';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { haptic } from '../lib/haptics';
+import { SkeletonList } from '../components/ui/Skeleton';
 type Props = {
   navigation: any;
   route?: any;
@@ -54,84 +56,47 @@ function getPreviewText(note: NoteItem): string {
   return firstLine.length > 80 ? firstLine.slice(0, 80) + '...' : firstLine;
 }
 
-const SWIPE_THRESHOLD = 70;
-
+// Swipe right: pin / unpin. Swipe left: archive. (Delete stays in the ...
+// menu, so a destructive action is never one stray swipe away.) Tapping
+// opens the note, as before.
 function SwipeableNoteRow({
   note,
   colors,
   onPress,
   onLongPress,
-  onDelete,
+  onTogglePin,
   onArchive,
 }: {
   note: NoteItem;
   colors: any;
   onPress: () => void;
   onLongPress: () => void;
-  onDelete: () => void;
+  onTogglePin: () => void;
   onArchive: () => void;
 }) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const isSwipedOpen = useRef(false);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dy) < 20;
-      },
-      onPanResponderMove: (_, gestureState) => {
-        if (gestureState.dx < 0) {
-          translateX.setValue(Math.max(gestureState.dx, -160));
-        } else if (isSwipedOpen.current) {
-          translateX.setValue(Math.min(0, -160 + gestureState.dx));
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx < -SWIPE_THRESHOLD) {
-          Animated.spring(translateX, { toValue: -160, useNativeDriver: true, tension: 80, friction: 10 }).start();
-          isSwipedOpen.current = true;
-        } else {
-          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }).start();
-          isSwipedOpen.current = false;
-        }
-      },
-    })
-  ).current;
-
-  const closeSwipe = () => {
-    Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }).start();
-    isSwipedOpen.current = false;
-  };
-
   return (
-    <View style={[styles.swipeContainer, { borderBottomColor: colors.border }]}>
-      <View style={styles.swipeActions}>
-        <TouchableOpacity
-          style={[styles.swipeBtn, { backgroundColor: '#f59e0b' }]}
-          onPress={() => { closeSwipe(); onArchive(); }}
-        >
-          <Ionicons name="archive-outline" size={20} color="#fff" />
-          <Text style={styles.swipeBtnText}>Archive</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.swipeBtn, { backgroundColor: colors.danger }]}
-          onPress={() => { closeSwipe(); onDelete(); }}
-        >
-          <Ionicons name="trash-outline" size={20} color="#fff" />
-          <Text style={styles.swipeBtnText}>Delete</Text>
-        </TouchableOpacity>
-      </View>
-      <Animated.View
-        style={[styles.noteRowAnimated, { backgroundColor: colors.bg, transform: [{ translateX }] }]}
-        {...panResponder.panHandlers}
-      >
+    <SwipeRow
+      containerStyle={[styles.swipeContainer, { borderBottomColor: colors.border }]}
+      left={{
+        label: note.pinned ? 'Unpin' : 'Pin',
+        icon: note.pinned ? 'pin-outline' : 'pin',
+        color: colors.accent,
+        haptic: 'none', // handleTogglePin fires its own
+        onAction: onTogglePin,
+      }}
+      right={{
+        label: 'Archive',
+        icon: 'archive-outline',
+        color: colors.archive,
+        haptic: 'none', // handleArchiveNote fires success when it lands
+        onAction: onArchive,
+      }}
+    >
+      <View style={[styles.noteRowAnimated, { backgroundColor: colors.bg }]}>
         <TouchableOpacity
           style={styles.noteRow}
           activeOpacity={0.6}
-          onPress={() => {
-            if (isSwipedOpen.current) { closeSwipe(); return; }
-            onPress();
-          }}
+          onPress={onPress}
           onLongPress={onLongPress}
         >
           <View style={styles.noteContent}>
@@ -139,28 +104,31 @@ function SwipeableNoteRow({
               {note.pinned && (
                 <Ionicons name="pin" size={14} color={colors.accent} style={styles.pinIcon} />
               )}
-              <Text style={[styles.noteTitle, { color: colors.text }]} numberOfLines={1}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteTitle, { color: colors.text }]} numberOfLines={1}>
                 {note.title || 'Untitled'}
               </Text>
             </View>
-            <Text style={[styles.notePreview, { color: colors.secondary }]} numberOfLines={1}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.notePreview, { color: colors.secondary }]} numberOfLines={1}>
               {getPreviewText(note) || 'No content'}
             </Text>
           </View>
           <View style={styles.noteMeta}>
-            <Text style={[styles.noteTime, { color: colors.placeholder }]}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteTime, { color: colors.placeholder }]}>
               {timeAgo(note.updatedAt)}
             </Text>
             <TouchableOpacity
               onPress={onLongPress}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              // 18pt icon + 13 each side = 44pt.
+              hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }}
+              accessibilityRole="button"
+              accessibilityLabel="Note actions"
             >
               <Ionicons name="ellipsis-horizontal" size={18} color={colors.placeholder} />
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
-      </Animated.View>
-    </View>
+      </View>
+    </SwipeRow>
   );
 }
 
@@ -203,6 +171,7 @@ const colors = {
     inputBg: theme.card,
     placeholder: theme.textMuted,
     danger: theme.statusDanger,
+    archive: theme.statusWarning,
 };
 
   const fetchNotes = useCallback(async (isRefresh = false) => {
@@ -392,6 +361,7 @@ const colors = {
   const handleArchiveNote = async (noteId: string) => {
     try {
       await apiRequest(`/api/notes/${noteId}/archive`, 'POST');
+      haptic.success();
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
     } catch (err) {
       Alert.alert('Error', err instanceof Error ? err.message : 'Failed to archive note.');
@@ -400,6 +370,7 @@ const colors = {
 
   const handleTogglePin = async (note: NoteItem) => {
     const nextPinned = !note.pinned;
+    haptic.select();
     // Optimistic: reflect the new pin state immediately.
     setNotes((prev) => prev.map((n) => (n.id === note.id ? { ...n, pinned: nextPinned } : n)));
     try {
@@ -453,14 +424,14 @@ const colors = {
         });
       }}
       onLongPress={() => showNoteActions(item)}
-      onDelete={() => handleDeleteNote(item.id, item.title)}
+      onTogglePin={() => handleTogglePin(item)}
       onArchive={() => handleArchiveNote(item.id)}
     />
   );
 
   const renderSectionHeader = (title: string) => (
     <View style={[styles.sectionHeader, { borderBottomColor: colors.border }]}>
-      <Text style={[styles.sectionTitle, { color: colors.secondary }]}>{title}</Text>
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.secondary }]}>{title}</Text>
     </View>
   );
 
@@ -517,7 +488,7 @@ const colors = {
                   onPress={() => setTab(key)}
                   activeOpacity={0.8}
                 >
-                  <Text
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
                     style={[
                       styles.segmentText,
                       { color: active ? '#fff' : colors.secondary },
@@ -539,11 +510,14 @@ const colors = {
             placeholder="Search notes..."
             placeholderTextColor={colors.placeholder}
             value={search}
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="never"
             onChangeText={setSearch}
             returnKeyType="search"
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }} accessibilityLabel="Clear search">
               <Ionicons name="close-circle" size={18} color={colors.placeholder} />
             </TouchableOpacity>
           )}
@@ -551,27 +525,25 @@ const colors = {
       </View>
 
       {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
+        <SkeletonList />
       ) : fetchError && notes.length === 0 ? (
         <View style={styles.centerContainer}>
           <Ionicons name="cloud-offline-outline" size={56} color={colors.placeholder} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't load notes</Text>
-          <Text style={[styles.emptySubtitle, { color: colors.secondary }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>Couldn't load notes</Text>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySubtitle, { color: colors.secondary }]}>
             Check your connection and try again.
           </Text>
           <TouchableOpacity onPress={() => fetchNotes()} style={{ marginTop: 12 }}>
-            <Text style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Retry</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : allItems.length === 0 ? (
         <View style={styles.centerContainer}>
           <Ionicons name="document-text-outline" size={56} color={colors.placeholder} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>
             {search ? 'No matching notes' : 'No notes yet'}
           </Text>
-          <Text style={[styles.emptySubtitle, { color: colors.secondary }]}>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySubtitle, { color: colors.secondary }]}>
             {search ? 'Try a different search term' : 'Tap + to create your first note'}
           </Text>
         </View>
@@ -589,7 +561,7 @@ const colors = {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => fetchNotes(true)} tintColor={colors.accent} />
           }
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, readableFrame]}
         />
       )}
 
@@ -601,7 +573,7 @@ const colors = {
       >
         <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
           <View style={[styles.templateHeader, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.templateTitle, { color: colors.text }]}>Choose Template</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.templateTitle, { color: colors.text }]}>Choose Template</Text>
             <TouchableOpacity onPress={() => setTemplateModalVisible(false)}>
               <Ionicons name="close" size={24} color={colors.secondary} />
             </TouchableOpacity>
@@ -613,15 +585,15 @@ const colors = {
           ) : templates.length === 0 ? (
             <View style={styles.centerContainer}>
               <Ionicons name={templateFetchError ? 'cloud-offline-outline' : 'document-text-outline'} size={48} color={colors.placeholder} />
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>
                 {templateFetchError ? 'Failed to load templates' : 'No templates'}
               </Text>
-              <Text style={[styles.emptySubtitle, { color: colors.secondary }]}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySubtitle, { color: colors.secondary }]}>
                 {templateFetchError ? 'Check your connection and try again.' : 'Create templates on the web to use them here.'}
               </Text>
               {templateFetchError && (
                 <TouchableOpacity onPress={openTemplatePicker} style={{ marginTop: 12 }}>
-                  <Text style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Retry</Text>
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Retry</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -637,9 +609,9 @@ const colors = {
                 >
                   <Ionicons name="document-text" size={22} color={colors.accent} style={{ marginRight: 12 }} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.templateName, { color: colors.text }]}>{item.name}</Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.templateName, { color: colors.text }]}>{item.name}</Text>
                     {item.description ? (
-                      <Text style={[styles.templateDesc, { color: colors.secondary }]} numberOfLines={1}>
+                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.templateDesc, { color: colors.secondary }]} numberOfLines={1}>
                         {item.description}
                       </Text>
                     ) : null}
@@ -732,26 +704,6 @@ const styles = StyleSheet.create({
   swipeContainer: {
     overflow: 'hidden',
     borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  swipeActions: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    width: 160,
-  },
-  swipeBtn: {
-    width: 80,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 2,
-  },
-  swipeBtnText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '600',
   },
   noteRowAnimated: {
     width: '100%',

@@ -19,6 +19,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme, lightTheme } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { compareProjects } from '../lib/projects';
+import { TwoPane } from '../components/ui/TwoPane';
+import { useTwoPaneSelection } from '../lib/twoPane';
+import { usePersistedState } from '../lib/usePersistedState';
+import ProjectDetailScreen from './ProjectDetailScreen';
+import { ProjectRail } from '../components/projects/ProjectRail';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { SkeletonList } from '../components/ui/Skeleton';
 
 const toTitleCase = (str: string) =>
   str.replace(/_/g, ' ').replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
@@ -52,6 +59,7 @@ interface Project {
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
+  route: { params?: any };
 };
 
 const phases = [
@@ -62,7 +70,7 @@ const phases = [
   { key: 'post_construction', label: 'Post-Con' },
 ];
 
-export default function ProjectsScreen({ navigation }: Props) {
+export default function ProjectsScreen({ navigation, route }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
@@ -81,11 +89,19 @@ export default function ProjectsScreen({ navigation }: Props) {
   const [statusLabels, setStatusLabels] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
-  const [activePhase, setActivePhase] = useState('all');
+  // Remembered between launches, so the list opens on the phase you last used.
+  const [activePhase, setActivePhase] = usePersistedState('projects.phase', 'all');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const insets = useSafeAreaInsets();
+  // Phone: a tap pushes the project. Duo unfolded: it opens on the right.
+  const { selectedId, open, isWide, paneProps } = useTwoPaneSelection({
+    navigation,
+    route,
+    detailRoute: 'ProjectDetail',
+    paramsFor: (id: string) => ({ projectId: id, projectName: projects.find(p => p.id === id)?.name }),
+  });
 
   const theme = useTheme();
 const colors = {
@@ -208,8 +224,12 @@ const colors = {
     return (
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => navigation.navigate('ProjectDetail', { projectId: item.id, projectName: item.name })}
-        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => open(item.id)}
+        style={[
+          styles.card,
+          { backgroundColor: colors.card, borderColor: colors.border },
+          isWide && selectedId === item.id && { borderColor: colors.accent, borderWidth: 2 },
+        ]}
       >
         {/* Top colour band */}
         <View style={[styles.cardTopBand, { backgroundColor: projectColor }]} />
@@ -227,8 +247,33 @@ const colors = {
             )}
           </View>
 
+          {/* Phone / Duo folded: ONE line under the name — status chip, then
+              client and finish date, then % complete — and the progress bar.
+              Big screen keeps the roomier card below. Same facts either way. */}
+          {!isWide && (
+            <View style={[styles.cardRow, styles.compactRow]}>
+              <View style={[styles.chip, { backgroundColor: chip.bg }]}>
+                <View style={[styles.chipDot, { backgroundColor: chip.dot }]} />
+                <Text style={[styles.chipLabel, { color: chip.text }]}>{toTitleCase(chipLabel)}</Text>
+              </View>
+              <Text style={[styles.compactFacts, { color: colors.secondary }]} numberOfLines={1}>
+                {[item.clientName, dateStr].filter(Boolean).join(' · ')}
+              </Text>
+              {hasProgress && pct > 0 && (
+                <Text style={[styles.compactPct, { color: colors.secondary }]}>{Math.round(pct)}%</Text>
+              )}
+            </View>
+          )}
+          {!isWide && hasProgress && (
+            <View style={[styles.progressBg, { backgroundColor: theme.border, marginTop: 8 }]}>
+              {pct > 0 && (
+                <View style={[styles.progressFill, { backgroundColor: projectColor, width: `${Math.min(pct, 100)}%` }]} />
+              )}
+            </View>
+          )}
+
           {/* Client name */}
-          {!!item.clientName && (
+          {isWide && !!item.clientName && (
             <View style={[styles.cardRow, { marginTop: 3, justifyContent: 'flex-start' }]}>
               <Ionicons name="person-outline" size={11} color={colors.secondary} style={{ marginRight: 4 }} />
               <Text style={[styles.cardClient, { color: colors.secondary }]} numberOfLines={1}>
@@ -238,6 +283,7 @@ const colors = {
           )}
 
           {/* Row 2: Status chip + date */}
+          {isWide && (
           <View style={[styles.cardRow, { marginTop: 6 }]}>
             <View style={[styles.chip, { backgroundColor: chip.bg }]}>
               <View style={[styles.chipDot, { backgroundColor: chip.dot }]} />
@@ -247,9 +293,10 @@ const colors = {
               <Text style={[styles.cardDate, { color: colors.secondary }]}>{dateStr}</Text>
             )}
           </View>
+          )}
 
           {/* Row 3: Progress bar in the project's own colour + % label. */}
-          {hasProgress && (
+          {isWide && hasProgress && (
             <View style={{ marginTop: 10 }}>
               <View style={[styles.progressBg, { backgroundColor: theme.border }]}>
                 {pct > 0 && (
@@ -274,8 +321,8 @@ const colors = {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, { backgroundColor: colors.bg, paddingTop: insets.top + 64 }]}>
+        <SkeletonList />
       </View>
     );
   }
@@ -302,7 +349,7 @@ const colors = {
 
   const screenBg = isDark ? theme.background : '#F0EBE3';
 
-  return (
+  const listPane = (
     <View style={[styles.container, { backgroundColor: screenBg }]}>
       {/* Header — matches Dashboard header exactly */}
       <View style={[styles.header, { backgroundColor: screenBg, paddingTop: insets.top + 12 }]}>
@@ -311,6 +358,9 @@ const colors = {
           style={styles.searchIconBtn}
           onPress={() => { setSearchVisible(v => !v); if (searchVisible) setSearch(''); }}
           activeOpacity={0.7}
+          // 38pt button + 3 each side = 44pt.
+          hitSlop={{ top: 3, bottom: 3, left: 3, right: 3 }}
+          accessibilityLabel={searchVisible ? 'Close search' : 'Search projects'}
         >
           <Ionicons name={searchVisible ? 'close' : 'search'} size={22} color={colors.secondary} />
         </TouchableOpacity>
@@ -331,7 +381,7 @@ const colors = {
             autoFocus
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')} activeOpacity={0.7}>
+            <TouchableOpacity onPress={() => setSearch('')} activeOpacity={0.7} hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }} accessibilityLabel="Clear search">
               <Ionicons name="close-circle" size={16} color={colors.secondary} />
             </TouchableOpacity>
           )}
@@ -343,7 +393,7 @@ const colors = {
         data={filteredProjects}
         keyExtractor={item => item.id}
         style={{ backgroundColor: screenBg }}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, isWide && readableFrame]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         renderItem={renderProjectCard}
         ListEmptyComponent={
@@ -403,6 +453,28 @@ const colors = {
         </View>
       </View>
     </View>
+  );
+
+  return (
+    <TwoPane
+      {...paneProps}
+      list={listPane}
+      // Unfolded: a job open → the list collapses to a sidebar of job badges.
+      rail={<ProjectRail projects={filteredProjects} selectedId={selectedId} onSelect={open} />}
+      detailKey={selectedId}
+      emptyTitle="Select a project"
+      emptyIcon="briefcase-outline"
+      detail={
+        selectedId ? (
+          <ProjectDetailScreen
+            key={selectedId}
+            embedded
+            navigation={navigation}
+            route={{ key: `embedded-${selectedId}`, name: 'ProjectDetail', params: { projectId: selectedId } } as any}
+          />
+        ) : null
+      }
+    />
   );
 }
 
@@ -499,6 +571,9 @@ const styles = StyleSheet.create({
   cardDate: {
     fontSize: 11,
   },
+  compactRow: { marginTop: 6, justifyContent: 'flex-start', gap: 8 },
+  compactFacts: { flex: 1, fontSize: 12 },
+  compactPct: { fontSize: 11, fontWeight: '600' },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -7,6 +7,7 @@ import { formatMoney } from '../../lib/selections';
 import { useTheme, fontSize, fontWeight, radius } from '../../theme';
 import { formatDay, invoiceStatus, type ClientInvoice } from '../../lib/clientPortal';
 import { ClientCard, ClientEmpty, ClientHeader, ClientLoading, ClientStatusPill } from '../../components/client/ClientUI';
+import { readableFrame } from '../../components/ui/ReadableColumn';
 
 /**
  * A progress claim as the document the client was sent — the phone twin of
@@ -86,7 +87,7 @@ export default function ClientInvoiceDetailScreen() {
         <ClientEmpty icon="alert-circle-outline" title="This claim isn't available" body="Ask your builder if you think it should be." />
       ) : (
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+          contentContainerStyle={[styles.content, readableFrame, { paddingBottom: insets.bottom + 32 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
         >
           <View style={[styles.hero, { backgroundColor: theme.primary }]}>
