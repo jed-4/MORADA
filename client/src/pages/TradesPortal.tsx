@@ -48,6 +48,8 @@ interface SiteSelection {
   category?: string | null;
   room?: string | null;
   description?: string | null;
+  /** Trades notes — only sent when the builder switched them on (Site board). */
+  notes?: string | null;
   status?: string | null;
   options: SiteOption[];
 }
@@ -257,6 +259,12 @@ function SelectionDialog({ sel, onClose }: { sel: SiteSelection | null; onClose:
         </DialogHeader>
         <div className="space-y-3">
           {sel.description && <p className="text-sm whitespace-pre-wrap">{sel.description}</p>}
+          {sel.notes && (
+            <div className="rounded-md border border-[hsl(var(--amber))]/50 bg-[hsl(var(--amber-light))] px-3 py-2" data-testid="site-selection-notes">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Notes for trades</p>
+              <p className="text-sm whitespace-pre-wrap">{sel.notes}</p>
+            </div>
+          )}
           {chosen && <OptionDetail option={chosen} chosen />}
           {!chosen && sel.options.length === 0 && (
             <p className="text-sm text-muted-foreground italic">Nothing has been put forward for this yet.</p>

@@ -22,7 +22,8 @@ import { randomBytes, randomUUID } from "crypto";
 import { format, startOfISOWeek, startOfMonth, addDays, addMonths, subDays, subMonths, getISOWeek } from "date-fns";
 import { setupAuth, isAuthenticated, sessionMiddleware, ensureLegacySessionFields } from "./auth";
 import { buildClientVariationDocument } from "./clientVariationDocument";
-import { registerSiteBoardRoutes, siteBoardUrl, qrPng, newSiteToken, publicBaseUrl } from "./siteBoard";
+import { registerSiteBoardRoutes, siteBoardUrl, qrPng, newSiteToken, publicBaseUrl, siteAttachmentAllowed } from "./siteBoard";
+import { resolveSiteSelectionFields } from "@shared/siteBoard";
 import {
   DefectError,
   actorFromReq,
@@ -21892,37 +21893,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // client, a visitor. That means: no money of any kind (cost, markup,
       // charge, allowance), no internal notes, and no option the builder has
       // hidden from the client.
+      //
+      // On top of that the builder chooses (Site board → Selections): which
+      // selections are on the page at all (`showOnSite`) and which details
+      // show (`projects.siteSelectionFields`). Hidden details are left out of
+      // the payload, not just the page.
       const company = (project as any).companyId ? await storage.getCompany((project as any).companyId) : undefined;
       const urlPrefix = `/api/portal/project/${token}/trades`;
+      const fields = resolveSiteSelectionFields((project as any).siteSelectionFields);
       const safeSelections = selectionsWithOptions
+        .filter((s: any) => s.showOnSite !== false)
         .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
-        .map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          category: s.category,
-          room: s.room,
-          description: s.description,
-          status: s.status,
-          deadline: s.deadline,
-          options: (s.options ?? []).filter((o: any) => o.visibleToClient !== false).map((o: any) => ({
-            id: o.id,
-            selectionId: o.selectionId,
-            name: o.name,
-            description: o.description,
-            sku: o.sku,
-            brand: o.brand,
-            category: o.category,
-            subcategory: o.subcategory,
-            quantity: o.quantity,
-            unitType: o.unitType,
-            url: o.url,
-            specifications: o.specifications,
-            isSelectedByClient: o.isSelectedByClient,
-            approvedAt: o.approvedAt,
-            sortOrder: o.sortOrder,
-            attachments: (o.attachments ?? []).map((a: any) => portalAttachmentView(a, urlPrefix)),
-          })),
-        }));
+        .map((s: any) => {
+          const visible = (s.options ?? []).filter((o: any) => o.visibleToClient !== false);
+          const confirmed = visible.filter((o: any) => o.approvedAt);
+          const options = !fields.otherOptions && confirmed.length > 0 ? confirmed : visible;
+          return {
+            id: s.id,
+            name: s.name,
+            category: s.category,
+            room: s.room,
+            description: fields.description ? s.description : null,
+            notes: fields.tradeNotes ? (s.notes ?? null) : null,
+            status: s.status,
+            deadline: s.deadline,
+            options: options.map((o: any) => ({
+              id: o.id,
+              selectionId: o.selectionId,
+              name: o.name,
+              description: fields.description ? o.description : null,
+              sku: fields.sku ? o.sku : null,
+              brand: fields.brand ? o.brand : null,
+              category: o.category,
+              subcategory: o.subcategory,
+              quantity: fields.quantity ? o.quantity : null,
+              unitType: fields.quantity ? o.unitType : null,
+              url: fields.productLink ? o.url : null,
+              specifications: fields.specifications ? o.specifications : null,
+              isSelectedByClient: o.isSelectedByClient,
+              approvedAt: o.approvedAt,
+              sortOrder: o.sortOrder,
+              attachments: (o.attachments ?? [])
+                .filter((a: any) => siteAttachmentAllowed(a, fields))
+                .map((a: any) => portalAttachmentView(a, urlPrefix)),
+            })),
+          };
+        });
 
       res.json({
         // The address lives in `location` ("Address" in the UI); there is no `address` column.
@@ -21951,8 +21967,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!attachment) return res.status(404).json({ error: "Not found" });
       const option = await storage.getSelectionOption(attachment.optionId);
       const selection = option ? await storage.getSelection(option.selectionId) : undefined;
-      // Same rule as the payload: a hidden option's files are not served.
-      if (!selection || selection.projectId !== project.id || option?.visibleToClient === false) {
+      // Same rules as the payload: nothing from a hidden option, a selection
+      // kept off the site page, or a detail (photos/documents) switched off.
+      if (
+        !selection || selection.projectId !== project.id || option?.visibleToClient === false ||
+        (selection as any).showOnSite === false ||
+        !siteAttachmentAllowed(attachment, resolveSiteSelectionFields((project as any).siteSelectionFields))
+      ) {
         return res.status(404).json({ error: "Not found" });
       }
 
