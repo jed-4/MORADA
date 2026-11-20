@@ -485,11 +485,14 @@ export function TimesheetDialog({
       // split + POST per new split (each was a full DB round trip, and a
       // mid-sequence failure left the entry with missing splits).
       const splitsPayload = isSplit
+        // One rate per timesheet: a split is a cost code and hours; its rate
+        // is the timesheet's and its dollars are hours × that rate (the
+        // server re-stamps both anyway).
         ? costCodeSplits.map((split) => ({
             costCodeId: split.costCodeId,
             duration: split.duration,
-            hourlyRate: split.hourlyRate,
-            total: split.total,
+            hourlyRate: hourlyRate.toString(),
+            total: ((parseFloat(split.duration || "0") || 0) * hourlyRate).toFixed(2),
           }))
         // Not split: write NO split rows. The cost code lives on the timesheet
         // itself and the reporting rollups fall back to it. Writing a mirror
@@ -632,10 +635,10 @@ export function TimesheetDialog({
       costCodeSplits.map((split) => {
         if (split.id === id) {
           const updated = { ...split, [field]: value };
-          if (field === "duration" || field === "hourlyRate") {
-            const dur = parseFloat(field === "duration" ? value : updated.duration);
-            const rate = parseFloat(field === "hourlyRate" ? value : updated.hourlyRate);
-            updated.total = (dur * rate).toFixed(2);
+          if (field === "duration") {
+            const rate = parseFloat(form.getValues("hourlyRate") || "0") || 0;
+            updated.hourlyRate = rate.toString();
+            updated.total = ((parseFloat(value) || 0) * rate).toFixed(2);
           }
           return updated;
         }
@@ -1079,10 +1082,15 @@ export function TimesheetDialog({
                     )}
                   </div>
 
-                  {/* Single cost-code + rate — hidden in split mode */}
-                  {!isSplit && (
-                    <div className={canViewTimesheetRates ? "grid grid-cols-[2fr_1fr] gap-3 items-end" : ""}>
-                      <FormField
+                  {/* Cost code (hidden in split mode) + the timesheet's ONE rate,
+                      which stays visible in split mode — splits have no rate of
+                      their own. */}
+                  {(!isSplit || canViewTimesheetRates) && (
+                    <div className={cn(
+                      canViewTimesheetRates ? "grid grid-cols-[2fr_1fr] gap-3 items-end" : "",
+                      isSplit && "mb-3",
+                    )}>
+                      {isSplit ? <div /> : <FormField
                         control={form.control}
                         name="costCodeId"
                         render={({ field }) => (
@@ -1099,7 +1107,7 @@ export function TimesheetDialog({
                             <FormMessage />
                           </FormItem>
                         )}
-                      />
+                      />}
                       {canViewTimesheetRates && (
                         <FormField
                           control={form.control}
@@ -1146,7 +1154,7 @@ export function TimesheetDialog({
                           <Label className={labelClass}>Cost Code</Label>
                           <Label className={labelClass}>Hours</Label>
                           {canViewTimesheetRates && (
-                            <Label className={labelClass}>Rate</Label>
+                            <Label className={labelClass}>Cost</Label>
                           )}
                           <div />
 
@@ -1172,15 +1180,11 @@ export function TimesheetDialog({
                                 />
                               </div>
                               {canViewTimesheetRates && (
-                                <div className="min-w-0">
-                                  <Input
-                                    {...decimalInputProps}
-                                    value={split.hourlyRate}
-                                    onChange={(e) => updateCostCodeSplit(split.id, "hourlyRate", decimalOnly(e.target.value))}
-                                    disabled={isSubbieSelected}
-                                    className={cn(inputClass, "w-full")}
-                                    data-testid={`input-split-rate-${split.id}`}
-                                  />
+                                <div
+                                  className="min-w-0 text-sm tabular-nums text-muted-foreground px-1"
+                                  data-testid={`text-split-cost-${split.id}`}
+                                >
+                                  ${((parseFloat(split.duration || "0") || 0) * (parseFloat(watchedHourlyRate || "0") || 0)).toFixed(2)}
                                 </div>
                               )}
                               <Button
@@ -1224,8 +1228,8 @@ export function TimesheetDialog({
                   )}
                 </div>
 
-                {/* Duration & Total cost — Total only visible to users with rates permission and not in split mode */}
-                <div className={canViewTimesheetRates && !isSplit ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
+                {/* Duration & Total cost — Total only visible to users with rates permission */}
+                <div className={canViewTimesheetRates ? "grid grid-cols-[2fr_1fr] gap-3" : ""}>
                   <div>
                     <Label className={labelClass}>Duration</Label>
                     <div
@@ -1239,7 +1243,7 @@ export function TimesheetDialog({
                       <div style={{ fontSize: '11px', color: '#9b9b9b', marginTop: '2px' }}>total hours</div>
                     </div>
                   </div>
-                  {canViewTimesheetRates && !isSplit && (
+                  {canViewTimesheetRates && (
                     <div>
                       <Label className={labelClass}>Total cost</Label>
                       <div

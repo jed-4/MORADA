@@ -134,6 +134,7 @@ import { deriveRfqStatus } from "@shared/rfqStatus";
 import { DEFAULT_RFQ_REMINDER_TEMPLATES } from "@shared/schema";
 import { DEFAULT_PROPOSAL_REMINDER_TEMPLATES } from "@shared/proposalReminders";
 import { timesheetTotalExGstCents } from "@shared/money";
+import { normalisedSplit, splitNeedsNormalising } from "@shared/timesheetSplits";
 import { computeProposalTotals, type ProposalTotals } from "@shared/proposalTotals";
 import { findWorsenedOverClaims, ClaimOverBillingError, isFullyClaimedPercent, type ClaimChange } from "@shared/invoiceClaims";
 import { defaultRevisionLabel } from "@shared/reviewCostImpact";
@@ -23234,6 +23235,9 @@ export class DbStorage implements IStorage {
         .set({ ...safeFields, updatedAt: new Date() })
         .where(eq(schema.timesheets.id, id))
         .returning();
+      if (result[0] && ["hourlyRate", "total", "userId", "duration"].some((k) => k in safeFields)) {
+        await this.normaliseTimesheetSplits(id);
+      }
       return result[0];
     } catch (error) {
       console.error("Database error in updateTimesheet:", error);
@@ -23322,12 +23326,11 @@ export class DbStorage implements IStorage {
       return await db.transaction(async (tx) => {
         await tx.delete(schema.timesheetCostCodes)
           .where(eq(schema.timesheetCostCodes.timesheetId, timesheetId));
-        if (splits.length === 0) return [];
+        if (splits.length === 0) return;
         const zero = await this.isSubcontractorTimesheet(timesheetId);
-        return await tx.insert(schema.timesheetCostCodes)
-          .values(splits.map((s) => ({ ...s, timesheetId, ...(zero ? { hourlyRate: "0", total: "0" } : {}) })))
-          .returning();
-      });
+        await tx.insert(schema.timesheetCostCodes)
+          .values(splits.map((s) => ({ ...s, timesheetId, ...(zero ? { hourlyRate: "0", total: "0" } : {}) })));
+      }).then(() => this.normaliseTimesheetSplits(timesheetId));
     } catch (error) {
       console.error("Database error in replaceTimesheetCostCodes:", error);
       throw error;
@@ -23340,7 +23343,8 @@ export class DbStorage implements IStorage {
       const result = await db.insert(schema.timesheetCostCodes)
         .values(zero ? { ...costCode, hourlyRate: "0", total: "0" } : costCode)
         .returning();
-      return result[0];
+      const rows = await this.normaliseTimesheetSplits(costCode.timesheetId);
+      return rows.find((r) => r.id === result[0].id) ?? result[0];
     } catch (error) {
       console.error("Database error in createTimesheetCostCode:", error);
       throw error;
@@ -23361,7 +23365,9 @@ export class DbStorage implements IStorage {
         .set({ ...patch, updatedAt: new Date() })
         .where(eq(schema.timesheetCostCodes.id, id))
         .returning();
-      return result[0];
+      if (!result[0]) return undefined;
+      const rows = await this.normaliseTimesheetSplits(result[0].timesheetId);
+      return rows.find((r) => r.id === id) ?? result[0];
     } catch (error) {
       console.error("Database error in updateTimesheetCostCode:", error);
       throw error;
@@ -23373,11 +23379,38 @@ export class DbStorage implements IStorage {
       const result = await db.delete(schema.timesheetCostCodes)
         .where(eq(schema.timesheetCostCodes.id, id))
         .returning();
+      // Two rows down to one turns a split back into a mirror of the timesheet.
+      if (result[0]) await this.normaliseTimesheetSplits(result[0].timesheetId);
       return result.length > 0;
     } catch (error) {
       console.error("Database error in deleteTimesheetCostCode:", error);
       throw error;
     }
+  }
+
+  /**
+   * One rate per timesheet: re-stamp every split row of a timesheet with the
+   * timesheet's own rate, dollars = split hours × that rate, and (for a single
+   * legacy mirror row) the timesheet's hours. Every write path above calls
+   * this, so web, mobile and bulk edits all land on the same rule. Returns
+   * the timesheet's split rows as stored afterwards.
+   */
+  async normaliseTimesheetSplits(timesheetId: string): Promise<TimesheetCostCode[]> {
+    const [ts] = await db.select({ duration: schema.timesheets.duration, hourlyRate: schema.timesheets.hourlyRate })
+      .from(schema.timesheets).where(eq(schema.timesheets.id, timesheetId)).limit(1);
+    const rows = await this.getTimesheetCostCodes(timesheetId);
+    if (!ts || rows.length === 0) return rows;
+    const out: TimesheetCostCode[] = [];
+    for (const row of rows) {
+      if (!splitNeedsNormalising(ts, row, rows.length)) { out.push(row); continue; }
+      const want = normalisedSplit(ts, row, rows.length);
+      const [updated] = await db.update(schema.timesheetCostCodes)
+        .set({ ...want, updatedAt: new Date() } as any)
+        .where(eq(schema.timesheetCostCodes.id, row.id))
+        .returning();
+      out.push(updated ?? row);
+    }
+    return out;
   }
 
   // Clock-in/out methods

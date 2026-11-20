@@ -1,3 +1,4 @@
+import { isRealSplit } from "@shared/timesheetSplits";
 import { personName, pickerLabel } from "@/lib/people";
 import { usePeople } from "@/hooks/use-people";
 import { useState, useEffect, useRef, useMemo } from "react";
@@ -786,35 +787,43 @@ export default function Timesheets({ embedded }: { embedded?: boolean } = {}) {
     const rows: TimesheetTableRow[] = [];
     for (const ts of filteredTimesheets) {
       const splits = (ts as any).costCodeSplits as any[] | undefined;
-      if (splits && splits.length > 0 && !isSplitExpanded(ts.id)) {
-        // Totals come from the splits so the collapsed row always equals the
-        // sum of its expanded rows.
-        const hours = splits.reduce((sum, sp) => sum + (parseFloat(sp.duration ?? "0") || 0), 0);
-        const total = splits.reduce((sum, sp) => sum + (parseFloat(sp.total ?? "0") || 0), 0);
+      // One rate per timesheet: money always comes from the timesheet itself
+      // (hours × its rate), never from a split's own stored total — a stale
+      // split once showed $3,775 here for a $25 entry.
+      const rate = parseFloat(String(ts.hourlyRate ?? "0")) || 0;
+      if (isRealSplit(splits) && !isSplitExpanded(ts.id)) {
         rows.push({
           ...ts,
           _rowKey: `timesheet-${ts.id}`,
           _isSplitSummary: true,
-          _splitCostCodeIds: splits.map((sp) => sp.costCodeId || ""),
-          _splitCount: splits.length,
-          _splitDuration: hours.toString(),
-          _splitTotal: total.toString(),
+          _splitCostCodeIds: splits!.map((sp) => sp.costCodeId || ""),
+          _splitCount: splits!.length,
+          _splitDuration: String(ts.duration ?? "0"),
+          _splitTotal: String(ts.total ?? "0"),
         });
-      } else if (splits && splits.length > 0) {
-        splits.forEach((split, idx) => {
+      } else if (isRealSplit(splits)) {
+        splits!.forEach((split, idx) => {
+          const hrs = parseFloat(split.duration ?? "0") || 0;
           rows.push({
             ...ts,
             _rowKey: `${ts.id}-split-${idx}`,
             _isSplitRow: true,
             _splitCostCodeId: split.costCodeId || "",
-            _splitDuration: split.duration?.toString() ?? "0",
-            _splitTotal: split.total?.toString() ?? "0",
+            _splitDuration: hrs.toString(),
+            _splitTotal: (hrs * rate).toFixed(2),
             _splitIsFirst: idx === 0,
-            _splitCount: splits.length,
+            _splitCount: splits!.length,
           });
         });
       } else {
-        rows.push({ ...ts, _rowKey: `timesheet-${ts.id}` });
+        // No split, or the single legacy mirror row: a plain row, no arrow.
+        // Fall back to the mirror's cost code when the timesheet has none.
+        const mirrorCode = splits?.length === 1 ? splits[0].costCodeId : null;
+        rows.push({
+          ...ts,
+          costCodeId: ts.costCodeId || mirrorCode || ts.costCodeId,
+          _rowKey: `timesheet-${ts.id}`,
+        });
       }
     }
     return rows;
