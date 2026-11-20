@@ -492,6 +492,7 @@
     "server/routes.ts GET /api/projects/:projectId/budget-actuals",
     "server/routes.ts GET /api/projects/:projectId/cash-flow",
     "server/routes.ts GET /api/projects/:projectId/cost-codes",
+    "server/routes.ts GET /api/projects/:projectId/cost-summary",
     "server/routes.ts GET /api/projects/:projectId/defect-trades",
     "server/routes.ts GET /api/projects/:projectId/defects",
     "server/routes.ts GET /api/projects/:projectId/estimate-items",

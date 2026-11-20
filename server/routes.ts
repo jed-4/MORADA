@@ -6426,16 +6426,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Actual costs to date for a project, in integer CENTS, EX-GST. This powers the
-  // ACTUAL gross-margin figure on the Budget page (revised contract ex-GST minus
-  // these actual costs). It is intentionally separate from budget.actualAmount
-  // (which is inc-GST and excludes labour) so existing budget semantics are unchanged.
-  //   - bills: sum of bill LINE ITEM totals (already stored ex-GST in cents);
-  //            credit bills subtract. Matches recalculateBudgetLineItems so it
-  //            reconciles with the cost-code breakdown the user already sees.
-  //   - labour: sum of timesheet totals (duration × hourlyRate, dollars, no GST),
-  //             excluding rejected timesheets. Converted to cents.
-  //   - internal: vehicles & plant at their day rate (server/services/assetRecharge.ts).
+  // Actual costs to date for a project, in integer CENTS, EX-GST — the totals of
+  // the one cost calculation (shared/projectCost.ts), so they equal the Budget
+  // page and budget.actualAmount.
+  //   - bills: bill line items with GST stripped (bills with no lines at their
+  //            subtotal); credit bills subtract.
+  //   - labour: approved timesheets (ex GST; subcontractor timesheets are $0).
+  //   - internal: vehicles & plant at their day rate — information only, not
+  //               part of actualCostExGstCents.
   app.get(
     "/api/projects/:id/actual-costs",
     requireAuth,
@@ -6451,48 +6449,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(404).json({ error: "Project not found" });
         }
 
-        // Bills (ex-GST, cents). Sum line items and strip GST from tax-inclusive
-        // lines (whose stored totals include GST) so this stays ex-GST.
-        const bills = await storage.getBills(projectId, undefined, companyId || undefined);
-        let billsCostExGstCents = 0;
-        for (const bill of bills) {
-          const lines = await storage.getBillLineItems(bill.id);
-          const sign = bill.billType === "credit" ? -1 : 1;
-          if (lines.length === 0) {
-            // A bill with no line items (e.g. still in "needs review", or entered
-            // as a header total only) would otherwise contribute $0 and silently
-            // vanish from project cost. Fall back to its stored ex-GST subtotal.
-            // Only reachable when there are no lines, so it cannot double count.
-            billsCostExGstCents += ((bill as any).subtotal || 0) * sign;
-            continue;
-          }
-          for (const line of lines) {
-            billsCostExGstCents += billLineExGstCents(line.total ?? 0, line.tax, (bill as any).taxMode) * sign;
-          }
-        }
-
-        // Labour (timesheets). storage.getTimesheets is NOT view-scope filtered, so
-        // this is the full company-scoped project labour cost (correct for a financial
-        // total gated by the budget_actuals permission). Count ONLY approved
-        // timesheets — draft/submitted/rejected are excluded from actual cost
-        // (mirrors getProjectLabourCostBreakdown so the table Labour column and
-        // the gross-margin bar agree).
-        const timesheets = await storage.getTimesheets(projectId);
-        let timesheetCostCents = 0;
-        for (const ts of timesheets) {
-          if (ts.status !== "approved") continue;
-          timesheetCostCents += Math.round((Number(ts.total) || 0) * 100);
-        }
+        // Bills and labour from the one cost calculation (shared/projectCost.ts),
+        // so these always equal the Budget page's totals.
+        const { loadProjectCost } = await import("./services/projectCostService");
+        const cost = await loadProjectCost(projectId);
+        const billsCostExGstCents = cost?.totals.billsCents ?? 0;
+        const timesheetCostCents = cost?.totals.labourCents ?? 0;
 
         // Vehicles & plant charged to this job at their day rate (asset
-        // register, PR 5). An internal cost like labour: ex GST, and not cash —
-        // the real fuel and servicing are already in bills.
+        // register). Reported for information only: it is NOT project cost, so
+        // it is not in actualCostExGstCents.
         const { loadRecharges } = await import("./services/assetRecharge");
         const internalCostCents = companyId
           ? (await loadRecharges(companyId, { projectId })).reduce((s, c) => s + c.cents, 0)
           : 0;
-        const actualCostExGstCents =
-          billsCostExGstCents + timesheetCostCents + internalCostCents;
+        const actualCostExGstCents = billsCostExGstCents + timesheetCostCents;
 
         res.json({
           projectId,
@@ -23962,39 +23933,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { projectId } = req.params;
       const costCodeId = (req.query.costCodeId as string) || null;
       const companyId = (req as any).user?.companyId;
+      if (!(await enforceProjectCompany(req, res, projectId, "Project not found"))) return;
 
+      // Three queries in total — bills, all their lines, their suppliers — not
+      // one per bill (~400ms each to Neon).
       const bills = await storage.getBills(projectId, undefined, companyId || undefined);
+      const billIds = bills.map((b) => b.id);
+      const allLines = billIds.length > 0
+        ? await db.select().from(schema.billLineItems).where(inArray(schema.billLineItems.billId, billIds))
+        : [];
+      const linesByBill = new Map<string, typeof allLines>();
+      for (const l of allLines) {
+        const arr = linesByBill.get(l.billId) || [];
+        arr.push(l);
+        linesByBill.set(l.billId, arr);
+      }
+      const supplierIds = Array.from(new Set(bills.map((b) => b.supplierId).filter((s): s is string => !!s)));
+      const suppliers = supplierIds.length > 0 && companyId
+        ? await db.select({ id: schema.contacts.id, name: schema.contacts.name, company: schema.contacts.company })
+            .from(schema.contacts)
+            .where(and(inArray(schema.contacts.id, supplierIds), eq(schema.contacts.companyId, companyId)))
+        : [];
+      const supplierName = new Map(suppliers.map((c) => [c.id, c.name || c.company || ""]));
+
       const groups: Array<any> = [];
-
       for (const bill of bills) {
-        const lines = await storage.getBillLineItems(bill.id);
-        const matched = costCodeId
-          ? lines.filter((l) => (l as any).costCodeId === costCodeId)
-          : lines.filter((l) => !(l as any).costCodeId);
-        if (matched.length === 0) continue;
-
+        const lines = linesByBill.get(bill.id) || [];
         const sign = bill.billType === "credit" ? -1 : 1;
-        const lineTotal = matched.reduce((s, l) => s + billLineExGstCents(l.total ?? 0, (l as any).tax, (bill as any).taxMode), 0) * sign;
-
-        let supplierName = "";
-        if (bill.supplierId && companyId) {
-          const contact = await storage.getContact(bill.supplierId, companyId).catch(() => undefined);
-          supplierName = (contact as any)?.name || (contact as any)?.company || "";
-        }
-
-        groups.push({
+        const base = {
           billId: bill.id,
           billNumber: bill.billNumber,
           billType: bill.billType,
           status: bill.status,
           billDate: bill.billDate,
-          supplierName,
-          lineTotal,
-          lines: matched.map((l) => ({
-            id: l.id,
-            description: (l as any).description ?? "",
-            total: billLineExGstCents(l.total ?? 0, (l as any).tax, (bill as any).taxMode) * sign,
-          })),
+          supplierName: (bill.supplierId && supplierName.get(bill.supplierId)) || "",
+        };
+
+        // A bill with no lines yet is costed under Uncategorised at its ex-GST
+        // subtotal (shared/projectCost.ts), so show it there too.
+        if (lines.length === 0) {
+          const cents = ((bill as any).subtotal || 0) * sign;
+          if (!costCodeId && cents !== 0) {
+            groups.push({ ...base, noLineItems: true, lineTotal: cents, lines: [] });
+          }
+          continue;
+        }
+
+        const matched = costCodeId
+          ? lines.filter((l) => l.costCodeId === costCodeId)
+          : lines.filter((l) => !l.costCodeId);
+        if (matched.length === 0) continue;
+
+        const lineCents = (l: (typeof lines)[number]) => billLineExGstCents(l.total ?? 0, l.tax, (bill as any).taxMode) * sign;
+        groups.push({
+          ...base,
+          lineTotal: matched.reduce((s, l) => s + lineCents(l), 0),
+          lines: matched.map((l) => ({ id: l.id, description: l.description ?? "", total: lineCents(l) })),
         });
       }
 
@@ -35770,41 +35764,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/projects/:projectId/budget", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
-      // Recompute the budget on read so the Budget page reflects current bills
-      // live — including ex-GST bill actuals — matching the recalc that already
-      // runs on bill mutations. Without this, budgets persisted before a pricing
-      // fix keep serving stale figures until the next bill change or manual
-      // recalculate. Best-effort: if the recalc fails, fall back to the persisted
-      // budget (auto-creating one if none exists) so the page still loads.
-      let budget = await storage.getBudget(req.params.projectId);
-      try {
-        const recomputed = await storage.calculateBudget(req.params.projectId);
-        if (recomputed) {
-          budget = recomputed;
-          await storage.recalculateBudgetLineItems(recomputed.id);
-        }
-      } catch (e: any) {
-        console.warn(`[GET budget] live recalc failed for project ${req.params.projectId}:`, e?.message || e);
-      }
-      if (!budget) {
-        budget = await storage.calculateBudget(req.params.projectId);
-      }
-      // Attach the labour share of the actual so the budget widget can show a
+      // Computed live from the one cost calculation (shared/projectCost.ts) so
+      // the page always reflects current bills, labour and variations. The
+      // stored snapshot (read by /line-items and the cash flow forecast) is
+      // rewritten only when it has changed, in one locked transaction.
+      const { loadProjectCost, saveProjectCostSnapshot } = await import("./services/projectCostService");
+      const cost = await loadProjectCost(req.params.projectId);
+      if (!cost) return res.status(404).json({ error: "Project not found" });
+      const budget = await saveProjectCostSnapshot(cost, { onlyIfChanged: true });
+      // The labour share of the actual, so the budget widget can show a
       // bills/labour split without another round trip.
-      let labourActualAmount = 0;
-      try {
-        const { timesheets: tsTbl } = await import("@shared/schema");
-        const approvedTs = await db.select().from(tsTbl).where(
-          and(eq(tsTbl.projectId, req.params.projectId), eq(tsTbl.status, "approved")),
-        );
-        labourActualAmount = approvedTs.reduce((s: number, ts: any) => s + timesheetTotalExGstCents(ts), 0);
-      } catch {}
-      res.json(budget ? { ...budget, labourActualAmount } : budget);
+      res.json({ ...budget, labourActualAmount: cost.totals.labourCents });
     } catch (error: any) {
       res.status(500).json({
         error: "Failed to fetch budget",
         details: error.message
       });
+    }
+  });
+
+  // The project's cost, row by row (cost code, category-only lines, uncoded
+  // variations, uncategorised) with totals that are the sum of the rows.
+  // Ex GST cents, cost only. See shared/projectCost.ts.
+  app.get("/api/projects/:projectId/cost-summary", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const { loadProjectCost } = await import("./services/projectCostService");
+      const cost = await loadProjectCost(req.params.projectId, { includeCommitted: true });
+      if (!cost) return res.status(404).json({ error: "Project not found" });
+      res.json({ projectId: cost.projectId, rows: cost.rows, totals: cost.totals, billsWithoutLines: cost.billsWithoutLines });
+    } catch (error: any) {
+      console.error("[GET /api/projects/:projectId/cost-summary] Error:", error);
+      res.status(500).json({ error: "Failed to compute project cost" });
     }
   });
 
@@ -35884,7 +35875,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/budgets/:budgetId/line-items/recalculate", requireAuth, requirePermission("financial.budget_actuals", "view"), async (req, res) => {
     try {
-      if (!(await getOwnedBudget(req, res, req.params.budgetId))) return;
+      const owned = await getOwnedBudget(req, res, req.params.budgetId);
+      if (!owned) return;
+      await storage.calculateBudget((owned as any).projectId);
       const lineItems = await storage.recalculateBudgetLineItems(req.params.budgetId);
       res.json(lineItems);
     } catch (error: any) {
