@@ -35822,10 +35822,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { summariseProjectCost } = await import("@shared/projectCost");
         return res.json({ projectId: cost.projectId, ...summariseProjectCost(cost) });
       }
-      res.json({ access: "full", projectId: cost.projectId, rows: cost.rows, totals: cost.totals, billsWithoutLines: cost.billsWithoutLines });
+      const { loadForecastMeta } = await import("./services/projectCostService");
+      const forecast = await loadForecastMeta(cost);
+      res.json({ access: "full", projectId: cost.projectId, rows: cost.rows, totals: cost.totals, billsWithoutLines: cost.billsWithoutLines, forecast });
     } catch (error: any) {
       console.error("[GET /api/projects/:projectId/cost-summary] Error:", error);
       res.status(500).json({ error: "Failed to compute project cost" });
+    }
+  });
+
+  // Forecast tab: tick / untick a cost row Complete. `key` is a cost row key
+  // from cost-summary (a cost code id, "uncategorised", "variations" or
+  // "cat:<id>"). A complete row is forecast at what it actually cost.
+  app.put("/api/projects/:projectId/cost-forecast/complete", requireAuth, requireBudgetAccess("full"), async (req, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const key = typeof req.body?.key === "string" ? req.body.key.trim() : "";
+      if (!key || key.length > 200) return res.status(400).json({ error: "key is required" });
+      const complete = req.body?.complete === true;
+      const projectId = req.params.projectId;
+      if (complete) {
+        await db.insert(schema.projectCostCompletions)
+          .values({ projectId, rowKey: key, completedById: (req as any).user?.id ?? null })
+          .onConflictDoNothing();
+      } else {
+        await db.delete(schema.projectCostCompletions)
+          .where(and(eq(schema.projectCostCompletions.projectId, projectId), eq(schema.projectCostCompletions.rowKey, key)));
+      }
+      res.json({ key, complete });
+    } catch (error: any) {
+      console.error("[PUT /api/projects/:projectId/cost-forecast/complete] Error:", error);
+      res.status(500).json({ error: "Failed to update cost row" });
+    }
+  });
+
+  // Forecast tab: "Mark reviewed". Stamps the forecast as it stands NOW —
+  // computed here, never taken from the browser — so later views can say how
+  // far the margin has moved since someone last checked it.
+  app.post("/api/projects/:projectId/cost-forecast/reviews", requireAuth, requireBudgetAccess("full"), async (req, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const projectId = req.params.projectId;
+      const { loadProjectCost, loadRevisedContractExCents } = await import("./services/projectCostService");
+      const [cost, contractCents] = await Promise.all([
+        loadProjectCost(projectId, { includeCommitted: true }),
+        loadRevisedContractExCents(projectId),
+      ]);
+      if (!cost || contractCents === null) return res.status(404).json({ error: "Project not found" });
+      const note = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 1000) || null : null;
+      const [review] = await db.insert(schema.projectForecastReviews).values({
+        projectId,
+        reviewedById: (req as any).user?.id ?? null,
+        contractCents,
+        forecastCostCents: cost.totals.forecastFinalCents,
+        forecastMarginCents: contractCents - cost.totals.forecastFinalCents,
+        note,
+      }).returning();
+      res.json(review);
+    } catch (error: any) {
+      console.error("[POST /api/projects/:projectId/cost-forecast/reviews] Error:", error);
+      res.status(500).json({ error: "Failed to save review" });
     }
   });
 

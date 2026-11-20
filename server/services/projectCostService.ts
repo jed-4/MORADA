@@ -10,6 +10,7 @@
  */
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
+import type { CommittedPo } from "@shared/cashflow/jobCosts";
 import * as schema from "@shared/schema";
 import {
   allocateLabourCents,
@@ -25,6 +26,8 @@ type Exec = typeof db | any;
 export interface LoadedProjectCost extends ProjectCost {
   projectId: string;
   companyId: string;
+  /** The open POs behind `committed` (only when includeCommitted). */
+  committedPos: CommittedPo[];
 }
 
 export async function loadProjectCost(
@@ -42,7 +45,7 @@ export async function loadProjectCost(
 
   const approvedTs = and(eq(schema.timesheets.projectId, projectId), eq(schema.timesheets.status, "approved"));
 
-  const [costCodes, categories, estimateItems, variationItems, bills, billLines, timesheets, splits, committed] =
+  const [costCodes, categories, estimateItems, variationItems, bills, billLines, timesheets, splits, committedData, completions] =
     await Promise.all([
       // ALL of the company's codes, inactive included, so old lines still get a name.
       exec
@@ -118,8 +121,13 @@ export async function loadProjectCost(
         .from(schema.timesheetCostCodes)
         .innerJoin(schema.timesheets, eq(schema.timesheetCostCodes.timesheetId, schema.timesheets.id))
         .where(approvedTs),
-      opts.includeCommitted ? loadCommitted(companyId, projectId) : Promise.resolve([]),
+      opts.includeCommitted ? loadCommitted(companyId, projectId) : Promise.resolve({ lines: [], pos: [] }),
+      exec
+        .select({ rowKey: schema.projectCostCompletions.rowKey })
+        .from(schema.projectCostCompletions)
+        .where(eq(schema.projectCostCompletions.projectId, projectId)),
     ]);
+  const committed = committedData.lines;
 
   // Timesheets logged against an estimate line, with no cost code of their own.
   const workItemIds = Array.from(new Set(
@@ -148,8 +156,9 @@ export async function loadProjectCost(
     billLines,
     labour,
     committed,
+    completeKeys: (completions as { rowKey: string }[]).map((c) => c.rowKey),
   });
-  return { ...cost, projectId, companyId };
+  return { ...cost, projectId, companyId, committedPos: committedData.pos };
 }
 
 /**
@@ -186,15 +195,18 @@ export async function loadVariationLinesForRow(projectId: string, companyId: str
 }
 
 /** Open PO value not yet billed, plus subbie hours awaiting a PO — per cost code. */
-async function loadCommitted(companyId: string, projectId: string): Promise<{ costCodeId: string | null; cents: number }[]> {
+async function loadCommitted(
+  companyId: string,
+  projectId: string,
+): Promise<{ lines: { costCodeId: string | null; cents: number }[]; pos: CommittedPo[] }> {
   const { loadJobCostInputs } = await import("./cashflowService");
   const data = (await loadJobCostInputs(companyId, projectId)).get(projectId);
-  if (!data) return [];
+  if (!data) return { lines: [], pos: [] };
   const toCode = (key: string) => (key.startsWith("other:") ? null : key);
   const out: { costCodeId: string | null; cents: number }[] = [];
   for (const po of data.committedPos) for (const k of po.byKey) out.push({ costCodeId: toCode(k.key), cents: k.exCents });
   for (const [key, cents] of Object.entries(data.awaitingPoLabourExByKey)) out.push({ costCodeId: toCode(key), cents });
-  return out;
+  return { lines: out, pos: data.committedPos };
 }
 
 /** The stored line-item columns for one cost row. `actualAmount` stays BILLS ONLY — the cash flow forecast adds labour itself. */
@@ -269,4 +281,119 @@ export async function saveProjectCostSnapshot(
     return budget;
   };
   return opts.exec ? run(opts.exec) : db.transaction(run);
+}
+
+// ── Forecast tab ─────────────────────────────────────────────────────────────
+
+export interface ForecastReviewView {
+  reviewedAt: string;
+  reviewedByName: string | null;
+  contractCents: number;
+  forecastCostCents: number;
+  forecastMarginCents: number;
+  note: string | null;
+}
+
+export interface PossibleDoubleCount {
+  billId: string;
+  billNumber: string;
+  billTotalIncCents: number;
+  poId: string;
+  poLabel: string;
+}
+
+/**
+ * The revised contract price, ex GST cents — the same figure the
+ * contract-metrics endpoint serves (frozen contract + approved variations).
+ */
+export async function loadRevisedContractExCents(projectId: string): Promise<number | null> {
+  const { storage } = await import("../storage");
+  const { computeContractMetrics, frozenContractTotalFrom } = await import("@shared/projectMetrics");
+  const project: any = await storage.getProject(projectId);
+  if (!project) return null;
+  const [items, variations, estimate] = await Promise.all([
+    project.selectedEstimateId ? storage.getEstimateItems(project.selectedEstimateId) : Promise.resolve([]),
+    storage.getVariations(projectId),
+    project.selectedEstimateId ? storage.getEstimate(project.selectedEstimateId) : Promise.resolve(null),
+  ]);
+  const metrics = computeContractMetrics(
+    (items as any[]).map((i) => ({
+      priceIncTax: i.priceIncTax, taxAmount: i.taxAmount, unitCostExTax: i.unitCostExTax,
+      quantity: i.quantity, markupPercent: i.markupPercent,
+    })),
+    (variations as any[]).map((v) => ({
+      status: v.status ?? null, subtotal: v.subtotal ?? null, totalAmount: v.totalAmount ?? v.totalIncTax ?? null,
+    })),
+    (estimate as any)?.projectMarkupPercent ?? 0,
+    (estimate as any)?.taxRate ?? 10,
+    frozenContractTotalFrom(project),
+  );
+  return metrics.revisedContractPriceExGstCents;
+}
+
+/**
+ * Everything the Forecast tab needs beyond the cost rows: the complete
+ * ticks (already applied to the rows), the latest review stamp, and bills
+ * that look like the same cost as an open PO.
+ *
+ * "Possible double count": a bill on this project that is NOT matched to any
+ * PO, whose inc-GST total equals (±$1) what an open PO still has unbilled.
+ * The bill counts as spent and the PO as committed, so the forecast holds the
+ * same money twice until someone matches them. (22 Boanyo: BILL-1966 and
+ * PO-2026-102, both $2,112.50.)
+ */
+export async function loadForecastMeta(cost: LoadedProjectCost): Promise<{
+  completeKeys: string[];
+  lastReview: ForecastReviewView | null;
+  possibleDoubleCounts: PossibleDoubleCount[];
+}> {
+  const [reviews, unmatchedBills] = await Promise.all([
+    db
+      .select({
+        reviewedAt: schema.projectForecastReviews.reviewedAt,
+        contractCents: schema.projectForecastReviews.contractCents,
+        forecastCostCents: schema.projectForecastReviews.forecastCostCents,
+        forecastMarginCents: schema.projectForecastReviews.forecastMarginCents,
+        note: schema.projectForecastReviews.note,
+        firstName: schema.users.firstName,
+        lastName: schema.users.lastName,
+      })
+      .from(schema.projectForecastReviews)
+      .leftJoin(schema.users, eq(schema.projectForecastReviews.reviewedById, schema.users.id))
+      .where(eq(schema.projectForecastReviews.projectId, cost.projectId))
+      .orderBy(sql`${schema.projectForecastReviews.reviewedAt} DESC`)
+      .limit(1),
+    cost.committedPos.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({ id: schema.bills.id, billNumber: schema.bills.billNumber, total: schema.bills.total, billType: schema.bills.billType })
+          .from(schema.bills)
+          .where(and(eq(schema.bills.projectId, cost.projectId), sql`${schema.bills.matchedSitePOId} IS NULL`)),
+  ]);
+
+  const possibleDoubleCounts: PossibleDoubleCount[] = [];
+  const usedPos = new Set<string>();
+  for (const b of unmatchedBills as { id: string; billNumber: string; total: number; billType: string | null }[]) {
+    if (b.billType === "credit" || !b.total) continue;
+    const po = cost.committedPos.find((p) => !usedPos.has(p.id) && Math.abs(p.unbilledIncCents - b.total) <= 100);
+    if (!po) continue;
+    usedPos.add(po.id);
+    possibleDoubleCounts.push({ billId: b.id, billNumber: b.billNumber, billTotalIncCents: b.total, poId: po.id, poLabel: po.label });
+  }
+
+  const r = (reviews as any[])[0];
+  return {
+    completeKeys: cost.rows.filter((row) => row.complete).map((row) => row.key),
+    lastReview: r
+      ? {
+          reviewedAt: new Date(r.reviewedAt).toISOString(),
+          reviewedByName: [r.firstName, r.lastName].filter(Boolean).join(" ") || null,
+          contractCents: r.contractCents,
+          forecastCostCents: r.forecastCostCents,
+          forecastMarginCents: r.forecastMarginCents,
+          note: r.note ?? null,
+        }
+      : null,
+    possibleDoubleCounts,
+  };
 }
