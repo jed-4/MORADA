@@ -148,3 +148,28 @@ export function detectBillTaxMode(input: {
     ? "exclusive"
     : "inclusive";
 }
+
+/**
+ * How far a bill's stored subtotal is from what its own lines add up to, in
+ * cents ex GST (stored − lines). Zero for a healthy bill: every local edit
+ * recomputes the header from the lines. It goes non-zero when the header was
+ * overwritten from Xero but the lines were kept — e.g. a bill corrected in
+ * Xero after a payment locked it. The Budget is built from the LINES, so a
+ * non-zero gap means the budget and the bill disagree. A few cents is per-line
+ * GST rounding and is ignored by `billLinesDisagree`.
+ */
+export function billLinesGapCents(
+  bill: { subtotal: number | null | undefined; taxMode?: string | null; roundingCents?: number | null },
+  lineItems: BillTotalsLine[],
+  taxRatePercent: number = 10,
+): number {
+  if (!lineItems.length) return 0; // a bill with no lines counts at its subtotal
+  const mode: BillTaxMode = bill.taxMode === "inclusive" ? "inclusive" : "exclusive";
+  const { subtotal } = computeBillTotalsCents(lineItems, mode, taxRatePercent);
+  return (Number(bill.subtotal) || 0) - subtotal;
+}
+
+/** A gap bigger than rounding (more than 50 cents). */
+export function billLinesDisagree(gapCents: number): boolean {
+  return Math.abs(gapCents) > 50;
+}

@@ -115,8 +115,9 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { matchSupplier, type SupplierMatch } from "@shared/supplierMatcher";
-import { clampRoundingCents, MAX_ROUNDING_CENTS, detectBillTaxMode, computeBillTotalsCents } from "@shared/billTotals";
+import { clampRoundingCents, MAX_ROUNDING_CENTS, detectBillTaxMode, computeBillTotalsCents, billLinesGapCents, billLinesDisagree } from "@shared/billTotals";
 import { computeDueDate, describePaymentTerms, PAYMENT_TERMS_OPTIONS } from "@shared/paymentTerms";
+import { formatCents } from "@shared/money";
 import { DatePicker } from "@/components/DatePicker";
 import {
   Collapsible,
@@ -1332,6 +1333,16 @@ export default function BillDetail() {
       0,
     );
 
+  // Stored header vs stored lines (not the form): non-zero when Xero
+  // overwrote the header but the lines were kept. See billLinesGapCents.
+  const storedLinesGapCents = bill && existingLineItemsData
+    ? billLinesGapCents(
+        { subtotal: (bill as any).subtotal, taxMode: (bill as any).taxMode },
+        existingLineItemsData.map((li: any) => ({ total: li.total, tax: li.tax })),
+        Number(companySettings?.taxRate ?? 10),
+      )
+    : 0;
+
   const calculateSubtotal = () => headerTotalsCents().subtotal / 100;
 
   const calculateTax = () => headerTotalsCents().tax / 100;
@@ -1925,7 +1936,10 @@ export default function BillDetail() {
 
   const syncBillPaymentMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest(`/api/xero/sync-bill-payment/${id}`, "POST") as {
+      // A person pressing this wants Xero's whole version — lines and GST
+      // mode too, even on an approved/paid bill (cost codes are kept). That
+      // is how a bill corrected in Xero after a payment gets fixed here.
+      return await apiRequest(`/api/xero/sync-bill-payment/${id}`, "POST", { replaceLines: true }) as {
         synced: boolean;
         xeroStatus?: string;
         amountPaidCents?: number;
@@ -3148,6 +3162,43 @@ export default function BillDetail() {
                     Unlink it to keep the record without syncing, or delete it if it shouldn't be here.
                   </p>
                 </div>
+              </div>
+            )}
+            {/* The header was overwritten (usually from Xero) but the lines were
+                kept, so they no longer add up. The Budget is built from the
+                lines, so it is wrong too until this is resolved. */}
+            {billLinesDisagree(storedLinesGapCents) && (
+              <div
+                className="flex items-start gap-2 rounded-md border p-3 text-sm"
+                style={{ backgroundColor: "hsl(var(--amber-light))", borderColor: "hsl(var(--amber))" }}
+                data-testid="banner-bill-lines-mismatch"
+              >
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: "hsl(var(--amber))" }} />
+                <div className="flex-1">
+                  <p className="font-medium">The line items don't add up to this bill's total</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Lines come to {formatCents((bill as any)?.subtotal - storedLinesGapCents)} ex GST, but the bill says{" "}
+                    {formatCents((bill as any)?.subtotal ?? 0)}. The budget counts the lines, so it is out by{" "}
+                    {formatCents(Math.abs(storedLinesGapCents))}.
+                    {(bill as any)?.xeroInvoiceId
+                      ? " Sync from Xero to replace the lines with Xero's (cost codes are kept)."
+                      : " Check the GST setting (inclusive / exclusive) and the line amounts."}
+                  </p>
+                </div>
+                {(bill as any)?.xeroInvoiceId && xeroStatus?.connected && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => syncBillPaymentMutation.mutate()}
+                    disabled={syncBillPaymentMutation.isPending}
+                    className="gap-1.5 shrink-0"
+                    data-testid="button-mismatch-sync-from-xero"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Sync from Xero
+                  </Button>
+                )}
               </div>
             )}
             {isPaidLocked && !isViewOnly && (
@@ -4734,7 +4785,7 @@ export default function BillDetail() {
                         )}
                       </div>
                     )}
-                    {isEditMode && (bill as any)?.xeroInvoiceId && xeroStatus?.connected && bill?.status !== "paid" && (
+                    {isEditMode && (bill as any)?.xeroInvoiceId && xeroStatus?.connected && (
                       <Button
                         type="button"
                         size="sm"

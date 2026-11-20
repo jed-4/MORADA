@@ -1715,6 +1715,10 @@ async function syncBillFromXeroInternal(
   billId: string,
   companyId: string,
   xeroInvoice?: any,
+  // Set ONLY by a person pressing "Sync from Xero": also replace a non-draft
+  // bill's lines and GST mode with Xero's. Automatic syncs (webhook, sweep)
+  // never do — they keep Morada's lines once a bill leaves draft.
+  opts: { replaceLines?: boolean } = {},
 ): Promise<{
   ok: boolean;
   error?: string;
@@ -1805,7 +1809,7 @@ async function syncBillFromXeroInternal(
       roundingCents: clampRoundingCents(totalCents - importedSubtotal - taxCents),
       // Only re-stamp taxMode for draft bills, whose line items get re-imported
       // below; never flip a submitted/paid bill's tax mode under preserved lines.
-      ...(bill.status === "draft" ? { taxMode: xeroTaxMode } : {}),
+      ...(bill.status === "draft" || opts.replaceLines ? { taxMode: xeroTaxMode } : {}),
       xeroPaidStatus: xeroStatus,
       xeroLastSyncAt: new Date(),
       xeroLastSyncStatus: "success",
@@ -1839,9 +1843,10 @@ async function syncBillFromXeroInternal(
       }
     }
 
-    // Only overwrite line items when local bill is still in draft.
-    // Once submitted/approved/paid, BuildPro line items are preserved.
-    const canOverwriteLines = bill.status === "draft";
+    // Only overwrite line items when local bill is still in draft — or when a
+    // person asked for Xero's version (a bill corrected in Xero after a payment
+    // locked it there). Otherwise submitted/approved/paid lines are preserved.
+    const canOverwriteLines = bill.status === "draft" || opts.replaceLines === true;
     // Our own rounding line is not a line item of the bill — it is the carrier
     // for roundingCents, which is preserved above. Re-importing it would turn
     // the adjustment into a real expense line and count it twice.
@@ -1850,7 +1855,8 @@ async function syncBillFromXeroInternal(
     );
     let lineItemsSynced = 0;
     if (canOverwriteLines && xeroLineItems.length > 0) {
-      const existingLineItems = await storage.getBillLineItems(bill.id);
+      const existingLineItems = (await storage.getBillLineItems(bill.id))
+        .slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
       // Asset links live on the line, and these lines are about to be
       // recreated from Xero. Carry each link across to the new line with the
       // same description and amount; anything Xero changed loses its link
@@ -1859,6 +1865,27 @@ async function syncBillFromXeroInternal(
       for (const li of existingLineItems) {
         if ((li as any).assetId) assetByLine.set(`${(li.description ?? "").trim()}|${li.total}`, (li as any).assetId);
       }
+      // Cost codes (and the other Morada-only line fields) are carried across
+      // too — the budget files cost by them, and Xero has no idea what they
+      // are. Same line count → by position (Xero keeps our order; only the
+      // amounts/GST were corrected). Otherwise by description; and if every
+      // old line shared one code, a new unmatched line gets it.
+      const keepFields = (li: any) => ({
+        costCodeId: li.costCodeId ?? undefined,
+        priceListItemId: li.priceListItemId ?? undefined,
+        unit: li.unit ?? undefined,
+      });
+      const samePositions = existingLineItems.length === xeroLineItems.length;
+      const unusedLineIds = new Set(existingLineItems.map((li: any) => li.id));
+      const codes = Array.from(new Set(existingLineItems.map((li: any) => li.costCodeId || "")));
+      const sharedCode = codes.length === 1 ? (codes[0] || undefined) : undefined;
+      const carryFor = (i: number, description: string) => {
+        if (samePositions) return keepFields(existingLineItems[i]);
+        const d = description.trim().toLowerCase();
+        const hit: any = existingLineItems.find((li: any) => unusedLineIds.has(li.id) && (li.description ?? "").trim().toLowerCase() === d);
+        if (hit) { unusedLineIds.delete(hit.id); return keepFields(hit); }
+        return { costCodeId: sharedCode };
+      };
       for (const li of existingLineItems) {
         await storage.deleteBillLineItem(li.id);
       }
@@ -1876,7 +1903,7 @@ async function syncBillFromXeroInternal(
           billId: bill.id,
           lineType: "custom",
           description: xl.Description || "",
-          costCodeId: undefined,
+          ...carryFor(i, xl.Description || ""),
           quantity: Math.round(xl.Quantity || 1),
           unitPrice: unitPriceCents,
           tax: mapXeroTaxType(xl.TaxType),
@@ -48326,7 +48353,10 @@ Keep language casual and encouraging. Focus on what they can accomplish. Return 
       if (!bill) return;
       if (!bill.xeroInvoiceId) return res.status(400).json({ error: "Bill has not been pushed to Xero" });
 
-      const result = await syncBillFromXeroInternal(bill.id, companyId);
+      // Pressing Sync from Xero on the bill page asks for Xero's whole
+      // version, lines and GST mode included (cost codes are kept).
+      const replaceLines = req.body?.replaceLines === true;
+      const result = await syncBillFromXeroInternal(bill.id, companyId, undefined, { replaceLines });
       if (!result.ok) return res.status(400).json({ error: result.error || "Sync failed" });
       // Accepting Xero's version IS the resolution — drop it out of the review
       // queue. xeroVoidedAt is left alone: a void stays visible on the bill.
