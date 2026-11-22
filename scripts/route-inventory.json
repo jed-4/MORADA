@@ -501,6 +501,7 @@
     "server/routes.ts GET /api/projects/:projectId/labour-costs",
     "server/routes.ts GET /api/projects/:projectId/labour-estimate",
     "server/routes.ts GET /api/projects/:projectId/labour-hours-budget",
+    "server/routes.ts GET /api/projects/:projectId/labour-hours-entries",
     "server/routes.ts GET /api/projects/:projectId/locations",
     "server/routes.ts GET /api/projects/:projectId/pinned-items",
     "server/routes.ts GET /api/projects/:projectId/schedule",

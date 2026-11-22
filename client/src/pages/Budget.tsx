@@ -298,6 +298,32 @@ export default function BudgetPage() {
 
   // Drill-down: which cost code's Labour is being inspected (null = closed).
   const [labourDrill, setLabourDrill] = useState<{ costCodeId: string | null; title: string } | null>(null);
+  // Labour Hours drill-down: the timesheets behind a cost code's Pending or
+  // Approved hours.
+  const [hoursDrill, setHoursDrill] = useState<{ costCodeId: string; title: string; status: "submitted" | "approved" } | null>(null);
+  const { data: hoursDrillData, isLoading: hoursDrillLoading } = useQuery<{
+    totalHours: number;
+    entries: Array<{
+      timesheetId: string;
+      workerName: string;
+      isSubcontractor: boolean;
+      date: string | null;
+      hours: number;
+      status: string;
+      poStatus: string | null;
+      description: string | null;
+      isSplit: boolean;
+    }>;
+  }>({
+    queryKey: ["/api/projects", projectId, "labour-hours-entries", hoursDrill?.costCodeId, hoursDrill?.status],
+    queryFn: () =>
+      apiRequest(
+        `/api/projects/${projectId}/labour-hours-entries?costCodeId=${hoursDrill!.costCodeId}&status=${hoursDrill!.status}`,
+        "GET",
+      ),
+    enabled: !!projectId && !!hoursDrill,
+  });
+
   // A timesheet opened from the labour drill-down. Fetched on demand — the
   // drill-down only carries a summary of each one.
   const [openTimesheetId, setOpenTimesheetId] = useState<string | null>(null);
@@ -316,6 +342,8 @@ export default function BudgetPage() {
     setOpenTimesheetId(null);
     queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "cost-summary"] });
     queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-actuals"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-hours-entries"] });
+    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/labour-hours-budget`] });
   };
   const { data: labourDrillData, isLoading: labourDrillLoading } = useQuery<{
     total: number;
@@ -955,6 +983,39 @@ export default function BudgetPage() {
     );
   };
 
+  // Pending / Approved hours open the timesheets behind them (when there are any).
+  const renderHoursDrillCell = (
+    r: HoursRow,
+    value: number,
+    status: "submitted" | "approved",
+    colour: string,
+    testId: string,
+  ) => {
+    const costCodeId = r.kind === "category" ? null : r.item.costCodeId;
+    if (!costCodeId || value <= 0) {
+      return (
+        <span className={cn("text-xs tabular-nums", colour)} data-testid={testId}>
+          {formatHours(value)}
+        </span>
+      );
+    }
+    const title = r.kind === "category" ? "" : `${r.code ? `${r.code} - ` : ""}${r.item.costCodeTitle || ""}`;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setHoursDrill({ costCodeId, title, status });
+        }}
+        className={cn("text-xs tabular-nums underline-offset-2 hover:underline", colour)}
+        title={status === "submitted" ? "View pending timesheets" : "View approved timesheets"}
+        data-testid={testId}
+      >
+        {formatHours(value)}
+      </button>
+    );
+  };
+
   const labourHoursColumns = useMemo<ColumnDef<HoursRow, unknown>[]>(() => {
     const hoursOf = (r: HoursRow, field: "budgetedHours" | "pendingHours" | "approvedHours") =>
       r.kind === "category"
@@ -1053,14 +1114,7 @@ export default function BudgetPage() {
           const r = row.original;
           const value = hoursOf(r, "pendingHours");
           if (r.kind === "category") return renderHoursChip(value);
-          return (
-            <span
-              className="text-xs tabular-nums text-[hsl(var(--bp-amber))]"
-              data-testid={`text-pending-${r.id}`}
-            >
-              {formatHours(value)}
-            </span>
-          );
+          return renderHoursDrillCell(r, value, "submitted", "text-[hsl(var(--bp-amber))]", `text-pending-${r.id}`);
         },
         size: 100,
         meta: { defaultWidth: 100, align: "right", headerLabel: "Pending" },
@@ -1081,11 +1135,7 @@ export default function BudgetPage() {
           const r = row.original;
           const value = hoursOf(r, "approvedHours");
           if (r.kind === "category") return renderHoursChip(value);
-          return (
-            <span className="text-xs tabular-nums" data-testid={`text-approved-${r.id}`}>
-              {formatHours(value)}
-            </span>
-          );
+          return renderHoursDrillCell(r, value, "approved", "", `text-approved-${r.id}`);
         },
         size: 100,
         meta: { defaultWidth: 100, align: "right", headerLabel: "Approved" },
@@ -2285,6 +2335,65 @@ export default function BudgetPage() {
                 <span className="text-sm font-semibold">Total</span>
                 <span className="text-sm font-bold tabular-nums" data-testid="text-labour-drill-total">
                   {formatCurrency(labourDrillData.total)}
+                </span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!hoursDrill} onOpenChange={(o) => { if (!o) setHoursDrill(null); }}>
+        <DialogContent className="max-w-2xl" data-testid="dialog-hours-drill">
+          <DialogHeader>
+            <DialogTitle>
+              {hoursDrill?.status === "submitted" ? "Pending hours" : "Approved hours"} — {hoursDrill?.title}
+            </DialogTitle>
+            <DialogDescription>
+              {hoursDrill?.status === "submitted"
+                ? "Submitted timesheets waiting for approval on this cost code."
+                : "Approved timesheets counted against this cost code's hours."}
+            </DialogDescription>
+          </DialogHeader>
+          {hoursDrillLoading ? (
+            <div className="space-y-2 py-2">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
+          ) : !hoursDrillData || hoursDrillData.entries.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No timesheets found.</p>
+          ) : (
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+              {hoursDrillData.entries.map((e, idx) => (
+                <button
+                  type="button"
+                  key={`${e.timesheetId}-${idx}`}
+                  onClick={() => setOpenTimesheetId(e.timesheetId)}
+                  className="block w-full text-left p-2.5 border rounded-md hover-elevate"
+                  title="Open timesheet"
+                  data-testid={`drill-hours-${e.timesheetId}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-medium">{e.workerName}</span>
+                        {e.isSubcontractor && <Badge variant="outline" className="text-data">Subbie</Badge>}
+                        {e.poStatus === "on_po" && <Badge variant="outline" className="text-data">On PO</Badge>}
+                        {e.poStatus === "awaiting_po" && <Badge variant="outline" className="text-data">Awaiting PO</Badge>}
+                        {e.poStatus === "paid" && <Badge variant="outline" className="text-data">Paid</Badge>}
+                        {e.isSplit && <Badge variant="outline" className="text-data">Split</Badge>}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {e.date ? new Date(e.date).toLocaleDateString("en-AU", { timeZone: "Australia/Sydney" }) : "—"}
+                        {e.description ? ` · ${e.description}` : ""}
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums flex-shrink-0">{formatHours(e.hours)}</span>
+                  </div>
+                </button>
+              ))}
+              <div className="flex items-center justify-between gap-2 pt-2 border-t">
+                <span className="text-sm font-semibold">Total</span>
+                <span className="text-sm font-bold tabular-nums" data-testid="text-hours-drill-total">
+                  {formatHours(hoursDrillData.totalHours)}
                 </span>
               </div>
             </div>
