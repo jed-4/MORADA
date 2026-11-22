@@ -6,25 +6,26 @@ import { Appearance, useColorScheme } from 'react-native';
 // white text.
 const light = {
   // Surfaces
-  background:   '#F9F6F1',
-  card:         '#FFFFFF',
-  nav:          '#F5F0E9',
-  subtle:       '#F1ECF6',
+  // Revamp v1 (Nov 2026): surfaces, borders, text and brand now point at the
+  // approved design tokens below (`colors`). Old names are kept so every
+  // existing screen picks up the new palette without an import change.
+  background:   '#FBFAF8', // colors.bg
+  card:         '#FFFFFF', // colors.surface
+  nav:          '#FBFAF8', // colors.bg — headers sit on the canvas
+  subtle:       '#F3F0F7', // colors.tint
   // Borders
-  // Borders — a step stronger than the web (#EAEAE8 / #D8D7D4) so card
-  // edges still read in direct sunlight.
-  border:       '#DEDCD8',
-  borderStrong: '#C8C5C0',
-  // Text — darkened for outdoor use. WCAG AA (4.5:1) on background, card
-  // and nav: secondary 7.2 / 7.7 / 6.8, muted 5.0 / 5.4 / 4.7.
-  // (Was #6B6560 = 5.3 / 5.7 and #8A8680 = 3.4 / 3.6 — muted failed.)
-  textPrimary:   '#2C2825',
-  textSecondary: '#57524D',
-  textMuted:     '#6E6A64',
+  border:       '#EBE8E3', // colors.border
+  borderStrong: '#D6D1CA', // colors.dashedBorder
+  // Text. Revamp v1 muted is lighter than the old sunlight-tuned #6E6A64
+  // (about 2.9:1 on bg) — approved in the design; revisit if it's hard to
+  // read outdoors.
+  textPrimary:   '#1F1D1B', // colors.text
+  textSecondary: '#6B665F', // colors.icon
+  textMuted:     '#9B968F', // colors.muted
   // Brand
-  primary:      '#87749A',
-  primaryHover: '#7E6A92',
-  primaryLight: '#F1ECF6',
+  primary:      '#7E6C98', // colors.accent
+  primaryHover: '#5F4E78', // colors.link
+  primaryLight: '#F3F0F7', // colors.tint
   // Organic accents
   teal:         '#70CAD0',
   tealLight:    '#E8F6F8',
@@ -37,7 +38,7 @@ const light = {
   rose:         '#D08AAF',
   roseLight:    '#F8ECF2',
   lavender:     '#A68AC7',
-  lavenderLight:'#F1ECF6',
+  lavenderLight:'#F3F0F7',
   // Accent TEXT inks. The accents above are decorative (1.8–2.4:1 on white)
   // — use these when a sage/amber/coral/teal hue has to be READ (labels,
   // counts, small icons). All ≥ 5:1 on background, card and their own wash.
@@ -73,7 +74,7 @@ const dark = {
   // Lifted so muted text clears 4.5:1 on the dark card (was 3.2:1).
   textSecondary: '#B8B4AC',
   textMuted:     '#A6A29A',
-  primary:      '#87749A',
+  primary:      '#7E6C98',
   primaryHover: '#93819F',
   primaryLight: '#4C464A',
   teal:         '#70CAD0',
@@ -156,7 +157,7 @@ export const radius = {
 
 // ── Schedule type colours (mirrors web TYPE_COLORS — task = --primary) ────
 export const typeColors = {
-  task:       '#87749A',
+  task:       '#7E6C98',
   milestone:  '#D4B670',
   inspection: '#82C8A2',
   delivery:   '#70CAD0',
@@ -190,3 +191,260 @@ export function currentTheme(): Theme {
 }
 
 export { light as lightTheme, dark as darkTheme };
+
+// ══════════════════════════════════════════════════════════════════════════
+// Revamp v1 design tokens (approved Nov 2026)
+// Source: design/tokens/theme.ts, measured from the approved Figma frames
+// (file purB3wnrQmpAgjBmG4fQiP, page "Revamp"). The Figma *variables* are an
+// old palette — these values win. New UI imports from here; never inline a
+// hex, font size, radius or spacing value in a screen or component.
+// ══════════════════════════════════════════════════════════════════════════
+
+const designLight = {
+  // Surfaces
+  bg: '#FBFAF8',            // app background (every screen)
+  surface: '#FFFFFF',       // cards, tab bar, inputs
+  border: '#EBE8E3',        // 1px card borders, row dividers, header rules
+  hairline: '#EFECE8',      // calendar/gantt grid lines, thumbnail border
+  track: '#ECE9E4',         // empty part of 3px progress lines
+  greyFill: '#F2F0EC',      // weekend columns, internal events, no-image tiles, empty-state circle
+  avatarFill: '#F1EEEA',    // initials avatars, segmented-control background
+  thumbFill: '#F5F4F2',     // product thumbnail background
+  pillFill: '#F4F2EF',      // Workspace "Project: Choose" pill
+  dashedBorder: '#D6D1CA',  // Add-defect photo tiles
+  grabber: '#DDD9D3',       // bottom-sheet grabber, inactive carousel dot
+  scrim: 'rgba(31,28,26,0.38)', // behind bottom sheets
+
+  // Text
+  text: '#1F1D1B',          // primary text, titles
+  textBody: '#2F2B27',      // calendar event titles, chat/comment bodies
+  textLong: '#3D3934',      // long-form paragraphs: scope bullets, notes
+  textPreview: '#5C5751',   // site-diary 2-line previews
+  muted: '#9B968F',         // ALL secondary text: meta, counts, labels, dates
+  mutedStrong: '#8A857E',   // Workspace only (date line, stage text)
+  faint: '#B4AFA8',         // inactive tabs, bullets, placeholders, "·" separators
+  placeholderLarge: '#C9C4BC', // big borderless field placeholders
+  icon: '#6B665F',          // line icons in lists, initials text
+
+  // Accent (sparingly: active tab, today, links, FAB, checked, progress, unread)
+  accent: '#7E6C98',
+  link: '#5F4E78',
+  tint: '#F3F0F7',
+  todayColumn: '#F6F4F9',
+  accentDisabled: '#DCD5E6',
+  accentLine: 'rgba(126,108,152,0.35)',
+  ganttToday: 'rgba(126,108,152,0.60)',
+  onAccent: '#FFFFFF',
+
+  // Calendar internal (non-project) events
+  internalFill: '#F2F0EC',
+  internalStrip: '#C9C4BC',
+
+  // Status dots (7dp dot + muted word; never pills)
+  status: {
+    done: '#6FBF8E',
+    inProgress: '#7E6C98',
+    upcoming: '#C9C4BC',
+    pending: '#E0A84E',
+    pendingText: '#B7862F',
+    sent: '#6FA0D2',
+    rejected: '#D9776B',
+  },
+
+  // The one warning colour
+  danger: '#C4574B',
+
+  // Scope item type dots
+  type: { scope: '#A595C4', material: '#D9A38F' },
+
+  // Gantt trade colours (bar = tint fill + 3dp strip)
+  trade: {
+    slate: { strip: '#8E9AAF', fill: '#EAEBEC' },
+    blue:  { strip: '#6FA0D2', fill: '#E5ECF2' },
+    teal:  { strip: '#5FB3B3', fill: '#E2EFED' },
+    leave: { strip: '#B9B4AC', fill: '#F0EFEC' },
+  },
+
+  // Fallback project colours (real colours come from project data). Squares render at 90% opacity.
+  projectFallback: ['#B6A6D0', '#E9C866', '#7FCB9B', '#D97C93', '#E58E66', '#6FC1C1', '#8FBF8A', '#F0A868', '#E8A0B4', '#7CC4A0'],
+};
+
+export type DesignColors = typeof designLight;
+
+/**
+ * Dark-mode equivalents. Not part of the approved (light-only) design: same
+ * roles mapped onto the app's existing dark surfaces so dark mode keeps
+ * working. Status / trade / project hues are shared with light.
+ */
+const designDark: DesignColors = {
+  ...designLight,
+  bg: '#302E2A',
+  surface: '#3B3934',
+  border: '#48443E',
+  hairline: '#433F3A',
+  track: '#4A4640',
+  greyFill: '#45423D',
+  avatarFill: '#45423D',
+  thumbFill: '#45423D',
+  pillFill: '#45423D',
+  dashedBorder: '#5A554E',
+  grabber: '#5A554E',
+  scrim: 'rgba(0,0,0,0.5)',
+  text: '#E8E4DC',
+  textBody: '#DDD8CF',
+  textLong: '#D2CDC4',
+  textPreview: '#BDB8AF',
+  muted: '#A6A29A',
+  mutedStrong: '#A6A29A',
+  faint: '#827D76',
+  placeholderLarge: '#6F6A63',
+  icon: '#B8B4AC',
+  accent: '#9C8AB8',
+  link: '#C3B5DA',
+  tint: '#4C464A',
+  todayColumn: '#3A3640',
+  accentDisabled: '#5A5266',
+  accentLine: 'rgba(156,138,184,0.45)',
+  ganttToday: 'rgba(156,138,184,0.70)',
+  internalFill: '#45423D',
+  internalStrip: '#6F6A63',
+  status: { ...designLight.status, pendingText: '#E0A84E', inProgress: '#9C8AB8' },
+  danger: '#EFA39C',
+};
+
+/** Light design colours, for module-level code. Inside components prefer useColors(). */
+export const colors = designLight;
+export const darkColors = designDark;
+
+/** Design colours for the current light/dark scheme. */
+export function useColors(): DesignColors {
+  return useColorScheme() === 'dark' ? designDark : designLight;
+}
+
+/** Design colours for the current scheme, read at call time (non-hook helpers). */
+export function currentColors(): DesignColors {
+  return Appearance.getColorScheme() === 'dark' ? designDark : designLight;
+}
+
+/** Project-colour tint for calendar blocks / agenda: `amount` of the project colour over `base`. */
+export function projectTint(hex: string, amount = 0.16, base: string = designLight.bg): string {
+  const p = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [r1, g1, b1] = p(hex);
+  const [r0, g0, b0] = p(base);
+  const mix = (c: number, b: number) => Math.round(b + (c - b) * amount);
+  return '#' + [mix(r1, r0), mix(g1, g0), mix(b1, b0)].map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+// ─── Typography (Inter) ──────────────────────────────────────────────────
+// Loaded in App.tsx via @expo-google-fonts/inter. Use these explicit families
+// rather than fontWeight: Android won't pick the SemiBold file from a weight.
+export const fonts = {
+  regular: 'Inter_400Regular',
+  medium: 'Inter_500Medium',
+  semibold: 'Inter_600SemiBold',
+  bold: 'Inter_700Bold',
+} as const;
+
+export const type = {
+  display:       { fontFamily: fonts.bold,     fontSize: 30, lineHeight: 36 },
+  displayDuo:    { fontFamily: fonts.bold,     fontSize: 28, lineHeight: 34 },
+  title:         { fontFamily: fonts.bold,     fontSize: 24, lineHeight: 29 },
+  heading:       { fontFamily: fonts.bold,     fontSize: 22, lineHeight: 27 },
+  headingSemi:   { fontFamily: fonts.semibold, fontSize: 22, lineHeight: 29 },
+  pageTitle:     { fontFamily: fonts.bold,     fontSize: 20, lineHeight: 24 },
+  detailTitle:   { fontFamily: fonts.semibold, fontSize: 20, lineHeight: 24 },
+  emptyTitle:    { fontFamily: fonts.regular,  fontSize: 17, lineHeight: 21 },
+  price:         { fontFamily: fonts.regular,  fontSize: 17, lineHeight: 21 },
+  cardTitle:     { fontFamily: fonts.bold,     fontSize: 16, lineHeight: 19 },
+  sheetTitle:    { fontFamily: fonts.semibold, fontSize: 16, lineHeight: 19 },
+  sectionTitle:  { fontFamily: fonts.semibold, fontSize: 15, lineHeight: 18 },
+  rowTitle:      { fontFamily: fonts.regular,  fontSize: 15, lineHeight: 18 },
+  rowTitleStrong:{ fontFamily: fonts.semibold, fontSize: 15, lineHeight: 18 },
+  rowTitleMedium:{ fontFamily: fonts.medium,   fontSize: 15, lineHeight: 18 },
+  bodyLong:      { fontFamily: fonts.regular,  fontSize: 15, lineHeight: 22 },
+  checklistItem: { fontFamily: fonts.regular,  fontSize: 15, lineHeight: 21 },
+  body:          { fontFamily: fonts.regular,  fontSize: 14, lineHeight: 17 },
+  bodyRead:      { fontFamily: fonts.regular,  fontSize: 14, lineHeight: 21 },
+  bodyPreview:   { fontFamily: fonts.regular,  fontSize: 14, lineHeight: 20 },
+  meta:          { fontFamily: fonts.regular,  fontSize: 13, lineHeight: 16 },
+  metaMedium:    { fontFamily: fonts.medium,   fontSize: 13, lineHeight: 16 },
+  metaSemi:      { fontFamily: fonts.semibold, fontSize: 13, lineHeight: 16 },
+  caption:       { fontFamily: fonts.regular,  fontSize: 12, lineHeight: 15 },
+  tile:          { fontFamily: fonts.regular,  fontSize: 11.5, lineHeight: 14 },
+  micro:         { fontFamily: fonts.regular,  fontSize: 11, lineHeight: 13 },
+  tiny:          { fontFamily: fonts.regular,  fontSize: 10, lineHeight: 12 },
+  initials:      { fontFamily: fonts.regular,  fontSize: 9,  lineHeight: 11 },
+  duoTab:        { fontFamily: fonts.regular,  fontSize: 13, lineHeight: 16 },
+} as const;
+
+/** Use on every number that should line up: prices, hours, counts, dates in columns. */
+export const tabular = { fontVariant: ['tabular-nums'] as ('tabular-nums')[] };
+
+// ─── Radii ───────────────────────────────────────────────────────────────
+export const radii = {
+  xs: 2,
+  squareSm: 3,
+  squareMd: 4,
+  sm: 5,
+  seg: 6,
+  md: 8,
+  badge: 9,
+  lg: 10,
+  card: 12,
+  section: 14,
+  sheet: 20,
+  fab: 26,
+  pill: 999,
+} as const;
+
+// ─── Spacing ─────────────────────────────────────────────────────────────
+export const space = {
+  screenX: 16,
+  screenTop: 4,
+  screenBottom: 24,
+  section: 14,
+  sectionRoot: 24,
+  groupHeaderToCard: 8,
+  cardX: 14,
+  rowY: 11,
+  rowGap: 12,
+  propRowY: 10,
+  inline: 6,
+  inlineSm: 4,
+  tabGap: 20,
+  duoPaneX: 24,
+  duoPaneTop: 12,
+  duoMainX: 28,
+} as const;
+
+// ─── Sizes ───────────────────────────────────────────────────────────────
+export const size = {
+  tabBarPhone: 83,
+  tabBarDuo: 56,
+  fab: 52,
+  fabIcon: 24,
+  fabInset: 16,
+  statusDot: 7,
+  typeDot: 6,
+  checkbox: 18,
+  taskCircle: 20,
+  projectSquare: { header: 10, row: 14, card: 18, rail: 16, taskHeader: 12 },
+  thumb: 48,
+  progress: 3,
+  underline: 2,
+  border: 1,
+  icon: { nav: 22, header: 20, row: 16, caret: 12, meta: 13 },
+  railWidth: 88,
+  listPane: { tasks: 400, selections: 420, diary: 400, messages: 380 },
+} as const;
+
+// ─── Elevation: only the FAB and bottom sheets have shadows ──────────────
+export const shadow = {
+  fab: { shadowColor: '#2B2624', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
+  sheet: { shadowColor: '#2B2624', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: -6 }, elevation: 12 },
+} as const;
+
+export const breakpoints = {
+  /** Two-pane layouts when width >= 700 AND width > height. */
+  wide: 700,
+} as const;

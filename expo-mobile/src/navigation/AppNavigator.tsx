@@ -13,7 +13,7 @@ import { navigationRef, navigateFromPush } from './navigationRef';
 import { setAppBadgeCount } from '../services/pushNotifications';
 import { handleNotificationAction, registerNotificationCategories } from '../services/notificationActions';
 import { refreshSiteFences } from '../services/siteGeofence';
-import { useTheme, type Theme } from '../theme';
+import { useTheme, fonts, type Theme } from '../theme';
 import { goBackOrHome, isFirstRoute } from './back';
 import OfflineFrame from '../components/ui/OfflineBanner';
 import { navigationIntegration } from '../lib/sentry';
@@ -87,9 +87,10 @@ function withoutShareTarget(state: NavigationState | undefined): NavigationState
 function stackScreenOptions(theme: Theme, headerShown: boolean) {
   return ({ navigation, route }: { navigation: any; route: { key: string } }) => ({
     headerShown,
-    headerStyle: { backgroundColor: theme.card },
+    // Revamp v1: native headers sit on the app canvas, not a white bar.
+    headerStyle: { backgroundColor: theme.background },
     headerTintColor: theme.textPrimary,
-    headerTitleStyle: { fontWeight: '600' as const },
+    headerTitleStyle: { fontFamily: fonts.semibold },
     headerShadowVisible: false,
     headerBackButtonDisplayMode: 'minimal' as const,
     headerLeft: isFirstRoute(navigation, route.key)
@@ -511,10 +512,10 @@ export default function AppNavigator() {
           notification: theme.statusDanger,
         },
         fonts: {
-          regular: { fontFamily: 'System', fontWeight: '400' },
-          medium: { fontFamily: 'System', fontWeight: '500' },
-          bold: { fontFamily: 'System', fontWeight: '700' },
-          heavy: { fontFamily: 'System', fontWeight: '800' },
+          regular: { fontFamily: fonts.regular, fontWeight: '400' },
+          medium: { fontFamily: fonts.medium, fontWeight: '500' },
+          bold: { fontFamily: fonts.bold, fontWeight: '700' },
+          heavy: { fontFamily: fonts.bold, fontWeight: '800' },
         },
       }}
     >
