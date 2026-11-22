@@ -9,12 +9,11 @@ import {
   ActivityIndicator,
   useColorScheme,
   Modal,
-  FlatList,
-  SectionList,
   TextInput,
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Pressable,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,7 +28,11 @@ import { TwoPane } from '../components/ui/TwoPane';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme, currentTheme, MAX_FONT_SCALE } from '../theme';
+import { useTheme, useColors, currentTheme, MAX_FONT_SCALE, metrics, space, type } from '../theme';
+import { ChevronRight, Eye, EyeOff, LayoutGrid, List, SquareCheck } from 'lucide-react-native';
+import { Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, GroupHeader, ListRow, TasksHeader } from '../components/kit';
+import { SkeletonList } from '../components/ui/Skeleton';
+import { getInitials } from '../lib/format';
 import { SwipeRow } from '../components/ui/SwipeRow';
 import { useLayout } from '../lib/useLayout';
 import { sheetFrame } from '../components/ui/Sheet';
@@ -98,7 +101,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const { width: screenWidth } = useLayout();
   // Big screen, list view: tasks on the left, the open task on the right.
   const { isWide, paneTaskId, openInPane, close: closePane, paneProps } = useTaskPane();
-  const { projectId, projectName } = route.params as { projectId: string; projectName: string };
+  const { projectId, projectName, projectColor } = route.params as { projectId: string; projectName: string; projectColor?: string | null };
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { user } = useAuth();
@@ -113,6 +116,7 @@ export default function ProjectTasksScreen({ navigation, route }: Props) {
   const newDescRef = useRef<TextInputInstance>(null);
 
   const theme = useTheme();
+  const k = useColors();
 const colors = {
     bg: theme.background,
     card: theme.card,
@@ -147,6 +151,8 @@ const colors = {
 
   // Filter
   const [hideDone, setHideDone] = useState(true);
+  // Groups with no tasks fold into one "Show empty groups" line.
+  const [showEmptyGroups, setShowEmptyGroups] = useState(false);
 
   // Edit checklist
   const [editChecklist, setEditChecklist] = useState<{ id: string; text: string; completed: boolean }[]>([]);
@@ -245,7 +251,17 @@ const colors = {
     return groups;
   }, [tasks, statusOptions, defaultStatus, hideDone, doneStatus]);
 
+  const emptyGroupNames = useMemo(
+    () => groupedTasks.filter(g => g.tasks.length === 0).map(g => g.label),
+    [groupedTasks],
+  );
+
   // ─── Actions ─────────────────────────────────────────────────────────────────
+
+  const openCreate = () => {
+    setNewTitle(''); setNewStatus(''); setNewPriority('medium'); setNewDueDate(''); setNewDescription('');
+    setNewChecklist([]); setNewChecklistInput(''); setShowCreateModal(true);
+  };
 
   const toggleSection = (key: string) => {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
@@ -463,23 +479,41 @@ const colors = {
 
   // ─── Render helpers ──────────────────────────────────────────────────────────
 
+  /** "Today" · "Tomorrow" · "Tue 24 Nov" · "3d overdue" · "No due date". */
+  const dueLabel = (task: Task, done: boolean): { text: string; overdue: boolean } => {
+    if (!task.dueDate) return { text: 'No due date', overdue: false };
+    const overdue = !done && isOverdue(task.dueDate);
+    const rel = getRelativeDate(task.dueDate);
+    if (overdue || rel === 'Today' || rel === 'Tomorrow') return { text: rel, overdue };
+    return {
+      text: new Date(task.dueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }),
+      overdue: false,
+    };
+  };
+
+  const assigneeInitials = (task: Task) =>
+    (task.assigneeNames || []).map(n => getInitials(n)).filter(Boolean).join(', ');
+
+  const taskMeta = (task: Task, done: boolean, inOtherGroup: boolean) => {
+    const due = dueLabel(task, done);
+    const rest = [inOtherGroup ? getStatusLabel(task.status) : null, assigneeInitials(task) || null].filter(Boolean);
+    return (
+      <Text style={[type.caption, { color: k.muted }]} numberOfLines={1}>
+        <Text style={due.overdue ? { color: k.danger } : undefined}>{due.text}</Text>
+        {rest.length ? ` · ${rest.join(' · ')}` : ''}
+      </Text>
+    );
+  };
+
   // `inOtherGroup`: the row sits under "Other", whose header doesn't name
   // the task's status — so the row has to.
   const renderTaskRow = (task: Task, inOtherGroup = false) => {
     const done = isTaskDone(task.status);
-    const overdue = !done && isOverdue(task.dueDate);
-    const statusColor = getStatusColor(task.status);
-    // Phone: the list is grouped by status, so the row's status pill repeats
-    // its section header — show it only where the header doesn't say it.
-    // The chevron goes too (the whole row is the tap). Big screen unchanged.
-    const showStatus = isWide || inOtherGroup;
-    const hasMeta = showStatus || !!task.dueDate;
     // Swipe right to complete / reopen — same action and permission (any
-    // signed-in user) as the checkbox; the tap still opens the task.
+    // signed-in user) as the circle; the tap still opens the task.
     return (
       <SwipeRow
         key={task.id}
-        containerStyle={styles.taskRowSwipe}
         left={{
           label: done ? 'Reopen' : 'Done',
           icon: done ? 'arrow-undo' : 'checkmark',
@@ -488,117 +522,58 @@ const colors = {
           onAction: () => handleToggleDone(task),
         }}
       >
-      <TouchableOpacity
-        style={[
-          styles.taskRow,
-          { backgroundColor: colors.card, borderColor: colors.border },
-          isWide && paneTaskId === task.id && { borderColor: colors.accent },
-        ]}
-        onPress={() => openViewTask(task)}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.priorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
-        <TouchableOpacity
-          style={styles.checkArea}
-          onPress={() => handleToggleDone(task)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: done }}
-          accessibilityLabel={`Mark ${task.title} ${done ? 'not done' : 'done'}`}
-        >
-          <View style={[
-            styles.checkCircle,
-            { borderColor: done ? statusColor : colors.muted },
-            done ? { backgroundColor: statusColor } : null,
-          ]}>
-            {done && <Ionicons name="checkmark" size={12} color="#fff" />}
-          </View>
-        </TouchableOpacity>
-        <View style={styles.taskContent}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-            style={[
-              styles.taskTitle,
-              { color: done ? colors.muted : colors.text },
-              done ? styles.strikethrough : null,
-            ]}
-            numberOfLines={1}
-          >
-            {task.title}
-          </Text>
-          {hasMeta ? (
-            <View style={styles.taskMeta}>
-              {showStatus ? (
-                <View style={[styles.statusPill, { backgroundColor: statusColor + '20' }]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusPillText, { color: statusColor }]}>
-                    {getStatusLabel(task.status)}
-                  </Text>
-                </View>
-              ) : null}
-              {task.dueDate ? (
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dueText, { color: overdue ? theme.statusDanger : colors.secondary }]}>
-                  {getRelativeDate(task.dueDate)}
-                </Text>
-              ) : null}
+        <ListRow
+          style={[{ backgroundColor: k.surface, alignItems: 'flex-start' }, isWide && paneTaskId === task.id && { backgroundColor: k.tint }]}
+          onPress={() => openViewTask(task)}
+          lead={
+            <View style={ks.circle}>
+              <Checkbox
+                round
+                checked={done}
+                onPress={() => handleToggleDone(task)}
+                accessibilityLabel={`Mark ${task.title} ${done ? 'not done' : 'done'}`}
+              />
             </View>
-          ) : null}
-        </View>
-        {isWide ? <Ionicons name="chevron-forward" size={16} color={colors.muted} /> : null}
-      </TouchableOpacity>
+          }
+          title={task.title}
+          done={done}
+          subtitle={taskMeta(task, done, inOtherGroup)}
+        />
       </SwipeRow>
     );
   };
 
   const renderBoardCard = (task: Task) => {
-    const overdue = isOverdue(task.dueDate);
+    const done = isTaskDone(task.status);
     return (
-      <TouchableOpacity
-        key={task.id}
-        style={[styles.boardCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-        onPress={() => openViewTask(task)}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.boardCardPriorityStrip, { backgroundColor: getPriorityColor(task.priority) }]} />
-        <View style={styles.boardCardInner}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardCardTitle, { color: colors.text }]} numberOfLines={2}>
-            {task.title}
-          </Text>
-          <View style={styles.boardCardMeta}>
-            <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(task.priority) + '20' }]}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.priorityBadgeText, { color: getPriorityColor(task.priority) }]}>
-                {PRIORITY_LABELS[task.priority || 'low'] || 'Low'}
-              </Text>
+      <Card key={task.id} variant="list">
+        <ListRow
+          onPress={() => openViewTask(task)}
+          style={{ alignItems: 'flex-start' }}
+          lead={
+            <View style={ks.circle}>
+              <Checkbox
+                round
+                checked={done}
+                onPress={() => handleToggleDone(task)}
+                accessibilityLabel={`Mark ${task.title} ${done ? 'not done' : 'done'}`}
+              />
             </View>
-            {task.dueDate ? (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardCardDate, { color: overdue ? theme.statusDanger : colors.secondary }]}>
-                {getRelativeDate(task.dueDate)}
-              </Text>
-            ) : null}
-          </View>
-          <TouchableOpacity
-            style={styles.boardCardDoneBtn}
-            onPress={() => handleToggleDone(task)}
-            // 18pt icon + 13 each side = 44pt.
-            hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: isTaskDone(task.status) }}
-          >
-            <Ionicons
-              name={isTaskDone(task.status) ? 'checkbox' : 'square-outline'}
-              size={18}
-              color={isTaskDone(task.status) ? getStatusColor(task.status) : colors.muted}
-            />
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
+          }
+          title={task.title}
+          done={done}
+          subtitle={taskMeta(task, done, false)}
+        />
+      </Card>
     );
   };
 
   // Phone: ~68% of the screen so the next column peeks in. Big screen (Duo
-  // unfolded): three columns side by side — width minus the 16pt content
-  // padding each side and the two 12pt gaps, split three ways. Only widths
+  // unfolded): three columns side by side — width minus the content
+  // padding each side and the two column gaps, split three ways. Only widths
   // change on fold/unfold, so the board's scroll views stay mounted.
   const columnWidth = isWide
-    ? Math.floor((screenWidth - 32 - 2 * 12) / 3)
+    ? Math.floor((screenWidth - 2 * space.screenX - 2 * space.rowGap) / 3)
     : Math.max(screenWidth * 0.68, 240);
 
   const renderDeleteButton = (task: Task) => (
@@ -626,8 +601,11 @@ const colors = {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, { backgroundColor: k.bg, paddingTop: insets.top + metrics.projectTasks.headerTop }]}>
+        <View style={ks.header}>
+          <TasksHeader title="Tasks" project={{ name: projectName, color: projectColor ?? null, id: projectId }} onBack={() => navigation.goBack()} />
+        </View>
+        <SkeletonList />
       </View>
     );
   }
@@ -648,51 +626,24 @@ const colors = {
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
 
       {/* Header */}
-      <View style={[styles.header, {
-        paddingTop: insets.top + 12,
-        backgroundColor: colors.accent + '25',
-        borderBottomColor: colors.accent + '40',
-      }]}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>Tasks</Text>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerSubtitle, { color: colors.secondary }]} numberOfLines={1}>{projectName}</Text>
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={[styles.headerIconBtn, {
-              borderColor: hideDone ? colors.accent + '60' : colors.border,
-              backgroundColor: hideDone ? colors.accent + '15' : 'transparent',
-            }]}
-            onPress={() => setHideDone(v => !v)}
-            hitSlop={{ top: 5, bottom: 5, left: 4, right: 4 }}
-            accessibilityLabel={hideDone ? 'Show done tasks' : 'Hide done tasks'}
-          >
-            <Ionicons name={hideDone ? 'eye-off-outline' : 'eye-outline'} size={18} color={hideDone ? colors.accent : colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.headerIconBtn, { borderColor: colors.accent + '60', backgroundColor: colors.accent + '15' }]}
-            onPress={() => { if (viewMode === 'list') closePane(); setViewMode(v => v === 'list' ? 'board' : 'list'); }}
-            hitSlop={{ top: 5, bottom: 5, left: 4, right: 4 }}
-            accessibilityLabel={viewMode === 'list' ? 'Board view' : 'List view'}
-          >
-            <Ionicons name={viewMode === 'list' ? 'grid-outline' : 'list-outline'} size={18} color={colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.addBtn, { backgroundColor: colors.accent }]}
-            onPress={() => { setNewTitle(''); setNewStatus(''); setNewPriority('medium'); setNewDueDate(''); setNewDescription(''); setNewChecklist([]); setNewChecklistInput(''); setShowCreateModal(true); }}
-            hitSlop={{ top: 5, bottom: 5, left: 4, right: 4 }}
-            accessibilityLabel="New task"
-          >
-            <Ionicons name="add" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
+      <View style={[ks.header, { paddingTop: insets.top + metrics.projectTasks.headerTop }]}>
+        <TasksHeader
+          title="Tasks"
+          project={{ name: projectName, color: projectColor ?? null, id: projectId }}
+          onBack={() => navigation.goBack()}
+          actions={[
+            {
+              icon: hideDone ? EyeOff : Eye,
+              label: hideDone ? 'Show done tasks' : 'Hide done tasks',
+              onPress: () => setHideDone(v => !v),
+            },
+            {
+              icon: viewMode === 'list' ? LayoutGrid : List,
+              label: viewMode === 'list' ? 'Board view' : 'List view',
+              onPress: () => { if (viewMode === 'list') closePane(); setViewMode(v => v === 'list' ? 'board' : 'list'); },
+            },
+          ]}
+        />
       </View>
 
       {/* List view */}
@@ -721,47 +672,61 @@ const colors = {
             />
           ) : null}
           list={
-        <SectionList
+        <ScrollView
           style={styles.scroll}
           // Big screen: keep task rows to a readable width. Style only — no remount.
-          contentContainerStyle={[styles.scrollContent, { gap: undefined, paddingBottom: insets.bottom + 24 }, isWide && readableFrame]}
-          sections={tasks.length === 0 ? [] : groupedTasks.map(group => ({
-            ...group,
-            data: collapsedSections[group.key] ? [] : group.tasks,
-          }))}
-          keyExtractor={t => t.id}
-          renderItem={({ item, section }) => <View style={styles.sectionRowGap}>{renderTaskRow(item, section.key === 'other')}</View>}
-          renderSectionHeader={({ section }) => (
-            <TouchableOpacity
-              style={styles.sectionHeader}
-              onPress={() => toggleSection(section.key)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.sectionHeaderLeft}>
-                <View style={[styles.sectionDot, { backgroundColor: section.color }]} />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>{section.label}</Text>
-                <View style={[styles.sectionCount, { backgroundColor: section.color + '20' }]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionCountText, { color: section.color }]}>{section.tasks.length}</Text>
-                </View>
-              </View>
-              <Ionicons
-                name={collapsedSections[section.key] ? 'chevron-forward' : 'chevron-down'}
-                size={18}
-                color={colors.secondary}
-              />
-            </TouchableOpacity>
-          )}
-          renderSectionFooter={() => <View style={styles.sectionFooterGap} />}
-          stickySectionHeadersEnabled={false}
-          ListEmptyComponent={
-            <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name="checkbox-outline" size={44} color={colors.muted} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>No tasks yet</Text>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySubtitle, { color: colors.secondary }]}>Tap + to add the first task</Text>
+          contentContainerStyle={[ks.list, { paddingBottom: FAB_CLEARANCE + insets.bottom }, isWide && readableFrame]}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
+        >
+          {tasks.length === 0 ? (
+            <View style={ks.empty}>
+              <EmptyState icon={SquareCheck} title="No tasks yet" helper="Tap + to add the first task for this project." />
             </View>
-          }
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        />
+          ) : (
+            <>
+              {groupedTasks
+                .filter(group => group.tasks.length > 0 || showEmptyGroups)
+                .map(group => {
+                  const open = !collapsedSections[group.key];
+                  return (
+                    <View key={group.key} style={ks.group}>
+                      <GroupHeader
+                        title={group.label}
+                        meta={group.tasks.length}
+                        open={open}
+                        onToggle={() => toggleSection(group.key)}
+                      />
+                      {open ? (
+                        group.tasks.length === 0 ? (
+                          <Text style={[type.meta, { color: k.muted }]}>No tasks</Text>
+                        ) : (
+                          <Card variant="list">
+                            {group.tasks.map(t => renderTaskRow(t, group.key === 'other'))}
+                          </Card>
+                        )
+                      ) : null}
+                    </View>
+                  );
+                })}
+              {emptyGroupNames.length > 0 ? (
+                <Pressable
+                  onPress={() => setShowEmptyGroups(v => !v)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showEmptyGroups }}
+                  style={ks.emptyGroups}
+                >
+                  <Text style={[type.meta, { color: k.muted }]}>{showEmptyGroups ? 'Hide empty groups' : 'Show empty groups'}</Text>
+                  {!showEmptyGroups ? (
+                    <Text style={[type.meta, { color: k.faint, flexShrink: 1 }]} numberOfLines={1}>
+                      {emptyGroupNames.join(', ')}
+                    </Text>
+                  ) : null}
+                  <ChevronRight size={metrics.projectTasks.emptyGroupsIcon} color={k.muted} strokeWidth={metrics.iconStroke} />
+                </Pressable>
+              ) : null}
+            </>
+          )}
+        </ScrollView>
           }
         />
       ) : (
@@ -769,35 +734,24 @@ const colors = {
         <ScrollView
           horizontal
           style={styles.boardScroll}
-          contentContainerStyle={[styles.boardContent, { paddingBottom: insets.bottom + 24 }]}
+          contentContainerStyle={[ks.board, { paddingBottom: FAB_CLEARANCE + insets.bottom }]}
           showsHorizontalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
         >
           {groupedTasks.map(group => (
-            <View key={group.key} style={[styles.boardColumn, { width: columnWidth }]}>
-              <View style={[styles.boardColumnHeader, { borderBottomColor: group.color }]}>
-                <View style={[styles.sectionDot, { backgroundColor: group.color }]} />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardColumnTitle, { color: colors.text }]}>{group.label}</Text>
-                <View style={[styles.sectionCount, { backgroundColor: group.color + '20' }]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionCountText, { color: group.color }]}>{group.tasks.length}</Text>
-                </View>
-              </View>
-              <FlatList
-                data={group.tasks}
-                keyExtractor={t => t.id}
-                renderItem={({ item }) => renderBoardCard(item)}
-                scrollEnabled={false}
-                contentContainerStyle={{ gap: 8 }}
-                ListEmptyComponent={
-                  <View style={[styles.boardEmptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.boardEmptyText, { color: colors.muted }]}>No tasks</Text>
-                  </View>
-                }
-              />
+            <View key={group.key} style={[ks.boardColumn, { width: columnWidth }]}>
+              <GroupHeader title={group.label} meta={group.tasks.length} open onToggle={() => {}} />
+              {group.tasks.length === 0 ? (
+                <Text style={[type.meta, { color: k.muted }]}>No tasks</Text>
+              ) : (
+                <View style={ks.boardCards}>{group.tasks.map(renderBoardCard)}</View>
+              )}
             </View>
           ))}
         </ScrollView>
       )}
+
+      <FAB onPress={openCreate} label="New task" />
 
       {/* View / Edit Task Modal */}
       {/* Keyboard: viewing, the sheet hugs its content and the KeyboardAvoidingView
@@ -1298,130 +1252,12 @@ const colors = {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { justifyContent: 'center', alignItems: 'center' },
-
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    gap: 10,
-  },
-  backBtn: { padding: 2 },
-  headerCenter: { flex: 1 },
-  headerTitle: { fontSize: 17, fontWeight: '700' },
-  headerSubtitle: { fontSize: 12, marginTop: 1 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerIconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
 
   // List view
   scroll: { flex: 1 },
-  scrollContent: { padding: 16, gap: 12 },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 48,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 10,
-  },
-  emptyTitle: { fontSize: 17, fontWeight: '600' },
-  emptySubtitle: { fontSize: 14 },
-
-  section: { gap: 6 },
-  sectionRowGap: { marginBottom: 6 },
-  sectionFooterGap: { height: 12 },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-  },
-  sectionHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionDot: { width: 8, height: 8, borderRadius: 4 },
-  sectionTitle: { fontSize: 13, fontWeight: '600' },
-  sectionCount: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
-  sectionCountText: { fontSize: 12, fontWeight: '600' },
-
-  taskRowSwipe: { borderRadius: 10, overflow: 'hidden' },
-  taskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    overflow: 'hidden',
-    minHeight: 52,
-    gap: 10,
-    paddingRight: 12,
-  },
-  priorityStrip: { width: 3, alignSelf: 'stretch' },
-  checkArea: { padding: 8 },
-  checkCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  taskContent: { flex: 1, paddingVertical: 10 },
-  taskTitle: { fontSize: 14, fontWeight: '500' },
-  strikethrough: { textDecorationLine: 'line-through' },
-  taskMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  statusPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
-  statusPillText: { fontSize: 11, fontWeight: '600' },
-  dueText: { fontSize: 12 },
 
   // Board view
   boardScroll: { flex: 1 },
-  boardContent: { padding: 16, gap: 12, flexDirection: 'row', alignItems: 'flex-start' },
-  boardColumn: { gap: 8 },
-  boardColumnHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingBottom: 10,
-    borderBottomWidth: 2,
-    marginBottom: 4,
-  },
-  boardColumnTitle: { fontSize: 13, fontWeight: '700', flex: 1 },
-  boardCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  boardCardPriorityStrip: { height: 3, width: '100%' },
-  boardCardInner: { padding: 12, gap: 8 },
-  boardCardTitle: { fontSize: 14, fontWeight: '500', lineHeight: 20 },
-  boardCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  priorityBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
-  priorityBadgeText: { fontSize: 11, fontWeight: '600' },
-  boardCardDate: { fontSize: 12 },
-  boardCardDoneBtn: { alignSelf: 'flex-start' },
-  boardEmptyCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 16,
-    alignItems: 'center',
-  },
-  boardEmptyText: { fontSize: 13 },
 
   // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
@@ -1461,7 +1297,6 @@ const styles = StyleSheet.create({
   editSelectText: { flex: 1, fontSize: 15 },
   selectDot: { width: 10, height: 10, borderRadius: 5 },
   editTextArea: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, minHeight: 100 },
-  editActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   bottomBar: {
     flexDirection: 'row',
     gap: 12,
@@ -1479,4 +1314,20 @@ const styles = StyleSheet.create({
   inlinePickerItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   inlinePickerText: { flex: 1, fontSize: 15 },
 
+});
+
+const pt = metrics.projectTasks;
+
+// Revamp v1 list / board styles (the modals below still use `styles`).
+const ks = StyleSheet.create({
+  header: { paddingHorizontal: space.screenX, paddingBottom: pt.headerBottom },
+  list: { paddingHorizontal: space.screenX, paddingTop: pt.listTop, gap: pt.groupGap },
+  group: {},
+  // Circle sits 1dp lower so it lines up with the first line of the title.
+  circle: { paddingTop: pt.circleOffset },
+  emptyGroups: { flexDirection: 'row', alignItems: 'center', gap: space.inline, paddingVertical: space.inlineSm },
+  empty: { minHeight: metrics.emptyState.circle * 6 },
+  board: { paddingHorizontal: space.screenX, paddingTop: pt.listTop, gap: space.rowGap },
+  boardColumn: { gap: 0 },
+  boardCards: { gap: pt.boardCardGap },
 });

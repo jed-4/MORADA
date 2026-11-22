@@ -289,7 +289,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
 
   const go = (screen: string, extra?: Record<string, unknown>) => {
     if (!project) return;
-    navigation.navigate(screen, { projectId, projectName: project.name, ...extra });
+    navigation.navigate(screen, { projectId, projectName: project.name, projectColor: project.color ?? null, ...extra });
   };
 
   const tiles = [

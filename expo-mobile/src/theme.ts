@@ -557,5 +557,14 @@ export const metrics = {
     maxTaskRows: 5,
     maxDiaryRows: 3,
   },
+  projectTasks: {
+    headerTop: 6,
+    headerBottom: 4,
+    listTop: 16,
+    groupGap: 20,
+    circleOffset: 1,
+    emptyGroupsIcon: 14,
+    boardCardGap: 8,
+  },
   composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18 },
 } as const;
