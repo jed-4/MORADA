@@ -1,24 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  RefreshControl,
-  ActivityIndicator,
-  Pressable,
-  useColorScheme,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, TextInput, RefreshControl, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CircleX, CloudOff, FolderOpen, Search, X } from 'lucide-react-native';
 import { apiFetch } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, lightTheme } from '../theme';
+import { metrics, radii, size, space, tabular, type, useColors } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { compareProjects } from '../lib/projects';
+import { formatShortCents } from '../lib/format';
 import { TwoPane } from '../components/ui/TwoPane';
 import { useTwoPaneSelection } from '../lib/twoPane';
 import { usePersistedState } from '../lib/usePersistedState';
@@ -26,9 +16,8 @@ import ProjectDetailScreen from './ProjectDetailScreen';
 import { ProjectRail } from '../components/projects/ProjectRail';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { SkeletonList } from '../components/ui/Skeleton';
+import { Card, Divider, EmptyState, FilterChips, GroupHeader, ProgressLine, ProjectSquare, RootTitle } from '../components/kit';
 
-const toTitleCase = (str: string) =>
-  str.replace(/_/g, ' ').replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 interface Project {
   id: string;
   name: string;
@@ -62,17 +51,33 @@ type Props = {
   route: { params?: any };
 };
 
-const phases = [
-  { key: 'all', label: 'All' },
-  { key: 'construction', label: 'Construction' },
-  { key: 'pre_construction', label: 'Pre-Con' },
+// Stage groups, in pipeline order. Anything with an unknown / missing phase
+// lands in "Other" so no project ever disappears from the list.
+const GROUPS = [
   { key: 'lead', label: 'Lead' },
-  { key: 'post_construction', label: 'Post-Con' },
+  { key: 'pre_construction', label: 'Pre-construction' },
+  { key: 'construction', label: 'Construction' },
+  { key: 'post_construction', label: 'Post-construction' },
+  { key: 'other', label: 'Other' },
+] as const;
+type GroupKey = (typeof GROUPS)[number]['key'];
+
+const CHIPS: { key: 'all' | GroupKey; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'lead', label: 'Lead' },
+  { key: 'pre_construction', label: 'Pre-con' },
+  { key: 'construction', label: 'Construction' },
+  { key: 'post_construction', label: 'Post-con' },
 ];
 
+const groupOf = (p: Project): GroupKey =>
+  (GROUPS.find(g => g.key === p.currentSystemPhase)?.key ?? 'other') as GroupKey;
+
+type Row =
+  | { kind: 'header'; key: string; group: GroupKey; label: string; count: number; open: boolean; first: boolean }
+  | { kind: 'card'; key: string; project: Project; last: boolean };
+
 export default function ProjectsScreen({ navigation, route }: Props) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const { user } = useAuth();
   // Mirror server-side authority check used by GET /api/projects in
   // server/routes.ts: roleName matched case-insensitively against
@@ -86,15 +91,17 @@ export default function ProjectsScreen({ navigation, route }: Props) {
     );
   })();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [statusLabels, setStatusLabels] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
-  // Remembered between launches, so the list opens on the phase you last used.
-  const [activePhase, setActivePhase] = usePersistedState('projects.phase', 'all');
+  // Remembered between launches, so search opens on the stage you last used.
+  const [activePhase, setActivePhase] = usePersistedState<'all' | GroupKey>('projects.phase', 'all');
+  // Post-construction starts collapsed (design); every toggle is remembered.
+  const [collapsed, setCollapsed] = usePersistedState<Record<string, boolean>>('projects.collapsed', { post_construction: true });
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const insets = useSafeAreaInsets();
+  const c = useColors();
   // Phone: a tap pushes the project. Duo unfolded: it opens on the right.
   const { selectedId, open, isWide, paneProps } = useTwoPaneSelection({
     navigation,
@@ -102,18 +109,6 @@ export default function ProjectsScreen({ navigation, route }: Props) {
     detailRoute: 'ProjectDetail',
     paramsFor: (id: string) => ({ projectId: id, projectName: projects.find(p => p.id === id)?.name }),
   });
-
-  const theme = useTheme();
-const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    muted: theme.textMuted,
-    inputBg: theme.card,
-};
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -131,25 +126,9 @@ const colors = {
     }
   }, []);
 
-  const fetchStatusLabels = useCallback(async () => {
-    try {
-      const cat = await apiFetch<{ options: { key: string; name: string }[] }>(
-        '/api/field-categories/by-key/project.status'
-      );
-      if (cat?.options) {
-        const map: Record<string, string> = {};
-        for (const opt of cat.options) { map[opt.key] = opt.name; }
-        setStatusLabels(map);
-      }
-    } catch {
-      // silently ignore — raw key shown as fallback
-    }
-  }, []);
-
   useEffect(() => {
     fetchProjects();
-    fetchStatusLabels();
-  }, [fetchProjects, fetchStatusLabels]);
+  }, [fetchProjects]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -157,17 +136,12 @@ const colors = {
     setRefreshing(false);
   }, [fetchProjects]);
 
-  const GREY = lightTheme.textMuted;
-  const getProjectColor = (project: Project): string => project.color || GREY;
+  // Search only narrows while the search bar is open.
+  const searching = searchVisible && (search.trim() !== '' || activePhase !== 'all');
 
-  const getSubStatusLabel = (key?: string): string => {
-    if (!key) return '';
-    return statusLabels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-  };
-
-  const getFilteredProjects = () => {
-    let filtered = activePhase === 'all' ? projects : projects.filter(p => p.currentSystemPhase === activePhase);
-    if (search.trim()) {
+  const filteredProjects = useMemo(() => {
+    let filtered = searchVisible && activePhase !== 'all' ? projects.filter(p => groupOf(p) === activePhase) : projects;
+    if (searchVisible && search.trim()) {
       const q = search.toLowerCase();
       filtered = filtered.filter(
         p =>
@@ -179,149 +153,101 @@ const colors = {
       );
     }
     return [...filtered].sort(compareProjects);
+  }, [projects, search, searchVisible, activePhase]);
+
+  const rows = useMemo<Row[]>(() => {
+    const out: Row[] = [];
+    let first = true;
+    for (const g of GROUPS) {
+      const items = filteredProjects.filter(p => groupOf(p) === g.key);
+      if (items.length === 0) continue;
+      // While searching every matching group is open, so a hit is never hidden.
+      const isOpen = searching || !collapsed[g.key];
+      out.push({ kind: 'header', key: `h:${g.key}`, group: g.key, label: g.label, count: items.length, open: isOpen, first });
+      first = false;
+      if (isOpen) items.forEach((p, i) => out.push({ kind: 'card', key: p.id, project: p, last: i === items.length - 1 }));
+    }
+    return out;
+  }, [filteredProjects, collapsed, searching]);
+
+  const toggleGroup = (key: GroupKey) => setCollapsed({ ...collapsed, [key]: !collapsed[key] });
+
+  const openSearchOn = (key: GroupKey) => {
+    setSearchVisible(true);
+    setActivePhase(key);
   };
 
-  const renderProjectCard = ({ item }: { item: Project }) => {
-    const projectColor = getProjectColor(item);
+  const closeSearch = () => {
+    setSearchVisible(false);
+    setSearch('');
+  };
 
-    // Status chip colour mapping — theme tokens so dark mode gets dark washes
-    const chipColors: Record<string, { bg: string; dot: string; text: string }> = {
-      construction:      { bg: theme.sageLight, dot: theme.sage, text: theme.sage },
-      pre_construction:  { bg: theme.amberLight, dot: theme.amber, text: theme.amber },
-      lead:              { bg: theme.primaryLight, dot: theme.primary, text: theme.primary },
-      post_construction: { bg: theme.tealLight, dot: theme.teal, text: theme.teal },
-    };
-    const chip = chipColors[item.currentSystemPhase ?? ''] ?? { bg: theme.primaryLight, dot: theme.primary, text: theme.primary };
-    const chipLabel = item.projectSubStatus
-      ? getSubStatusLabel(item.projectSubStatus)
-      : item.currentSystemPhase
-      ? getSubStatusLabel(item.currentSystemPhase)
-      : 'Active';
+  const m = metrics.projects;
 
-    // `progress` is computed by the server from schedule item progressPercent values.
-    // It's null when a project has no schedule items. Only show the bar when it exists.
-    const pct = typeof item.progress === 'number' ? item.progress : 0;
-    const hasProgress = item.progress != null;
-
-    // Value display — server stores ALL financial fields in CENTS.
-    // Pick the most "headline" value available, in priority order.
-    const valueCents = item.contractPrice ?? item.contractCost ?? item.clientBudget ?? item.budget;
-    const valueStr = valueCents
-      ? (() => {
-          const dollars = valueCents / 100;
-          if (dollars >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)}M`;
-          if (dollars >= 1_000) return `$${Math.round(dollars / 1_000)}k`;
-          return `$${Math.round(dollars)}`;
-        })()
+  const renderCard = (item: Project, last: boolean) => {
+    const color = item.color || null;
+    // `progress` is computed by the server from schedule item progressPercent
+    // values; null when a project has no schedule. Construction cards only.
+    const showProgress = groupOf(item) === 'construction' && typeof item.progress === 'number';
+    // Headline value (cents), role-gated. Same priority as before.
+    const value = canViewFinancials
+      ? formatShortCents(item.contractPrice ?? item.contractCost ?? item.clientBudget ?? item.budget)
       : null;
-
-    // Date display — schema uses proposedEndDate (and legacy endDate).
-    const dueDate = item.proposedEndDate ?? item.endDate;
-    const dateStr = dueDate
-      ? new Date(dueDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
-      : null;
-
+    const selected = isWide && selectedId === item.id;
     return (
-      <TouchableOpacity
-        activeOpacity={0.7}
+      <Pressable
         onPress={() => open(item.id)}
-        style={[
-          styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border },
-          isWide && selectedId === item.id && { borderColor: colors.accent, borderWidth: 2 },
-        ]}
+        accessibilityRole="button"
+        accessibilityLabel={[item.name, item.clientName, value].filter(Boolean).join(', ')}
+        style={({ pressed }) => [{ marginBottom: last ? 0 : m.cardGap, opacity: pressed ? metrics.pressedOpacity : 1 }]}
       >
-        {/* Top colour band */}
-        <View style={[styles.cardTopBand, { backgroundColor: projectColor }]} />
-
-        {/* Card body below the band */}
-        <View style={styles.cardBody}>
-
-          {/* Row 1: Project name + value (financial fields role-gated) */}
-          <View style={styles.cardRow}>
-            <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>
-              {item.name}
-            </Text>
-            {canViewFinancials && valueStr && (
-              <Text style={[styles.cardValue, { color: colors.text }]}>{valueStr}</Text>
-            )}
-          </View>
-
-          {/* Phone / Duo folded: ONE line under the name — status chip, then
-              client and finish date, then % complete — and the progress bar.
-              Big screen keeps the roomier card below. Same facts either way. */}
-          {!isWide && (
-            <View style={[styles.cardRow, styles.compactRow]}>
-              <View style={[styles.chip, { backgroundColor: chip.bg }]}>
-                <View style={[styles.chipDot, { backgroundColor: chip.dot }]} />
-                <Text style={[styles.chipLabel, { color: chip.text }]}>{toTitleCase(chipLabel)}</Text>
-              </View>
-              <Text style={[styles.compactFacts, { color: colors.secondary }]} numberOfLines={1}>
-                {[item.clientName, dateStr].filter(Boolean).join(' · ')}
+        <Card style={[styles.card, selected && { backgroundColor: c.tint, borderColor: c.accentLine }]}>
+          <ProjectSquare color={color} fallbackKey={item.id} size="card" />
+          <View style={styles.cardBody}>
+            <View style={styles.cardTop}>
+              <Text style={[type.cardTitle, { color: c.text, flex: 1 }]} numberOfLines={2}>
+                {item.name}
               </Text>
-              {hasProgress && pct > 0 && (
-                <Text style={[styles.compactPct, { color: colors.secondary }]}>{Math.round(pct)}%</Text>
-              )}
+              {value ? <Text style={[type.rowTitle, tabular, { color: c.text }]}>{value}</Text> : null}
             </View>
-          )}
-          {!isWide && hasProgress && (
-            <View style={[styles.progressBg, { backgroundColor: theme.border, marginTop: 8 }]}>
-              {pct > 0 && (
-                <View style={[styles.progressFill, { backgroundColor: projectColor, width: `${Math.min(pct, 100)}%` }]} />
-              )}
-            </View>
-          )}
-
-          {/* Client name */}
-          {isWide && !!item.clientName && (
-            <View style={[styles.cardRow, { marginTop: 3, justifyContent: 'flex-start' }]}>
-              <Ionicons name="person-outline" size={11} color={colors.secondary} style={{ marginRight: 4 }} />
-              <Text style={[styles.cardClient, { color: colors.secondary }]} numberOfLines={1}>
+            {!!item.clientName && (
+              <Text style={[type.meta, { color: c.muted }]} numberOfLines={1}>
                 {item.clientName}
               </Text>
-            </View>
-          )}
-
-          {/* Row 2: Status chip + date */}
-          {isWide && (
-          <View style={[styles.cardRow, { marginTop: 6 }]}>
-            <View style={[styles.chip, { backgroundColor: chip.bg }]}>
-              <View style={[styles.chipDot, { backgroundColor: chip.dot }]} />
-              <Text style={[styles.chipLabel, { color: chip.text }]}>{toTitleCase(chipLabel)}</Text>
-            </View>
-            {dateStr && (
-              <Text style={[styles.cardDate, { color: colors.secondary }]}>{dateStr}</Text>
             )}
-          </View>
-          )}
-
-          {/* Row 3: Progress bar in the project's own colour + % label. */}
-          {isWide && hasProgress && (
-            <View style={{ marginTop: 10 }}>
-              <View style={[styles.progressBg, { backgroundColor: theme.border }]}>
-                {pct > 0 && (
-                  <View style={[styles.progressFill, {
-                    backgroundColor: projectColor,
-                    width: `${Math.min(pct, 100)}%`,
-                  }]} />
-                )}
+            {showProgress ? (
+              <View style={styles.progress}>
+                <ProgressLine value={(item.progress ?? 0) / 100} color={color} trackColor={c.hairline} />
               </View>
-              {pct > 0 && (
-                <Text style={[styles.progressLabel, { color: colors.secondary }]}>
-                  {Math.round(pct)}% complete
-                </Text>
-              )}
-            </View>
-          )}
+            ) : null}
+          </View>
+        </Card>
+      </Pressable>
+    );
+  };
 
-        </View>
-      </TouchableOpacity>
+  const renderRow = ({ item }: { item: Row }) => {
+    if (item.kind === 'card') return renderCard(item.project, item.last);
+    return (
+      <View style={[styles.groupHeader, !item.first && { marginTop: m.groupGap }]}>
+        <GroupHeader
+          title={item.label}
+          meta={item.count}
+          open={item.open}
+          onToggle={() => toggleGroup(item.group)}
+          onOpen={item.group === 'other' ? undefined : () => openSearchOn(item.group)}
+        />
+        {!item.open ? <Divider /> : null}
+      </View>
     );
   };
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.bg, paddingTop: insets.top + 64 }]}>
+      <View style={[styles.container, { backgroundColor: c.bg, paddingTop: insets.top + m.contentTop }]}>
+        <View style={styles.titleRow}>
+          <RootTitle title="Projects" />
+        </View>
         <SkeletonList />
       </View>
     );
@@ -329,129 +255,75 @@ const colors = {
 
   if (error) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <Ionicons name="cloud-offline-outline" size={48} color={colors.muted} />
-        <Text style={[styles.emptyText, { color: colors.secondary }]}>
-          Couldn't load your projects.
-        </Text>
-        <TouchableOpacity
-          style={[styles.retryBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+      <View style={[styles.container, { backgroundColor: c.bg, paddingTop: insets.top }]}>
+        <EmptyState icon={CloudOff} title="Couldn't load your projects" helper="Check your connection, then try again." />
+        <Pressable
           onPress={() => { setLoading(true); fetchProjects(); }}
-          activeOpacity={0.7}
+          accessibilityRole="button"
+          style={styles.retry}
         >
-          <Text style={[styles.retryBtnText, { color: colors.accent }]}>Retry</Text>
-        </TouchableOpacity>
+          <Text style={[type.body, { color: c.accent }]}>Retry</Text>
+        </Pressable>
       </View>
     );
   }
 
-  const filteredProjects = getFilteredProjects();
-
-  const screenBg = isDark ? theme.background : '#F0EBE3';
-
-  const listPane = (
-    <View style={[styles.container, { backgroundColor: screenBg }]}>
-      {/* Header — matches Dashboard header exactly */}
-      <View style={[styles.header, { backgroundColor: screenBg, paddingTop: insets.top + 12 }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Projects</Text>
-        <TouchableOpacity
-          style={styles.searchIconBtn}
-          onPress={() => { setSearchVisible(v => !v); if (searchVisible) setSearch(''); }}
-          activeOpacity={0.7}
-          // 38pt button + 3 each side = 44pt.
-          hitSlop={{ top: 3, bottom: 3, left: 3, right: 3 }}
-          accessibilityLabel={searchVisible ? 'Close search' : 'Search projects'}
-        >
-          <Ionicons name={searchVisible ? 'close' : 'search'} size={22} color={colors.secondary} />
-        </TouchableOpacity>
-        {/* Hairline divider beneath the header */}
-        <View style={[styles.headerDivider, { backgroundColor: colors.border }]} />
-      </View>
-
-      {/* Expandable search */}
+  const header = (
+    <View style={styles.titleRow}>
+      <RootTitle
+        title="Projects"
+        count={projects.length}
+        accentActions
+        actions={[
+          searchVisible
+            ? { icon: X, label: 'Close search', onPress: closeSearch }
+            : { icon: Search, label: 'Search projects', onPress: () => setSearchVisible(true) },
+        ]}
+      />
       {searchVisible && (
-        <View style={[styles.searchBar, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-          <Ionicons name="search" size={16} color={colors.secondary} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search projects..."
-            placeholderTextColor={colors.secondary}
-            value={search}
-            onChangeText={setSearch}
-            autoFocus
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')} activeOpacity={0.7} hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }} accessibilityLabel="Clear search">
-              <Ionicons name="close-circle" size={16} color={colors.secondary} />
-            </TouchableOpacity>
-          )}
+        <View style={styles.searchBlock}>
+          <View style={[styles.searchBar, { backgroundColor: c.surface, borderColor: c.border }]}>
+            <Search size={m.searchIcon} color={c.muted} strokeWidth={metrics.iconStroke} />
+            <TextInput
+              style={[type.body, styles.searchInput, { color: c.text }]}
+              placeholder="Search projects"
+              placeholderTextColor={c.faint}
+              value={search}
+              onChangeText={setSearch}
+              autoFocus
+            />
+            {search.length > 0 && (
+              <Pressable onPress={() => setSearch('')} hitSlop={metrics.hitSlop} accessibilityLabel="Clear search">
+                <CircleX size={m.searchIcon} color={c.muted} strokeWidth={metrics.iconStroke} />
+              </Pressable>
+            )}
+          </View>
+          <FilterChips chips={CHIPS} value={activePhase} onChange={setActivePhase} />
         </View>
       )}
+    </View>
+  );
 
-      {/* Project list */}
+  const listPane = (
+    <View style={[styles.container, { backgroundColor: c.bg }]}>
       <FlatList
-        data={filteredProjects}
-        keyExtractor={item => item.id}
-        style={{ backgroundColor: screenBg }}
-        contentContainerStyle={[styles.list, isWide && readableFrame]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        renderItem={renderProjectCard}
+        data={rows}
+        keyExtractor={item => item.key}
+        renderItem={renderRow}
+        ListHeaderComponent={header}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.list, { paddingTop: insets.top + m.contentTop }, isWide && readableFrame]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="folder-open-outline" size={48} color={colors.secondary} />
-            <Text style={[styles.emptyText, { color: colors.secondary }]}>
-              {search ? 'No projects match your search' : 'No projects found'}
-            </Text>
+          <View style={styles.empty}>
+            <EmptyState
+              icon={FolderOpen}
+              title={searching ? 'No matching projects' : 'No projects yet'}
+              helper={searching ? 'Try another name, client or job number.' : 'Projects you can see will show here.'}
+            />
           </View>
         }
       />
-
-      {/* Floating filter pill — hovers above the bottom tab bar */}
-      <View pointerEvents="box-none" style={styles.pillWrap}>
-        <View
-          style={[
-            styles.pill,
-            {
-              backgroundColor: colors.card,
-              borderWidth: isDark ? 0 : StyleSheet.hairlineWidth,
-              borderColor: colors.border,
-              shadowOpacity: isDark ? 0.4 : 0.12,
-              shadowRadius: isDark ? 16 : 12,
-              elevation: isDark ? 12 : 8,
-            },
-          ]}
-        >
-          {phases.map(phase => {
-            const isActive = activePhase === phase.key;
-            return (
-              <Pressable
-                key={phase.key}
-                onPress={() => setActivePhase(phase.key)}
-                style={({ pressed }) => [
-                  styles.pillBtn,
-                  isActive && { backgroundColor: colors.accent },
-                  pressed && { opacity: 0.7 },
-                ]}
-              >
-                <Text
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}
-                  style={[
-                    styles.pillLabel,
-                    {
-                      color: isActive ? lightTheme.card : colors.muted,
-                      fontWeight: isActive ? '600' : '500',
-                    },
-                  ]}
-                >
-                  {phase.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
     </View>
   );
 
@@ -480,168 +352,32 @@ const colors = {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { justifyContent: 'center', alignItems: 'center' },
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    borderBottomWidth: 0,
-    position: 'relative',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  headerDivider: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: StyleSheet.hairlineWidth,
-  },
-  searchIconBtn: {
-    padding: 8,
-  },
-
+  list: { paddingHorizontal: space.screenX, paddingBottom: space.screenBottom },
+  titleRow: { marginBottom: space.sectionRoot },
+  searchBlock: { marginTop: metrics.projects.searchGap, gap: metrics.projects.searchGap },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 4,
-    paddingHorizontal: 12,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
+    gap: space.inline,
+    minHeight: metrics.projects.searchHeight,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+    paddingHorizontal: metrics.projects.cardPad,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-  },
-
-  list: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    // Clears the floating filter pill (pill ~52 + 14 offset + clearance).
-    paddingBottom: 96,
-    gap: 10,
-  },
-
+  searchInput: { flex: 1, paddingVertical: 0 },
+  groupHeader: { paddingTop: metrics.projects.groupTopPad, marginBottom: metrics.projects.cardGap - space.groupHeaderToCard },
   card: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-    minHeight: 84,
-  },
-  cardTopBand: {
-    height: 4,
-    width: '100%',
-  },
-  cardBody: {
-    flex: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  cardRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: metrics.projects.cardInnerGap,
+    // Explicit sides: Card's own paddingTop/Bottom would beat a `padding` shorthand.
+    paddingTop: metrics.projects.cardPad,
+    paddingBottom: metrics.projects.cardPad,
+    paddingHorizontal: metrics.projects.cardPad,
   },
-  cardName: {
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-    marginRight: 8,
-  },
-  cardValue: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  cardClient: {
-    fontSize: 12,
-    fontWeight: '500',
-    flexShrink: 1,
-  },
-  cardDate: {
-    fontSize: 11,
-  },
-  compactRow: { marginTop: 6, justifyContent: 'flex-start', gap: 8 },
-  compactFacts: { flex: 1, fontSize: 12 },
-  compactPct: { fontSize: 11, fontWeight: '600' },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 9,
-  },
-  chipDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 5,
-  },
-  chipLabel: {
-    fontSize: 9,
-    fontWeight: '500',
-  },
-  progressBg: {
-    height: 3,
-    borderRadius: 2,
-    overflow: 'hidden',
-    width: '100%',
-  },
-  progressFill: {
-    height: 3,
-    borderRadius: 2,
-  },
-  progressLabel: {
-    fontSize: 10,
-    marginTop: 4,
-  },
-
-  pillWrap: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 14,
-    zIndex: 10,
-  },
-  pill: {
-    flexDirection: 'row',
-    padding: 8,
-    borderRadius: 26,
-    gap: 4,
-    shadowColor: lightTheme.textPrimary,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  pillBtn: {
-    flex: 1,
-    minHeight: 36,
-    borderRadius: 18,
-    paddingHorizontal: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pillLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  emptyContainer: { alignItems: 'center', paddingVertical: 60 },
-  emptyText: { fontSize: 14, textAlign: 'center', marginTop: 12 },
-  retryBtn: {
-    marginTop: 16,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  retryBtnText: { fontSize: 15, fontWeight: '600' },
+  cardBody: { flex: 1, gap: metrics.listRow.bodyGap },
+  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: metrics.projects.cardInnerGap },
+  progress: { marginTop: metrics.projects.progressTop - metrics.listRow.bodyGap },
+  empty: { minHeight: metrics.emptyState.circle * 6 },
+  retry: { alignSelf: 'center', padding: space.section, marginBottom: metrics.emptyState.padBottom },
 });

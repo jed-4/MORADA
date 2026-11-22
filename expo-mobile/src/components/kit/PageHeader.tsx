@@ -111,7 +111,20 @@ export function DetailHeader({ onBack, actions }: { onBack?: () => void; actions
 }
 
 /** Tab roots (Projects, Messages): 30 Bold title + muted count + actions. */
-export function RootTitle({ title, count, countSize = 'large', actions }: { title: string; count?: string | number | null; countSize?: 'large' | 'small'; actions?: HeaderAction[] }) {
+export function RootTitle({
+  title,
+  count,
+  countSize = 'large',
+  actions,
+  accentActions,
+}: {
+  title: string;
+  count?: string | number | null;
+  countSize?: 'large' | 'small';
+  actions?: HeaderAction[];
+  /** Projects: actions drawn in accent. */
+  accentActions?: boolean;
+}) {
   const c = useColors();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -123,7 +136,7 @@ export function RootTitle({ title, count, countSize = 'large', actions }: { titl
           <Text style={[countSize === 'large' ? type.emptyTitle : type.body, tabular, { color: c.muted }]}>{count}</Text>
         ) : null}
       </View>
-      <Actions actions={actions} iconSize={metrics.pageHeader.rootAction} />
+      <Actions actions={accentActions ? actions?.map((a) => ({ ...a, active: true })) : actions} iconSize={metrics.pageHeader.rootAction} />
     </View>
   );
 }

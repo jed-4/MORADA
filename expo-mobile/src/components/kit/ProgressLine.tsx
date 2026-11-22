@@ -12,14 +12,18 @@ interface ProgressLineProps {
   rightLabel?: string;
   /** Inline caption to the left of the line ("28 of 58"). */
   inlineLabel?: string;
+  /** Fill colour (Projects: the project's own colour). Default accent. */
+  color?: string | null;
+  /** Track colour. Default `track`. */
+  trackColor?: string;
 }
 
-export function ProgressLine({ value, over, label, rightLabel, inlineLabel }: ProgressLineProps) {
+export function ProgressLine({ value, over, label, rightLabel, inlineLabel, color, trackColor }: ProgressLineProps) {
   const c = useColors();
   const pct = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
   const line = (
-    <View style={{ flex: inlineLabel ? 1 : undefined, height: size.progress, borderRadius: radii.xs, backgroundColor: over ? c.danger : c.track, overflow: 'hidden' }}>
-      {over ? null : <View style={{ width: `${pct * 100}%`, height: '100%', backgroundColor: c.accent, borderRadius: radii.xs }} />}
+    <View style={{ flex: inlineLabel ? 1 : undefined, height: size.progress, borderRadius: radii.xs, backgroundColor: over ? c.danger : trackColor ?? c.track, overflow: 'hidden' }}>
+      {over ? null : <View style={{ width: `${pct * 100}%`, height: '100%', backgroundColor: color || c.accent, borderRadius: radii.xs }} />}
     </View>
   );
 

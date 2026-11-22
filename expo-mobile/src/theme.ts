@@ -531,5 +531,17 @@ export const metrics = {
     menuIcon: 18,
     clockGap: 12,
   },
+  projects: {
+    contentTop: 8,
+    groupGap: 24,
+    cardGap: 10,
+    groupTopPad: 4,
+    cardPad: 12,
+    cardInnerGap: 12,
+    progressTop: 10,
+    searchHeight: 40,
+    searchGap: 10,
+    searchIcon: 16,
+  },
   composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18 },
 } as const;

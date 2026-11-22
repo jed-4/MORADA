@@ -35,3 +35,14 @@ export function formatCents(cents: number | null | undefined): string {
 export function plural(n: number, singular: string, pluralForm?: string): string {
   return n === 1 ? singular : pluralForm || `${singular}s`;
 }
+
+/** Headline money in a few characters: $486k, $1.19m, $950. Takes CENTS. */
+export function formatShortCents(cents: number | null | undefined): string | null {
+  if (cents == null || !Number.isFinite(cents) || cents === 0) return null;
+  const dollars = cents / 100;
+  const abs = Math.abs(dollars);
+  const sign = dollars < 0 ? '-' : '';
+  if (abs >= 1_000_000) return `${sign}$${parseFloat((abs / 1_000_000).toFixed(2))}m`;
+  if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}k`;
+  return `${sign}$${Math.round(abs)}`;
+}
