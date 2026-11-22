@@ -3,7 +3,7 @@ import { NavigationContainer, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, AppState, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Pressable, Text, View, useColorScheme } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { usePolling } from '../lib/usePolling';
 import { haptic } from '../lib/haptics';
@@ -14,6 +14,7 @@ import { setAppBadgeCount } from '../services/pushNotifications';
 import { handleNotificationAction, registerNotificationCategories } from '../services/notificationActions';
 import { refreshSiteFences } from '../services/siteGeofence';
 import { useTheme, fonts, type Theme } from '../theme';
+import { TabBar } from '../components/kit/TabBar';
 import { goBackOrHome, isFirstRoute } from './back';
 import OfflineFrame from '../components/ui/OfflineBanner';
 import { navigationIntegration } from '../lib/sentry';
@@ -364,14 +365,6 @@ function MainTabs() {
     };
   }, []);
 
-  const colors = {
-    bg: theme.background,
-    card: theme.card,
-    border: theme.border,
-    active: theme.primary,
-    inactive: theme.textMuted,
-  };
-
   return (
     <>
       <Tab.Navigator
@@ -381,43 +374,12 @@ function MainTabs() {
         screenListeners={{
           tabPress: () => haptic.select(),
         }}
-        screenOptions={({ route }) => ({
-          tabBarIcon: ({ focused, color, size }) => {
-            let iconName: keyof typeof Ionicons.glyphMap = 'home';
-            if (route.name === 'Workspace') iconName = focused ? 'home' : 'home-outline';
-            else if (route.name === 'Projects') iconName = focused ? 'briefcase' : 'briefcase-outline';
-            else if (route.name === 'Messages') iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
-            else if (route.name === 'Calendar') iconName = focused ? 'calendar' : 'calendar-outline';
-            else if (route.name === 'More') iconName = moreVisible ? 'grid' : 'grid-outline';
-            // Soft plum pill behind the active tab's icon.
-            return (
-              <View
-                style={{
-                  width: 52,
-                  height: 28,
-                  borderRadius: 999,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: focused ? theme.primaryLight : 'transparent',
-                }}
-              >
-                <Ionicons name={iconName} size={22} color={color} />
-              </View>
-            );
-          },
-          tabBarActiveTintColor: colors.active,
-          tabBarInactiveTintColor: colors.inactive,
-          tabBarStyle: {
-            backgroundColor: theme.card,
-            borderTopColor: colors.border,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            height: 74,
-            paddingTop: 8,
-            paddingBottom: 14,
-          },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 3 },
+        // Revamp v1 tab bar (components/kit/TabBar). More shows active while
+        // its sheet is open; the press itself is still intercepted below.
+        tabBar={(props) => <TabBar {...props} activeOverride={moreVisible ? 'More' : null} />}
+        screenOptions={{
           headerShown: false,
-        })}
+        }}
       >
         <Tab.Screen
           name="Workspace"
