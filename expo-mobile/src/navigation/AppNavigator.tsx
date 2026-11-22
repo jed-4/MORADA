@@ -214,7 +214,8 @@ function ProjectsStack() {
       <Stack.Screen
         name="DefectCapture"
         component={DefectCaptureScreen}
-        options={projectPageOptions('Add defects')}
+        // Revamp v1: a full-screen form over the tab bar (design P12 Add).
+        options={{ headerShown: false, presentation: 'fullScreenModal' }}
       />
       {/* Deliveries: params { projectId, projectName? } / { projectId, poId, poNumber? } */}
       <Stack.Screen name="DeliveriesList" component={DeliveriesListScreen} options={{ headerShown: false }} />

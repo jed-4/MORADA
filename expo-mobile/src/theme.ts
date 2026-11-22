@@ -620,5 +620,15 @@ export const metrics = {
     propLabel: 120,
     fileIcon: 32,
   },
+  defects: {
+    rowPadY: 10,
+    rowGap: 4,
+    groupGap: 14,
+    photoTile: { height: 84, icon: 22 },
+    capturedThumb: 64,
+    capturedGap: 8,
+    formGap: 16,
+    fieldGap: 8,
+  },
   composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18 },
 } as const;
