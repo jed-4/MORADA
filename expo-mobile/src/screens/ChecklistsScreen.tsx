@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useLayoutEffect, useRef, type JSX } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  BackHandler,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Check, ChevronRight, ClipboardList, MessageSquare, Paperclip, Search, X } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, apiRequest, uploadFileFromUri } from '../services/api';
 import { addToQueue, isOnline } from '../services/offlineQueue';
@@ -24,7 +27,14 @@ import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme, lightTheme, MAX_FONT_SCALE } from '../theme';
+import { useTheme, useColors, lightTheme, MAX_FONT_SCALE, metrics, radii, size, space, tabular, type } from '../theme';
+import { Sheet, type SheetRef } from '../components/ui/Sheet';
+import { SkeletonList } from '../components/ui/Skeleton';
+import { haptic } from '../lib/haptics';
+import {
+  Card, Checkbox, CollapsedGroupList, DetailHeader, EmptyState, GroupHeader, ListRow, PageHeader, ProgressLine, ProjectSquare,
+  initialsOf, type CollapsedGroup,
+} from '../components/kit';
 import { SwipeRow } from '../components/ui/SwipeRow';
 import { sheetFrame } from '../components/ui/Sheet';
 import { TwoPane } from '../components/ui/TwoPane';
@@ -151,9 +161,31 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
   const [loadingTeam, setLoadingTeam] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const { user } = useAuth();
+  const k = useColors();
+  const insets = useSafeAreaInsets();
+  const projectColor = (route.params as any)?.projectColor as string | null | undefined;
+  const projectSheetRef = useRef<SheetRef>(null);
+  const [search, setSearch] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [openSections, setOpenSections] = useState<string[]>(['active']);
+
+  // The screen draws its own one-row header.
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
   // Big screen (Duo unfolded): checklists on the left, the open checklist's
   // items on the right. Phone: items expand inline under the card, as before.
   const { isWide } = useLayout();
+
+  // Phone: hardware back closes an open checklist before leaving the screen.
+  useEffect(() => {
+    if (isWide || !expandedId) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setExpandedId(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [isWide, expandedId]);
 
   const theme = useTheme();
 const colors = {
@@ -165,20 +197,6 @@ const colors = {
     accent: theme.primary,
     muted: theme.textMuted,
 };
-
-  const statusColors: Record<string, string> = {
-    active: theme.textMuted,
-    in_progress: theme.statusInfo,
-    completed: theme.statusSuccess,
-    cancelled: theme.statusDanger,
-  };
-
-  const statusLabels: Record<string, string> = {
-    active: 'Active',
-    in_progress: 'In Progress',
-    completed: 'Completed',
-    cancelled: 'Cancelled',
-  };
 
   const fetchInstances = useCallback(async () => {
     try {
@@ -302,22 +320,6 @@ const colors = {
         await addToQueue({ type: 'update-checklist-item', payload: { id: item.id, status: newStatus } });
       }
     })();
-  };
-
-  const getCheckboxIcon = (status: string): keyof typeof Ionicons.glyphMap => {
-    switch (status) {
-      case 'completed': return 'checkbox';
-      case 'na': return 'remove-circle-outline';
-      default: return 'square-outline';
-    }
-  };
-
-  const getCheckboxColor = (status: string) => {
-    switch (status) {
-      case 'completed': return theme.statusSuccess;
-      case 'na': return colors.muted;
-      default: return colors.secondary;
-    }
   };
 
   const formatDate = (dateStr: string) => {
@@ -512,455 +514,363 @@ const colors = {
   };
 
   // Swipe right: tick / untick. Swipe left: set N/A / clear N/A. Same calls
-  // (and the same offline queue) as the checkbox; tapping is unchanged.
-  const renderItemRow = (item: ChecklistItem) => (
-    <SwipeRow
-      key={item.id}
-      left={item.status === 'na' ? null : {
-        label: item.status === 'completed' ? 'Untick' : 'Tick',
-        icon: item.status === 'completed' ? 'arrow-undo' : 'checkmark',
-        color: item.status === 'completed' ? theme.textSecondary : theme.statusSuccessSolid,
-        haptic: item.status === 'completed' ? 'select' : 'success',
-        onAction: () => toggleItemStatus(item),
-      }}
-      right={{
-        label: item.status === 'na' ? 'Clear N/A' : 'N/A',
-        icon: item.status === 'na' ? 'arrow-undo' : 'remove-circle-outline',
-        color: theme.textSecondary,
-        haptic: 'select',
-        onAction: () => setItemStatus(item, item.status === 'na' ? 'pending' : 'na'),
-      }}
-    >
-    <View style={[styles.itemRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
-      <TouchableOpacity
-        style={styles.itemCheckBtn}
-        onPress={() => toggleItemStatus(item)}
-        activeOpacity={0.7}
-        disabled={item.status === 'na'}
-        // Box is 34 x 22 (22pt icon + padding); this makes the target 48 x 44.
-        hitSlop={{ top: 11, bottom: 11, left: 10, right: 4 }}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: item.status === 'completed', disabled: item.status === 'na' }}
-        accessibilityLabel={item.description}
+  // (and the same offline queue) as the checkbox. Long-press opens the item's
+  // actions (notes, assignee, attachments) — no per-row ⋮.
+  const renderItemRow = (item: ChecklistItem) => {
+    const done = item.status === 'completed';
+    const na = item.status === 'na';
+    const attachCount = Array.isArray(item.attachmentIds) ? item.attachmentIds.length : 0;
+    const hasMeta = !!item.assigneeName || item.isRequired || na || !!item.notes || attachCount > 0;
+    return (
+      <SwipeRow
+        key={item.id}
+        left={na ? null : {
+          label: done ? 'Untick' : 'Tick',
+          icon: done ? 'arrow-undo' : 'checkmark',
+          color: done ? theme.textSecondary : theme.statusSuccessSolid,
+          haptic: done ? 'select' : 'success',
+          onAction: () => toggleItemStatus(item),
+        }}
+        right={{
+          label: na ? 'Clear N/A' : 'N/A',
+          icon: na ? 'arrow-undo' : 'remove-circle-outline',
+          color: theme.textSecondary,
+          haptic: 'select',
+          onAction: () => setItemStatus(item, na ? 'pending' : 'na'),
+        }}
       >
-        <Ionicons name={getCheckboxIcon(item.status)} size={22} color={getCheckboxColor(item.status)} />
-      </TouchableOpacity>
-      <View style={styles.itemContent}>
-        <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-          style={[
-            styles.itemDescription,
-            { color: item.status === 'completed' ? colors.muted : colors.text },
-            item.status === 'completed' && styles.itemStrikethrough,
-          ]}
-          numberOfLines={2}
+        <Pressable
+          onLongPress={() => openItemMenu(item)}
+          delayLongPress={metrics.longPressMs}
+          accessibilityHint="Long-press for notes, assignee and attachments"
+          style={[ck.itemRow, { backgroundColor: k.surface }]}
         >
-          {item.description}
-        </Text>
-        {item.assigneeName && (
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemAssigneeText, { color: colors.secondary }]} numberOfLines={1}>
-            {item.assigneeName.split(' ')[0]}
-          </Text>
-        )}
-      </View>
-      {item.isRequired && (
-        <View style={[styles.requiredBadge, { backgroundColor: theme.statusDangerBg }]}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.requiredText, { color: theme.statusDanger }]}>Req</Text>
-        </View>
-      )}
-      <View style={styles.itemRightActions}>
-        {item.notes && (
-          <Ionicons name="chatbubble" size={13} color={colors.accent} />
-        )}
-        {Array.isArray(item.attachmentIds) && item.attachmentIds.length > 0 && (
-          <View style={styles.attachCountBadge}>
-            <Ionicons name="attach" size={12} color={colors.accent} />
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.attachCountText, { color: colors.accent }]}>{item.attachmentIds.length}</Text>
+          <View style={ck.check}>
+            <Checkbox
+              checked={done}
+              disabled={na}
+              onPress={() => toggleItemStatus(item)}
+              accessibilityLabel={item.description}
+            />
           </View>
-        )}
-        <TouchableOpacity
-          style={styles.itemMenuBtn}
-          onPress={() => openItemMenu(item)}
-          activeOpacity={0.6}
-          // 24pt button + 10 each side = 44pt.
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityRole="button"
-          accessibilityLabel="Item actions"
-        >
-          <Ionicons name="ellipsis-vertical" size={16} color={colors.secondary} />
-        </TouchableOpacity>
-      </View>
-    </View>
-    </SwipeRow>
-  );
+          <View style={ck.itemBody}>
+            <Text
+              style={[type.checklistItem, { color: done || na ? k.muted : k.text }, done && ck.strike]}
+            >
+              {item.description}
+            </Text>
+            {hasMeta ? (
+              <View style={ck.itemMeta}>
+                {item.assigneeName ? <Text style={[type.caption, { color: k.muted }]}>{initialsOf(item.assigneeName)}</Text> : null}
+                {na ? <Text style={[type.caption, { color: k.muted }]}>N/A</Text> : null}
+                {item.isRequired && !done && !na ? <Text style={[type.caption, { color: k.danger }]}>Required</Text> : null}
+                {item.notes ? <MessageSquare size={size.icon.caret} color={k.muted} strokeWidth={metrics.iconStroke} /> : null}
+                {attachCount > 0 ? (
+                  <View style={ck.attach}>
+                    <Paperclip size={size.icon.caret} color={k.muted} strokeWidth={metrics.iconStroke} />
+                    <Text style={[type.caption, tabular, { color: k.muted }]}>{attachCount}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        </Pressable>
+      </SwipeRow>
+    );
+  };
 
   const toggleGroup = (groupKey: string) => {
     setCollapsedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
   };
 
-  const renderExpandedItems = (instanceId: string) => {
-    if (loadingItems[instanceId]) {
-      return (
-        <View style={styles.itemsLoading}>
-          <ActivityIndicator size="small" color={colors.accent} />
-        </View>
-      );
-    }
-    const items = itemsByInstance[instanceId] || [];
-    if (items.length === 0) {
-      return (
-        <View style={styles.itemsEmpty}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemsEmptyText, { color: colors.secondary }]}>No items</Text>
-        </View>
-      );
-    }
-    const { groups, ungrouped } = groupItems(items);
-    return (
-      <View style={[styles.itemsContainer, { borderTopColor: colors.border }]}>
-        {ungrouped.length > 0 && ungrouped.map(renderItemRow)}
-        {Object.entries(groups).sort(compareGroupEntries).map(([groupName, grpItems]) => {
-          const groupKey = `${instanceId}:${groupName}`;
-          const isCollapsed = collapsedGroups[groupKey];
-          const completedInGroup = grpItems.filter(i => i.status === 'completed' || i.status === 'na').length;
-          return (
-            <View key={groupName}>
-              <TouchableOpacity
-                style={[styles.groupHeaderRow, { borderColor: colors.border }]}
-                onPress={() => toggleGroup(groupKey)}
-                activeOpacity={0.7}
-              >
-                <Ionicons name={isCollapsed ? 'chevron-forward' : 'chevron-down'} size={14} color={colors.accent} />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.groupHeader, { color: colors.accent }]} numberOfLines={1}>{groupName}</Text>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.groupCount, { color: colors.secondary }]}>
-                  {completedInGroup}/{grpItems.length}
-                </Text>
-              </TouchableOpacity>
-              {!isCollapsed && grpItems.map(renderItemRow)}
-            </View>
-          );
-        })}
-      </View>
-    );
-  };
-
-  // Expand/Collapse All for one checklist's groups. Shared by the inline card
-  // (phone) and the right-hand panel header (big screen).
+  // Expand/Collapse All for one checklist's groups.
   const groupCollapseFor = (instanceId: string) => {
     const items = itemsByInstance[instanceId] || [];
     const { groups: instanceGroups } = groupItems(items);
     const groupKeys = Object.keys(instanceGroups).map(g => `${instanceId}:${g}`);
-    const allGroupsCollapsed = groupKeys.length > 0 && groupKeys.every(k => collapsedGroups[k]);
+    const allGroupsCollapsed = groupKeys.length > 0 && groupKeys.every(key => collapsedGroups[key]);
     const hasGroups = groupKeys.length > 1;
 
     const toggleAllInstanceGroups = () => {
       const newState = !allGroupsCollapsed;
       setCollapsedGroups(prev => {
         const updated = { ...prev };
-        groupKeys.forEach(k => { updated[k] = newState; });
+        groupKeys.forEach(key => { updated[key] = newState; });
         return updated;
       });
     };
     return { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups };
   };
 
-  const renderInstance = (instance: ChecklistInstance) => {
-    const isExpanded = expandedId === instance.id;
-    const progress = instance.totalCount > 0 ? instance.completedCount / instance.totalCount : 0;
-    const statusColor = statusColors[instance.status] || theme.textMuted;
-
-    const { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups } = groupCollapseFor(instance.id);
-
-    const collapseAllButton = (
-      <TouchableOpacity
-        onPress={toggleAllInstanceGroups}
-        style={styles.collapseAllBelowBtn}
-        activeOpacity={0.7}
-        hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
-      >
-        <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
-        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.collapseAllText, { color: colors.secondary }]}>
-          {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
-        </Text>
-      </TouchableOpacity>
-    );
-
-    // Phone / Duo folded: a compact card — name, status and chevron on one
-    // line, then ONE short line of facts and the progress bar. The description
-    // and Expand/Collapse All move into the opened card. Big screen keeps the
-    // full card (below). Rows are stateless, so switching on fold loses nothing.
-    if (!isWide) {
-      const facts = [
-        `${instance.completedCount}/${instance.totalCount} done`,
-        instance.dueDate ? `Due ${formatDate(instance.dueDate)}` : null,
-        instance.assigneeName || null,
-      ].filter(Boolean).join(' · ');
-      return (
-        <View
-          key={instance.id}
-          style={[styles.instanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-        >
-          <TouchableOpacity
-            style={styles.instanceHeader}
-            onPress={() => toggleExpand(instance.id)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: isExpanded }}
-          >
-            <View style={styles.instanceTitleRow}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.instanceName, { color: colors.text }]} numberOfLines={1}>{instance.name}</Text>
-              <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusBadgeText, { color: statusColor }]}>
-                  {statusLabels[instance.status] || instance.status}
-                </Text>
-              </View>
-              <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
-            </View>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.compactFacts, { color: colors.secondary }]} numberOfLines={1}>{facts}</Text>
-            <View style={[styles.progressBar, styles.compactProgress, { backgroundColor: colors.border }]}>
-              <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? theme.statusSuccessSolid : colors.accent }]} />
-            </View>
-          </TouchableOpacity>
-
-          {isExpanded && (!!instance.description || hasGroups) && (
-            <View style={[styles.compactIntro, { borderTopColor: colors.border }]}>
-              {!!instance.description && (
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.instanceDesc, styles.compactDesc, { color: colors.secondary }]}>{instance.description}</Text>
-              )}
-              {hasGroups && <View style={styles.compactCollapseRow}>{collapseAllButton}</View>}
-            </View>
-          )}
-          {isExpanded && renderExpandedItems(instance.id)}
-        </View>
-      );
+  /** Phases (item groups): open ones as list cards, folded ones as plain rows. */
+  const renderItems = (instanceId: string) => {
+    if (loadingItems[instanceId]) {
+      return <ActivityIndicator style={ck.loading} size="small" color={k.accent} />;
     }
-
-    return (
-      <View
-        key={instance.id}
-        style={[
-          styles.instanceCard,
-          { backgroundColor: colors.card, borderColor: isWide && isExpanded ? colors.accent : colors.border },
-        ]}
-      >
-        <TouchableOpacity
-          style={styles.instanceHeader}
-          onPress={() => toggleExpand(instance.id)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.instanceTop}>
-            <View style={styles.instanceTitleRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.instanceName, { color: colors.text }]} numberOfLines={1}>{instance.name}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusBadgeText, { color: statusColor }]}>
-                    {statusLabels[instance.status] || instance.status}
-                  </Text>
-                </View>
-              </View>
+    const items = itemsByInstance[instanceId] || [];
+    if (items.length === 0) {
+      return <Text style={[type.body, { color: k.muted }]}>No items</Text>;
+    }
+    const { groups, ungrouped } = groupItems(items);
+    const blocks: JSX.Element[] = [];
+    let run: CollapsedGroup[] = [];
+    const flush = () => {
+      if (run.length) {
+        blocks.push(<CollapsedGroupList key={`c-${blocks.length}`} groups={run} />);
+        run = [];
+      }
+    };
+    if (ungrouped.length > 0) {
+      blocks.push(<Card key="__ungrouped" variant="list">{ungrouped.map(renderItemRow)}</Card>);
+    }
+    Object.entries(groups).sort(compareGroupEntries).forEach(([groupName, grpItems]) => {
+      const groupKey = `${instanceId}:${groupName}`;
+      const doneInGroup = grpItems.filter(i => i.status === 'completed' || i.status === 'na').length;
+      const count = `${doneInGroup}/${grpItems.length}`;
+      if (collapsedGroups[groupKey]) {
+        run.push({ key: groupKey, title: groupName, trailing: count, onPress: () => toggleGroup(groupKey) });
+        return;
+      }
+      flush();
+      blocks.push(
+        <View key={groupKey}>
+          <View style={ck.phaseHead}>
+            <View style={{ flex: 1 }}>
+              <GroupHeader title={groupName} open onToggle={() => toggleGroup(groupKey)} />
             </View>
-            {instance.description && (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.instanceDesc, { color: colors.secondary }]} numberOfLines={1}>{instance.description}</Text>
-            )}
+            <Text style={[type.meta, tabular, ck.phaseCount, { color: k.muted }]}>{count}</Text>
           </View>
-
-          <View style={styles.instanceMeta}>
-            <View style={styles.progressSection}>
-              <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-                <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? theme.statusSuccessSolid : colors.accent }]} />
-              </View>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.progressText, { color: colors.secondary }]}>
-                {instance.completedCount}/{instance.totalCount} completed
-              </Text>
-            </View>
-            <View style={styles.instanceMetaRight}>
-              {instance.dueDate && (
-                <View style={styles.metaItem}>
-                  <Ionicons name="calendar-outline" size={13} color={colors.secondary} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.metaText, { color: colors.secondary }]}>{formatDate(instance.dueDate)}</Text>
-                </View>
-              )}
-              {instance.assigneeName && (
-                <View style={styles.metaItem}>
-                  <Ionicons name="person-outline" size={13} color={colors.secondary} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.metaText, { color: colors.secondary }]}>{instance.assigneeName}</Text>
-                </View>
-              )}
-            </View>
-          </View>
-
-          <View style={styles.expandIndicatorRow}>
-            <View style={styles.expandIndicatorSpacer} />
-            <View style={styles.expandIndicatorCenter}>
-              <Ionicons
-                name={isWide ? 'chevron-forward' : isExpanded ? 'chevron-up' : 'chevron-down'}
-                size={18}
-                color={isWide && isExpanded ? colors.accent : colors.muted}
-              />
-            </View>
-            <View style={styles.expandIndicatorRight}>
-              {isExpanded && hasGroups && !isWide && (
-                <TouchableOpacity
-                  onPress={(e) => { e.stopPropagation(); toggleAllInstanceGroups(); }}
-                  style={styles.collapseAllBelowBtn}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
-                >
-                  <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.collapseAllText, { color: colors.secondary }]}>
-                    {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Big screen: the items show in the right-hand panel instead. */}
-        {isExpanded && !isWide && renderExpandedItems(instance.id)}
-      </View>
-    );
+          <Card variant="list">{grpItems.map(renderItemRow)}</Card>
+        </View>,
+      );
+    });
+    flush();
+    return <View style={ck.phases}>{blocks}</View>;
   };
 
-  // Right-hand panel on a big screen: the open checklist's items. Rows are
-  // stateless (their data lives in this screen), so showing them here or
-  // inline under the card on fold/unfold loses nothing.
+  const instanceProjectName = (inst: ChecklistInstance) =>
+    projectId ? projectName : projects.find(p => p.id === inst.projectId)?.name ?? '';
+
+  // One checklist: title, progress, phases. A full page on a phone (over the
+  // list, which stays mounted); the right-hand pane on a big screen.
   const renderDetail = () => {
     const instance = expandedId ? instances.find(i => i.id === expandedId) : undefined;
     if (!instance) return null;
     const progress = instance.totalCount > 0 ? instance.completedCount / instance.totalCount : 0;
-    const statusColor = statusColors[instance.status] || theme.textMuted;
+    const pName = instanceProjectName(instance);
     const { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups } = groupCollapseFor(instance.id);
     return (
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, readableFrame]}
+        contentContainerStyle={[ck.detail, readableFrame, { paddingTop: (isWide ? 0 : insets.top) + metrics.schedule.top }]}
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
       >
-        <View style={[styles.instanceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.instanceHeader}>
-            <View style={styles.instanceTop}>
-              <View style={styles.instanceTitleRow}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailTitle, { color: colors.text }]}>{instance.name}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusBadgeText, { color: statusColor }]}>
-                    {statusLabels[instance.status] || instance.status}
-                  </Text>
-                </View>
+        <DetailHeader onBack={isWide ? undefined : () => setExpandedId(null)} />
+        <View style={ck.titleBlock}>
+          <Text style={[type.heading, { color: k.text }]}>{instance.name}</Text>
+          <View style={ck.subLine}>
+            <Text style={[type.meta, tabular, { color: k.muted }]}>
+              {`${instance.completedCount} of ${instance.totalCount}`}
+              {pName ? ' · ' : ''}
+            </Text>
+            {pName ? (
+              <View style={ck.project}>
+                <ProjectSquare color={projectId ? projectColor ?? null : null} fallbackKey={instance.projectId} size="header" />
+                <Text style={[type.meta, { color: k.muted }]} numberOfLines={1}>{pName}</Text>
               </View>
-              {!!instance.description && (
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.instanceDesc, { color: colors.secondary }]}>{instance.description}</Text>
-              )}
-            </View>
-            <View style={styles.progressSection}>
-              <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-                <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? theme.statusSuccessSolid : colors.accent }]} />
-              </View>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.progressText, { color: colors.secondary }]}>
-                {instance.completedCount}/{instance.totalCount} completed
-              </Text>
-            </View>
-            {hasGroups && (
-              <TouchableOpacity
-                onPress={toggleAllInstanceGroups}
-                style={[styles.collapseAllBelowBtn, { alignSelf: 'flex-end', marginTop: 6 }]}
-                activeOpacity={0.7}
-                hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
-              >
-                <Ionicons name={allGroupsCollapsed ? 'chevron-down' : 'chevron-up'} size={13} color={colors.secondary} />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.collapseAllText, { color: colors.secondary }]}>
-                  {allGroupsCollapsed ? 'Expand All' : 'Collapse All'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            ) : null}
           </View>
-          {renderExpandedItems(instance.id)}
+          {!!(instance.dueDate || instance.assigneeName) && (
+            <Text style={[type.meta, { color: k.muted }]}>
+              {[instance.assigneeName, instance.dueDate ? `Due ${formatDate(instance.dueDate)}` : null].filter(Boolean).join(' · ')}
+            </Text>
+          )}
+          <View style={ck.progress}><ProgressLine value={progress} /></View>
+          {!!instance.description && (
+            <Text style={[type.bodyRead, { color: k.textLong }]}>{instance.description}</Text>
+          )}
         </View>
+        {hasGroups && (
+          <Pressable onPress={toggleAllInstanceGroups} hitSlop={metrics.hitSlop} accessibilityRole="button" style={ck.collapseAll}>
+            <Text style={[type.meta, { color: k.muted }]}>{allGroupsCollapsed ? 'Expand all' : 'Collapse all'}</Text>
+          </Pressable>
+        )}
+        {renderItems(instance.id)}
       </ScrollView>
     );
   };
 
+  const openChecklist = (id: string) => {
+    haptic.select();
+    setExpandedId(id);
+    fetchItems(id);
+  };
+
+  const renderRow = (inst: ChecklistInstance) => {
+    const progress = inst.totalCount > 0 ? inst.completedCount / inst.totalCount : 0;
+    const selected = isWide && expandedId === inst.id;
+    return (
+      <Pressable
+        key={inst.id}
+        onPress={() => openChecklist(inst.id)}
+        accessibilityRole="button"
+        accessibilityLabel={`${inst.name}, ${inst.completedCount} of ${inst.totalCount} done`}
+        style={({ pressed }) => [ck.row, selected && { backgroundColor: k.tint }, pressed && { opacity: metrics.pressedOpacity }]}
+      >
+        <View style={ck.rowBody}>
+          <Text style={[type.rowTitle, { color: k.text }]} numberOfLines={2}>{inst.name}</Text>
+          {!projectId && instanceProjectName(inst) ? (
+            <Text style={[type.caption, { color: k.muted }]} numberOfLines={1}>{instanceProjectName(inst)}</Text>
+          ) : null}
+          <ProgressLine value={progress} inlineLabel={`${inst.completedCount} of ${inst.totalCount}`} />
+        </View>
+        <ChevronRight size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />
+      </Pressable>
+    );
+  };
+
+  const q = search.trim().toLowerCase();
+  const visible = instances.filter(i => !q || i.name.toLowerCase().includes(q));
+  const active = visible.filter(i => i.status === 'active' || i.status === 'in_progress');
+  const completed = visible.filter(i => i.status === 'completed');
+  const cancelled = visible.filter(i => i.status === 'cancelled');
+  const sections = [
+    { key: 'active', title: 'Active', items: active },
+    { key: 'completed', title: 'Completed', items: completed },
+    { key: 'cancelled', title: 'Cancelled', items: cancelled },
+  ].filter(sct => sct.items.length > 0);
+
+  const headerProject = projectId
+    ? (projectName ? { name: projectName, color: projectColor ?? null, id: projectId } : null)
+    : { name: projects.find(p => p.id === selectedProjectId)?.name ?? 'All projects', color: null, id: selectedProjectId };
+
+  const pageHeader = (
+    <PageHeader
+      title="Checklists"
+      project={headerProject}
+      onBack={() => navigation.goBack()}
+      onProjectPress={!projectId && projects.length > 0 ? () => projectSheetRef.current?.present() : undefined}
+      actions={[
+        searchVisible
+          ? { icon: X, label: 'Close search', onPress: () => { setSearch(''); setSearchVisible(false); } }
+          : { icon: Search, label: 'Search checklists', onPress: () => setSearchVisible(true) },
+      ]}
+    />
+  );
+
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, { backgroundColor: k.bg, paddingTop: insets.top + metrics.schedule.top }]}>
+        <View style={ck.pad}>{pageHeader}</View>
+        <SkeletonList />
       </View>
     );
   }
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {!projectId && projects.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-          style={[styles.filterScroll, { borderBottomColor: colors.border }]}
-        >
-          <TouchableOpacity
-            style={[
-              styles.filterPill,
-              {
-                borderColor: !selectedProjectId ? colors.accent : colors.border,
-                backgroundColor: !selectedProjectId ? colors.accent + '20' : 'transparent',
-              },
-            ]}
-            onPress={() => setSelectedProjectId(null)}
-            activeOpacity={0.7}
-            hitSlop={{ top: 6, bottom: 6 }}
-          >
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterPillText, { color: !selectedProjectId ? colors.accent : colors.secondary }]}>All</Text>
-          </TouchableOpacity>
-          {projects.map(p => (
-            <TouchableOpacity
-              key={p.id}
-              style={[
-                styles.filterPill,
-                {
-                  borderColor: selectedProjectId === p.id ? colors.accent : colors.border,
-                  backgroundColor: selectedProjectId === p.id ? colors.accent + '20' : 'transparent',
-                },
-              ]}
-              onPress={() => setSelectedProjectId(p.id)}
-              activeOpacity={0.7}
-              hitSlop={{ top: 6, bottom: 6 }}
-            >
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-                style={[styles.filterPillText, { color: selectedProjectId === p.id ? colors.accent : colors.secondary }]}
-                numberOfLines={1}
-              >
-                {p.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+  const list = (
+    <ScrollView
+      contentContainerStyle={[ck.list, { paddingTop: insets.top + metrics.schedule.top }]}
+      keyboardShouldPersistTaps="handled"
+      automaticallyAdjustContentInsets={false}
+      contentInsetAdjustmentBehavior="never"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
+    >
+      {pageHeader}
+      {searchVisible && (
+        <View style={[ck.search, { backgroundColor: k.surface, borderColor: k.border }]}>
+          <Search size={metrics.projects.searchIcon} color={k.muted} strokeWidth={metrics.iconStroke} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search checklists"
+            placeholderTextColor={k.faint}
+            autoFocus
+            style={[type.body, ck.searchInput, { color: k.text }]}
+          />
+        </View>
       )}
+      {sections.length === 0 ? (
+        <View style={ck.empty}>
+          <EmptyState
+            icon={ClipboardList}
+            title={q ? 'Nothing matches' : 'No checklists'}
+            helper={q ? 'Try another name.' : projectId || selectedProjectId ? 'No checklists on this project yet.' : 'No checklists have been created yet.'}
+          />
+        </View>
+      ) : (
+        (() => {
+          const out: JSX.Element[] = [];
+          let run: CollapsedGroup[] = [];
+          const flush = () => {
+            if (run.length) {
+              out.push(<CollapsedGroupList key={`c-${out.length}`} groups={run} />);
+              run = [];
+            }
+          };
+          sections.forEach(sct => {
+            // Active starts open; Completed and Cancelled start folded.
+            const open = q ? true : openSections.includes(sct.key);
+            const toggle = () =>
+              setOpenSections(open ? openSections.filter(x => x !== sct.key) : [...openSections, sct.key]);
+            if (!open) {
+              run.push({ key: sct.key, title: sct.title, meta: String(sct.items.length), onPress: toggle });
+              return;
+            }
+            flush();
+            out.push(
+              <View key={sct.key}>
+                <GroupHeader title={sct.title} meta={sct.items.length} open onToggle={toggle} />
+                <Card variant="list">{sct.items.map(renderRow)}</Card>
+              </View>,
+            );
+          });
+          flush();
+          return out;
+        })()
+      )}
+    </ScrollView>
+  );
 
+  return (
+    <View style={[styles.container, { backgroundColor: k.bg }]}>
       {/* Always wrapped in TwoPane so the list keeps its place in the tree —
           folding/unfolding never remounts it (scroll position survives). */}
       <TwoPane
         emptyTitle="Select a checklist"
         emptyIcon="checkmark-done-outline"
-        detail={renderDetail()}
-        list={
-          <FlatList
-            data={instances}
-            keyExtractor={inst => inst.id}
-            renderItem={({ item }) => renderInstance(item)}
-            contentContainerStyle={styles.scrollContent}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-            automaticallyAdjustContentInsets={false}
-            contentInsetAdjustmentBehavior="never"
-            ListEmptyComponent={
-              <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Ionicons name="checkmark-done-outline" size={40} color={colors.muted} />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>No checklists</Text>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyDesc, { color: colors.secondary }]}>
-                  {projectId || selectedProjectId ? 'No checklists found for this project' : 'No checklists have been created yet'}
-                </Text>
-              </View>
-            }
-          />
-        }
+        detail={isWide ? renderDetail() : null}
+        list={list}
       />
+
+      {/* Phone: the open checklist covers the list (which stays mounted). */}
+      {!isWide && expandedId ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: k.bg }]}>{renderDetail()}</View>
+      ) : null}
+
+      <Sheet ref={projectSheetRef} title="Project" scrollable snapPoints={['60%', '88%']}>
+        <View style={ck.sheetBody}>
+          <Card variant="list">
+            <ListRow
+              key="__all"
+              title="All projects"
+              titleLines={1}
+              trailing={!selectedProjectId ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
+              onPress={() => { setSelectedProjectId(null); projectSheetRef.current?.dismiss(); }}
+            />
+            {projects.map(p => (
+              <ListRow
+                key={p.id}
+                title={p.name}
+                titleLines={1}
+                lead={<ProjectSquare fallbackKey={p.id} />}
+                trailing={selectedProjectId === p.id ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
+                onPress={() => { setSelectedProjectId(p.id); projectSheetRef.current?.dismiss(); }}
+              />
+            ))}
+          </Card>
+        </View>
+      </Sheet>
 
       <Modal
         visible={!!menuItem}
@@ -1204,154 +1114,44 @@ const colors = {
   );
 }
 
+const ck = StyleSheet.create({
+  pad: { paddingHorizontal: space.screenX, paddingBottom: metrics.scope.gap },
+  list: { paddingHorizontal: space.screenX, paddingBottom: space.screenBottom, gap: metrics.scope.gap },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.inline,
+    minHeight: metrics.projects.searchHeight,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+    paddingHorizontal: metrics.projects.cardPad,
+  },
+  searchInput: { flex: 1, paddingVertical: 0 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, paddingVertical: metrics.checklists.rowPadY },
+  rowBody: { flex: 1, gap: metrics.checklists.rowGap },
+  empty: { minHeight: metrics.emptyState.circle * 6 },
+  sheetBody: { paddingHorizontal: space.screenX, paddingTop: space.inline },
+  // Detail
+  detail: { paddingHorizontal: space.screenX, paddingBottom: space.screenBottom, gap: metrics.scope.gap },
+  titleBlock: { gap: space.inline },
+  subLine: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  project: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  progress: { paddingTop: space.inlineSm },
+  collapseAll: { alignSelf: 'flex-end' },
+  phases: { gap: metrics.scope.gap },
+  phaseHead: { flexDirection: 'row', alignItems: 'flex-start' },
+  phaseCount: { lineHeight: type.rowTitle.lineHeight },
+  itemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.rowGap, paddingVertical: metrics.listRow.padY },
+  check: { paddingTop: metrics.checklists.checkOffset },
+  itemBody: { flex: 1, gap: metrics.checklists.itemGap },
+  itemMeta: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  attach: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm / 2 },
+  strike: { textDecorationLine: 'line-through' },
+  loading: { paddingVertical: space.section },
+});
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { justifyContent: 'center', alignItems: 'center' },
-  // minHeight (not height) so the chips can grow with Larger Text instead of clipping.
-  filterScroll: { borderBottomWidth: 1, minHeight: 52, flexShrink: 0, flexGrow: 0 },
-  filterRow: { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
-  filterPill: {
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    maxWidth: 160,
-  },
-  filterPillText: { fontSize: 13, fontWeight: '500' },
-  scrollContent: { padding: 16, paddingBottom: 32 },
-  instanceCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  instanceHeader: { padding: 12 },
-  instanceTop: { marginBottom: 6 },
-  instanceTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  instanceName: { fontSize: 15, fontWeight: '600', flex: 1 },
-  detailTitle: { fontSize: 18, fontWeight: '700', flex: 1 },
-  statusBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  statusBadgeText: { fontSize: 11, fontWeight: '600' },
-  instanceDesc: { fontSize: 12, marginTop: 4 },
-  // Phone (compact) card
-  compactFacts: { fontSize: 12, marginTop: 4 },
-  compactProgress: { marginTop: 8 },
-  compactIntro: { borderTopWidth: 1, paddingHorizontal: 14, paddingTop: 8, gap: 4 },
-  compactDesc: { marginTop: 0, fontSize: 13, lineHeight: 18 },
-  compactCollapseRow: { alignItems: 'flex-end' },
-  instanceMeta: { gap: 6 },
-  progressSection: { gap: 3 },
-  progressBar: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: 6,
-    borderRadius: 3,
-  },
-  progressText: { fontSize: 11 },
-  instanceMetaRight: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { fontSize: 11 },
-  expandIndicatorRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  expandIndicatorSpacer: { flex: 1 },
-  expandIndicatorCenter: { alignItems: 'center' },
-  expandIndicatorRight: { flex: 1, alignItems: 'flex-end' },
-  itemsContainer: { borderTopWidth: 1, paddingHorizontal: 14, paddingVertical: 8 },
-  collapseAllBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-end',
-    gap: 4,
-    paddingVertical: 4,
-    paddingHorizontal: 2,
-  },
-  collapseAllHeaderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-  },
-  collapseAllBelowBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-  },
-  collapseAllText: { fontSize: 11, fontWeight: '500' },
-  itemsLoading: { padding: 20, alignItems: 'center' },
-  itemsEmpty: { padding: 16, alignItems: 'center' },
-  itemsEmptyText: { fontSize: 13 },
-  groupHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minHeight: 44,
-    paddingVertical: 10,
-    marginTop: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  groupHeader: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    flex: 1,
-  },
-  groupCount: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 4,
-  },
-  itemCheckBtn: {
-    paddingRight: 10,
-    paddingLeft: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  itemContent: { flex: 1 },
-  itemDescription: { fontSize: 14 },
-  itemStrikethrough: { textDecorationLine: 'line-through' },
-  itemAssigneeText: { fontSize: 11, marginTop: 2 },
-  itemRightActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingLeft: 4,
-  },
-  attachCountBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  attachCountText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  itemMenuBtn: {
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  requiredBadge: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
-  requiredText: { fontSize: 10, fontWeight: '600' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
@@ -1392,14 +1192,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 12,
-  },
-  noteInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    minHeight: 100,
     marginBottom: 12,
   },
   saveBtn: {
@@ -1484,15 +1276,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  emptyState: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 20,
-  },
-  emptyTitle: { fontSize: 16, fontWeight: '600' },
-  emptyDesc: { fontSize: 13, textAlign: 'center' },
 });

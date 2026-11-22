@@ -637,5 +637,11 @@ export const metrics = {
     labelGap: 5,
     photoGap: 8,
   },
+  checklists: {
+    rowPadY: 12,
+    rowGap: 7,
+    checkOffset: 1,
+    itemGap: 3,
+  },
   composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18 },
 } as const;
