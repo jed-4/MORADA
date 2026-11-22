@@ -2,7 +2,7 @@
  * Project cost — shared/projectCost.ts, the one calculation behind the Budget
  * page. Pins: the header (totals) is the sum of the rows; variations land on
  * their own cost code; bills with no lines still count; labour is split by
- * cost code with no subcontractor filter; everything is ex-GST cents.
+ * cost code, leaving out subcontractor (PO-costed) timesheets; everything is ex-GST cents.
  *
  * Run: npx tsx server/__tests__/project-cost.test.ts
  */
@@ -257,6 +257,19 @@ check("$0 timesheets (subcontractors) add nothing — no flag check needed", () 
     workItemCostCode: new Map(),
   });
   assert.deepStrictEqual(out, []);
+});
+
+check("subcontractor (PO-costed) timesheets add nothing even with a rate — their bill carries the cost", () => {
+  const out = allocateLabourCents({
+    timesheets: [
+      { id: "sub", total: "480", costCodeId: CARP, workItemId: null, poStatus: "on_po" },
+      { id: "await", total: "240", costCodeId: CARP, workItemId: null, poStatus: "awaiting_po" },
+      { id: "staff", total: "75", costCodeId: CARP, workItemId: null, poStatus: null },
+    ],
+    splits: [{ timesheetId: "sub", costCodeId: CARP, total: "480", duration: "8" }],
+    workItemCostCode: new Map(),
+  });
+  assert.deepStrictEqual(out.map((o) => [o.timesheetId, o.cents]), [["staff", 7500]]);
 });
 
 // ── Forecast: Complete ──────────────────────────────────────────────────────

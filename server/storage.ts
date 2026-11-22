@@ -22958,11 +22958,12 @@ export class DbStorage implements IStorage {
       const allTimesheets = await db.select()
         .from(schema.timesheets)
         .where(eq(schema.timesheets.projectId, projectId));
-      // No subcontractor filter: their timesheets are stored at $0 (cost comes
-      // through their bill) and add nothing. Filtering on today's subcontractor
-      // flag would wrongly drop a person's past staff timesheets. Same rule as
-      // shared/projectCost.ts allocateLabourCents.
-      const timesheets = allTimesheets.filter((t) => t.status === "approved");
+      // Subcontractor (PO-costed) timesheets are left out — their cost arrives
+      // through the PO's bill. Same rule as shared/projectCost.ts
+      // allocateLabourCents (isPoCostedTimesheet).
+      const timesheets = allTimesheets.filter(
+        (t) => t.status === "approved" && !(t.poStatus != null && t.poStatus !== ""),
+      );
       if (timesheets.length === 0) return { byCostCode: [], total: 0, entries: [] };
 
       const timesheetIds = timesheets.map((t) => t.id);

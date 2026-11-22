@@ -264,12 +264,19 @@ export function computeProjectCost(input: ProjectCostInputs): ProjectCost {
  * splits, the timesheet's own cost code is used, then the cost code of the
  * estimate line it was logged against.
  *
- * No subcontractor filter: subcontractor timesheets are stored at $0, so they add
- * nothing here, and filtering on today's subcontractor flag would wrongly drop a
- * person's past staff timesheets if they later became a subcontractor.
+ * Subcontractor timesheets are costed through their PO and bill, never here.
+ * They are recognised by `poStatus` (awaiting_po / on_po / paid), which is
+ * stamped when the timesheet is created — not by today's subcontractor flag,
+ * which would wrongly drop a person's past staff timesheets. They used to be
+ * assumed to be stored at $0, but older/mobile ones carry a rate (e.g. 8h ×
+ * $60), which double-counted against the subbie's bill.
  */
+export function isPoCostedTimesheet(ts: { poStatus?: string | null }): boolean {
+  return ts.poStatus != null && ts.poStatus !== "";
+}
+
 export function allocateLabourCents(input: {
-  timesheets: { id: string; total: string | number | null; costCodeId: string | null; workItemId: string | null }[];
+  timesheets: { id: string; total: string | number | null; costCodeId: string | null; workItemId: string | null; poStatus?: string | null }[];
   splits: { timesheetId: string; costCodeId: string; total: string | number | null; duration: string | number | null }[];
   workItemCostCode: Map<string, string>;
 }): { timesheetId: string; costCodeId: string | null; cents: number }[] {
@@ -281,6 +288,7 @@ export function allocateLabourCents(input: {
   }
   const out: { timesheetId: string; costCodeId: string | null; cents: number }[] = [];
   for (const ts of input.timesheets) {
+    if (isPoCostedTimesheet(ts)) continue;
     const tsCents = Math.round((Number(ts.total) || 0) * 100);
     if (tsCents === 0) continue;
     const tsSplits = splitsByTs.get(ts.id) || [];
