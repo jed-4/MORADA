@@ -101,6 +101,7 @@ export function SectionCardHeader({
   onToggle,
   onOpen,
   inline,
+  divider = true,
 }: {
   title: string;
   count?: string | number | null;
@@ -110,6 +111,8 @@ export function SectionCardHeader({
   onOpen?: () => void;
   /** Workspace section cards: the card's own padding frames it; no divider. */
   inline?: boolean;
+  /** Draw the rule under an open header. Off when the card draws its own dividers. */
+  divider?: boolean;
 }) {
   const c = useColors();
   return (
@@ -136,7 +139,7 @@ export function SectionCardHeader({
           </Pressable>
         ) : null}
       </View>
-      {open && !inline ? <Divider /> : null}
+      {open && !inline && divider ? <Divider /> : null}
     </View>
   );
 }

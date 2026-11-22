@@ -107,7 +107,12 @@ export default function ProjectsScreen({ navigation, route }: Props) {
     navigation,
     route,
     detailRoute: 'ProjectDetail',
-    paramsFor: (id: string) => ({ projectId: id, projectName: projects.find(p => p.id === id)?.name }),
+    // `progress` rides along so the detail header can draw its progress line
+    // (only the list endpoint computes it).
+    paramsFor: (id: string) => {
+      const p = projects.find(x => x.id === id);
+      return { projectId: id, projectName: p?.name, progress: p?.progress ?? null };
+    },
   });
 
   const fetchProjects = useCallback(async () => {
@@ -342,7 +347,7 @@ export default function ProjectsScreen({ navigation, route }: Props) {
             key={selectedId}
             embedded
             navigation={navigation}
-            route={{ key: `embedded-${selectedId}`, name: 'ProjectDetail', params: { projectId: selectedId } } as any}
+            route={{ key: `embedded-${selectedId}`, name: 'ProjectDetail', params: { projectId: selectedId, progress: projects.find(p => p.id === selectedId)?.progress ?? null } } as any}
           />
         ) : null
       }

@@ -1,32 +1,30 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect, type ReactNode } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, Alert, Pressable } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  RefreshControl,
-  TouchableOpacity,
-  ActivityIndicator,
-  useColorScheme,
-  Alert,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+  BookOpen, Calendar, Camera, ChevronLeft, ClipboardList, Clock, FileText, Hammer, Layers, ListChecks, MapPin, Package,
+  Palette, Receipt, SquareCheck, SquarePen, Circle, Ellipsis, Users,
+} from 'lucide-react-native';
 import { apiFetch, apiRequest } from '../services/api';
-import { formatCents } from '../lib/format';
+import { formatShortCents } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme, MAX_FONT_SCALE } from '../theme';
+import { metrics, size, space, tabular, type, useColors } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermission } from '../lib/usePermission';
-import SetSiteLocationButton from '../components/SetSiteLocationButton';
+import { useSetSiteLocation } from '../components/SetSiteLocationButton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReturnToTwoPane } from '../lib/twoPane';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { useTwoPaneDetail } from '../components/ui/TwoPane';
+import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import { haptic } from '../lib/haptics';
 import { SkeletonList } from '../components/ui/Skeleton';
-
+import {
+  CaptureChip, Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, ListRow, ProgressLine, ProjectSquare,
+  PropertyRow, SectionCardHeader, SectionTile,
+} from '../components/kit';
 
 interface Project {
   id: string;
@@ -36,9 +34,16 @@ interface Project {
   currentSystemPhase?: string;
   projectSubStatus?: string;
   location?: string;
+  color?: string | null;
   startDate?: string;
   endDate?: string;
+  proposedStartDate?: string;
+  proposedEndDate?: string;
+  // Financial fields — server stores ALL values in cents.
+  contractPrice?: number;
   contractCost?: number;
+  clientBudget?: number;
+  budget?: number;
   description?: string;
 }
 
@@ -107,8 +112,31 @@ type Props = {
   embedded?: boolean;
 };
 
+const PHASE_LABELS: Record<string, string> = {
+  lead: 'Lead',
+  pre_construction: 'Pre-construction',
+  construction: 'Construction',
+  post_construction: 'Post-construction',
+  completed: 'Completed',
+};
+
+const sentence = (key?: string) => {
+  if (!key) return '';
+  const s = key.replace(/_/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+
+const isDone = (s?: string) => s === 'completed' || s === 'done';
+
+const shortDate = (d?: string) =>
+  d ? new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '';
+const longDate = (d?: string) =>
+  d ? new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+const dayDate = (d?: string) =>
+  d ? new Date(d).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+
 export default function ProjectDetailScreen({ navigation, route, embedded }: Props) {
-  const { projectId } = route.params as { projectId: string };
+  const { projectId, progress: listProgress } = route.params as { projectId: string; progress?: number | null };
   const insets = useSafeAreaInsets();
   // Folded with this project open on the right: a back button floats top-left.
   const { heldOnFold } = useTwoPaneDetail();
@@ -116,8 +144,6 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   // Unfolding on this screen (pushed from the list) goes back to the list with
   // this project open on the right, so you keep your place.
   useReturnToTwoPane({ navigation, listRoute: 'ProjectsList', id: projectId, embedded });
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const { user } = useAuth();
   const canViewFinancials = (() => {
     const r = (user?.roleName ?? '').toLowerCase();
@@ -142,17 +168,10 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   const [loadingChecklistItems, setLoadingChecklistItems] = useState<Record<string, boolean>>({});
   const [collapsedChecklistGroups, setCollapsedChecklistGroups] = useState<Record<string, boolean>>({});
   const [siteDiaryEntries, setSiteDiaryEntries] = useState<SiteDiaryEntry[]>([]);
-
-  const theme = useTheme();
-const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    muted: theme.textMuted,
-};
+  const c = useColors();
+  const captureSheetRef = useRef<SheetRef>(null);
+  const moreSheetRef = useRef<SheetRef>(null);
+  const siteLocation = useSetSiteLocation(projectId);
 
   // Gates the Labour Hours tile. The endpoint behind it enforces the same
   // permission; this only stops the UI offering it.
@@ -160,6 +179,13 @@ const colors = {
   const canViewSelections = usePermission('projects.selections');
   const canViewDefects = usePermission('projects.defects');
   const canViewDeliveries = usePermission('projects.deliveries');
+  const canAddDiary = usePermission('projects.site_diary', 'add');
+  const canAddDefect = usePermission('projects.defects', 'add');
+
+  // The one-row nav bar replaces the stack header (design: "‹ Projects ••• ").
+  useLayoutEffect(() => {
+    if (!embedded) navigation.setOptions({ headerShown: false });
+  }, [navigation, embedded]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -186,7 +212,7 @@ const colors = {
       // Fetch client contact if project has a clientId
       if (projectData?.clientId) {
         apiFetch<Contact>(`/api/contacts/${projectData.clientId}`)
-          .then(c => setClientContact(c))
+          .then(ct => setClientContact(ct))
           .catch(() => setClientContact(null));
       } else {
         setClientContact(null);
@@ -211,42 +237,12 @@ const colors = {
   }, [fetchData]);
 
   const toggleSection = (key: string) => {
+    haptic.select();
     setCollapsed(prev => {
       const updated = { ...prev, [key]: !prev[key] };
       apiRequest('/api/user-view-preferences/mobile-project-detail-collapsed', 'PUT', { preferences: updated }).catch(() => {});
       return updated;
     });
-  };
-
-  const getPhaseColor = (phase?: string) => {
-    switch (phase) {
-      // Used as badge TEXT — theme inks so it reads in sun and in dark mode.
-      case 'lead': return theme.statusWarning;
-      case 'pre_construction': return theme.primary;
-      case 'construction': return theme.statusSuccess;
-      case 'completed': return theme.textSecondary;
-      default: return theme.textMuted;
-    }
-  };
-
-  const getPhaseLabel = (phase?: string) => {
-    switch (phase) {
-      case 'lead': return 'Lead';
-      case 'pre_construction': return 'Pre-Construction';
-      case 'construction': return 'Construction';
-      case 'completed': return 'Completed';
-      default: return 'Unknown';
-    }
-  };
-
-  const getPriorityColor = (priority?: string) => {
-    switch (priority) {
-      case 'urgent': return '#ef4444';
-      case 'high': return '#f97316';
-      case 'medium': return '#eab308';
-      case 'low': return '#22c55e';
-      default: return '#94a3b8';
-    }
   };
 
   const getTodayStr = () => {
@@ -268,123 +264,77 @@ const colors = {
   const todayStr = getTodayStr();
   const tomorrowStr = getTomorrowStr();
 
-  const todayTasks = tasks.filter(t => dateOnlyStr(t.dueDate) === todayStr);
-  const tasksToShow = todayTasks;
-  const tasksSectionTitle = 'Tasks — Today';
+  const openTasks = tasks.filter(t => !isDone(t.status));
+  const todayTasks = openTasks.filter(t => dateOnlyStr(t.dueDate) === todayStr);
+  // Next few open tasks with a due date after today, soonest first.
+  const upcomingTasks = openTasks
+    .filter(t => dateOnlyStr(t.dueDate) > todayStr)
+    .sort((a, b) => dateOnlyStr(a.dueDate).localeCompare(dateOnlyStr(b.dueDate)));
 
   const nearScheduleItems = scheduleItems.filter(item => {
     const start = dateOnlyStr(item.startDate);
     const end = dateOnlyStr(item.endDate) || start;
     return (start <= tomorrowStr && end >= todayStr);
   });
-  const scheduleToShow = nearScheduleItems;
-  const scheduleSectionTitle = 'Schedule — Today & Tomorrow';
+  const todayItems = nearScheduleItems.filter(item => {
+    const start = dateOnlyStr(item.startDate);
+    const end = dateOnlyStr(item.endDate) || start;
+    return start <= todayStr && end >= todayStr;
+  });
+  const tomorrowOnlyItems = nearScheduleItems.filter(item => {
+    const start = dateOnlyStr(item.startDate);
+    const end = dateOnlyStr(item.endDate) || start;
+    return (start <= tomorrowStr && end >= tomorrowStr) && !(start <= todayStr && end >= todayStr);
+  });
 
-  const getWeatherIcon = (condition?: string): keyof typeof Ionicons.glyphMap => {
-    if (!condition) return 'partly-sunny-outline';
-    const c = condition.toLowerCase();
-    if (c.includes('rain') || c.includes('shower')) return 'rainy-outline';
-    if (c.includes('storm') || c.includes('thunder')) return 'thunderstorm-outline';
-    if (c.includes('cloud') || c.includes('overcast')) return 'cloudy-outline';
-    if (c.includes('sun') || c.includes('clear') || c.includes('fine')) return 'sunny-outline';
-    if (c.includes('wind')) return 'flag-outline';
-    if (c.includes('snow')) return 'snow-outline';
-    return 'partly-sunny-outline';
+  const go = (screen: string, extra?: Record<string, unknown>) => {
+    if (!project) return;
+    navigation.navigate(screen, { projectId, projectName: project.name, ...extra });
   };
 
-  const formatDiaryDate = (dateStr?: string) => {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
-  };
-
-  const categoryTiles: { key: string; icon: keyof typeof Ionicons.glyphMap; label: string; showCount: boolean; count?: number }[] = [
-    { key: 'tasks', icon: 'checkbox-outline', label: 'Tasks', showCount: true, count: tasks.length },
-    { key: 'schedule', icon: 'calendar-outline', label: 'Schedule', showCount: false },
-    { key: 'scope', icon: 'layers-outline', label: 'Scope', showCount: false },
+  const tiles = [
+    { key: 'tasks', icon: SquareCheck, label: 'Tasks', count: openTasks.length, onPress: () => go('ProjectTasks') },
+    { key: 'schedule', icon: Calendar, label: 'Schedule', count: nearScheduleItems.length, onPress: () => go('Schedule') },
     // Only offered to roles that can view selections at all; what they then see
     // (approved-only, costs or not) is decided server-side.
-    ...(canViewSelections
-      ? [{ key: 'selections', icon: 'color-palette-outline' as const, label: 'Selections', showCount: false }]
-      : []),
-    ...(canViewDefects
-      ? [{ key: 'defects', icon: 'construct-outline' as const, label: 'Defects', showCount: false }]
-      : []),
-    ...(canViewDeliveries
-      ? [{ key: 'deliveries', icon: 'cube-outline' as const, label: 'Deliveries', showCount: false }]
-      : []),
-    { key: 'siteDiary', icon: 'book-outline', label: 'Site Diary', showCount: false },
-    { key: 'checklists', icon: 'checkmark-done-outline', label: 'Checklists', showCount: false },
-    { key: 'notes', icon: 'document-text-outline', label: 'Notes', showCount: false },
-    { key: 'receiptCapture', icon: 'receipt-outline', label: 'Capture Receipt', showCount: false },
+    ...(canViewSelections ? [{ key: 'selections', icon: Palette, label: 'Selections', onPress: () => go('Selections') }] : []),
+    { key: 'scope', icon: Layers, label: 'Scope', onPress: () => go('Scope') },
+    { key: 'siteDiary', icon: BookOpen, label: 'Diary', onPress: () => go('SiteDiary') },
+    { key: 'checklists', icon: ClipboardList, label: 'Checklists', count: checklistInstances.length, onPress: () => go('Checklists') },
+    ...(canViewDefects ? [{ key: 'defects', icon: Hammer, label: 'Defects', onPress: () => go('DefectsList') }] : []),
+    ...(canViewDeliveries ? [{ key: 'deliveries', icon: Package, label: 'Deliveries', onPress: () => go('DeliveriesList') }] : []),
+    { key: 'notes', icon: FileText, label: 'Notes', onPress: () => go('Notes') },
+    { key: 'receiptCapture', icon: Receipt, label: 'Receipt', onPress: () => go('ReceiptCapture') },
     // Only offered to users who can view the labour budget.
-    ...(canViewLabourHours
-      ? [{ key: 'labourHours', icon: 'time-outline' as const, label: 'Labour Hours', showCount: false }]
-      : []),
-  ];
+    ...(canViewLabourHours ? [{ key: 'labourHours', icon: Clock, label: 'Labour hours', onPress: () => go('LabourHours') }] : []),
+  ] as { key: string; icon: typeof Calendar; label: string; count?: number; onPress: () => void }[];
 
-  const handleTileTap = (key: string) => {
-    if (!project) return;
-    switch (key) {
-      case 'siteDiary':
-        navigation.navigate('SiteDiary', { projectId, projectName: project.name });
-        break;
-      case 'schedule':
-        navigation.navigate('Schedule', { projectId, projectName: project?.name });
-        break;
-      case 'checklists':
-        navigation.navigate('Checklists', { projectId, projectName: project?.name });
-        break;
-      case 'scope':
-        navigation.navigate('Scope', { projectId, projectName: project.name });
-        break;
-      case 'selections':
-        navigation.navigate('Selections', { projectId, projectName: project.name });
-        break;
-      case 'defects':
-        navigation.navigate('DefectsList', { projectId, projectName: project.name });
-        break;
-      case 'deliveries':
-        navigation.navigate('DeliveriesList', { projectId, projectName: project.name });
-        break;
-      case 'notes':
-        navigation.navigate('Notes',{ projectId, projectName: project.name });
-        break;
-      case 'tasks':
-        navigation.navigate('ProjectTasks', { projectId, projectName: project.name });
-        break;
-      case 'receiptCapture':
-        navigation.navigate('ReceiptCapture', { projectId, projectName: project.name });
-        break;
-      case 'labourHours':
-        navigation.navigate('LabourHours', { projectId, projectName: project.name });
-        break;
-      default:
-        if (collapsed[key]) {
-          setCollapsed(prev => {
-            const updated = { ...prev, [key]: false };
-            apiRequest('/api/user-view-preferences/mobile-project-detail-collapsed', 'PUT', { preferences: updated }).catch(() => {});
-            return updated;
-          });
+  // ── FAB capture sheet: Photo / Diary / Defect / Receipt ──────────────────
+  const runCapture = (action: 'photo' | 'diary' | 'defect' | 'receipt') => {
+    haptic.light();
+    captureSheetRef.current?.dismiss();
+    setTimeout(async () => {
+      if (action === 'diary') return go('SiteDiary');
+      if (action === 'defect') return go('DefectCapture');
+      if (action === 'receipt') return go('ReceiptCapture');
+      // Photo to diary: camera first, then the diary opens a new entry with it.
+      try {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Camera access is needed to take photos.');
+          return;
         }
-        break;
-    }
+        const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 });
+        if (result.canceled || !result.assets[0]) return;
+        go('SiteDiary', { captureUri: result.assets[0].uri });
+      } catch (e) {
+        console.warn('Project capture camera failed:', e);
+        Alert.alert('Camera Unavailable', 'Could not open the camera.');
+      }
+    }, 300);
   };
 
-  const renderSectionHeader = (title: string, key: string, count?: number) => (
-    <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(key)} activeOpacity={0.7}>
-      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
-      <View style={styles.sectionHeaderRight}>
-        {count !== undefined && count > 0 && (
-          <View style={[styles.sectionBadge, { backgroundColor: colors.accent + '20' }]}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionBadgeText, { color: colors.accent }]}>{count}</Text>
-          </View>
-        )}
-        <Ionicons name={collapsed[key] ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.secondary} />
-      </View>
-    </TouchableOpacity>
-  );
-
+  // ── Checklists (unchanged behaviour, restyled) ───────────────────────────
   const fetchChecklistItems = async (instanceId: string) => {
     if (checklistItems[instanceId]) return;
     setLoadingChecklistItems(prev => ({ ...prev, [instanceId]: true }));
@@ -449,9 +399,37 @@ const colors = {
     return { groups, ungrouped };
   };
 
+  const pd = metrics.projectDetail;
+
+  // ── Nav bar ──────────────────────────────────────────────────────────────
+  const navBar = embedded ? null : (
+    <View style={[styles.nav, { paddingTop: insets.top + pd.navPad.top }]}>
+      <Pressable
+        onPress={() => navigation.goBack()}
+        hitSlop={metrics.hitSlop}
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+        style={styles.navBack}
+      >
+        <ChevronLeft size={metrics.pageHeader.back} color={c.link} strokeWidth={metrics.iconStroke} />
+        <Text style={[type.rowTitle, { color: c.link }]}>Projects</Text>
+      </Pressable>
+      <View style={{ flex: 1 }} />
+      <Pressable
+        onPress={() => moreSheetRef.current?.present()}
+        hitSlop={metrics.hitSlop}
+        accessibilityRole="button"
+        accessibilityLabel="More actions"
+      >
+        <Ellipsis size={metrics.pageHeader.back} color={c.icon} strokeWidth={metrics.iconStroke} />
+      </Pressable>
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.bg }, embedded && { paddingTop: insets.top }]}>
+      <View style={[styles.container, { backgroundColor: c.bg }, embedded && { paddingTop: insets.top }]}>
+        {navBar}
         <SkeletonList />
       </View>
     );
@@ -459,703 +437,323 @@ const colors = {
 
   if (!project) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary }}>Project not found</Text>
+      <View style={[styles.container, { backgroundColor: c.bg }]}>
+        {navBar}
+        <EmptyState icon={Layers} title="Project not found" helper="It may have been archived or you no longer have access." />
       </View>
     );
   }
 
+  const price = canViewFinancials
+    ? formatShortCents(project.contractPrice ?? project.contractCost ?? project.clientBudget ?? project.budget)
+    : null;
+  const stage = [PHASE_LABELS[project.currentSystemPhase ?? ''] ?? sentence(project.currentSystemPhase), sentence(project.projectSubStatus)]
+    .filter(Boolean)
+    .join(' · ');
+  const metaLine = [clientContact?.name, stage].filter(Boolean).join(' · ');
+  const start = project.startDate ?? project.proposedStartDate;
+  const finish = project.proposedEndDate ?? project.endDate;
+  const phone = clientContact?.phone || clientContact?.mobile;
+
+  /** A section card: header (+ caret when collapsible) and its rows. The card draws the dividers. */
+  const sectionCard = (
+    opts: { id?: string; title: string; count?: number | string | null; onOpen?: () => void },
+    rows?: ReactNode,
+  ) => {
+    const open = opts.id ? !collapsed[opts.id] : false;
+    return (
+      <Card variant="list" style={styles.sectionCard}>
+        <SectionCardHeader
+          title={opts.title}
+          count={opts.count === 0 ? undefined : opts.count}
+          open={open}
+          divider={false}
+          onToggle={opts.id ? () => toggleSection(opts.id!) : undefined}
+          onOpen={opts.onOpen}
+        />
+        {open ? rows : null}
+      </Card>
+    );
+  };
+
+  const subLabel = (text: string) => (
+    <Text key={`sub:${text}`} style={[type.caption, styles.subLabel, { color: c.muted }]}>
+      {text}
+    </Text>
+  );
+
+  const renderChecklistItem = (item: ChecklistItem) => (
+    <ListRow
+      key={item.id}
+      lead={
+        <Checkbox
+          checked={item.status === 'completed'}
+          disabled={item.status === 'na'}
+          onPress={() => toggleChecklistItem(item)}
+          accessibilityLabel={item.description}
+        />
+      }
+      title={item.description}
+      done={item.status === 'completed' || item.status === 'na'}
+      strike={item.status === 'completed'}
+      trailing={item.isRequired ? <Text style={[type.caption, { color: c.danger }]}>Required</Text> : item.status === 'na' ? 'N/A' : undefined}
+    />
+  );
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: c.bg }]}>
+      {navBar}
       <ScrollView
         contentContainerStyle={[styles.scrollContent, readableFrame, embedded && { paddingTop: embeddedTop }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
       >
-        <View style={styles.compactHeader}>
-          <View style={styles.compactHeaderLeft}>
-            {project.jobNumber && (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.projectNumber, { color: colors.accent }]}>#{project.jobNumber}</Text>
-            )}
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.projectName, { color: colors.text }]} numberOfLines={2}>{project.name}</Text>
-          </View>
-          <View style={[styles.phaseBadge, { backgroundColor: getPhaseColor(project.currentSystemPhase) + '20' }]}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.phaseBadgeText, { color: getPhaseColor(project.currentSystemPhase) }]}>
-              {getPhaseLabel(project.currentSystemPhase)}
+        {/* Project header */}
+        <View>
+          <View style={styles.titleRow}>
+            <ProjectSquare color={project.color} fallbackKey={project.id} size="card" />
+            <Text style={[type.title, { color: c.text, flex: 1 }]} numberOfLines={2}>
+              {project.name}
             </Text>
+            {price ? <Text style={[type.price, tabular, { color: c.text }]}>{price}</Text> : null}
           </View>
+          {(metaLine || typeof listProgress === 'number') ? (
+            <View style={styles.metaBlock}>
+              {metaLine ? <Text style={[type.body, { color: c.muted }]}>{metaLine}</Text> : null}
+              {typeof listProgress === 'number' ? (
+                <ProgressLine value={listProgress / 100} color={project.color} trackColor={c.hairline} />
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
+        {/* Section tiles */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tilesRow}
           style={styles.tilesScroll}
         >
-          {categoryTiles.map(tile => (
-            <TouchableOpacity
-              key={tile.key}
-              style={[styles.tile, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => handleTileTap(tile.key)}
-              activeOpacity={0.7}
-            >
-              {tile.showCount && tile.count != null && tile.count > 0 && (
-                <View style={[styles.tileBadge, { backgroundColor: colors.accent }]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.tileBadgeText}>{tile.count}</Text>
-                </View>
-              )}
-              <Ionicons name={tile.icon} size={22} color={colors.accent} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.tileLabel, { color: colors.secondary }]} numberOfLines={2}>
-                {tile.label}
-              </Text>
-            </TouchableOpacity>
+          {tiles.map(t => (
+            <SectionTile key={t.key} icon={t.icon} label={t.label} count={t.count ? t.count : null} onPress={t.onPress} />
           ))}
         </ScrollView>
 
-        <View style={styles.section}>
-          {renderSectionHeader('Project Info', 'projectInfo')}
-          {!collapsed.projectInfo && (
-            <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {clientContact?.name && (
-                <TouchableOpacity
-                  style={[styles.clientRow, { backgroundColor: theme.primaryLight, borderColor: colors.border }]}
-                  activeOpacity={0.6}
-                  onPress={() =>
-                    navigation.navigate('ClientDetail', {
-                      contactId: clientContact.id,
-                      contactName: clientContact.name,
-                    })
-                  }
-                >
-                  <View style={[styles.clientAvatar, { backgroundColor: colors.accent }]}>
-                    <Ionicons name="person" size={18} color="#FFFFFF" />
-                  </View>
-                  <View style={styles.infoText}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Client</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clientName, { color: colors.text }]}>{clientContact.name}</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clientHint, { color: colors.accent }]}>Tap to view details</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={colors.accent} />
-                </TouchableOpacity>
-              )}
-              {project.location && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="location-outline" size={16} color={colors.secondary} />
-                  <View style={styles.infoText}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Address</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.text }]}>{project.location}</Text>
-                  </View>
-                </View>
-              )}
-              {/* Arriving on site (#46): capture the site point from this phone */}
-              <SetSiteLocationButton projectId={projectId} />
-              {(clientContact?.email) && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="mail-outline" size={16} color={colors.secondary} />
-                  <View style={styles.infoText}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Email</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.accent }]}>{clientContact.email}</Text>
-                  </View>
-                </View>
-              )}
-              {(clientContact?.phone || clientContact?.mobile) && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="call-outline" size={16} color={colors.secondary} />
-                  <View style={styles.infoText}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Phone</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.text }]}>{clientContact.phone || clientContact.mobile}</Text>
-                  </View>
-                </View>
-              )}
-              {canViewFinancials && !!project.contractCost && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="cash-outline" size={16} color={colors.secondary} />
-                  <View style={styles.infoText}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Contract Value</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.text }]}>{formatCents(project.contractCost)}</Text>
-                  </View>
-                </View>
-              )}
-              {(project.startDate || project.endDate) && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                  <View style={styles.infoText}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Timeline</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.text }]}>
-                      {project.startDate ? new Date(project.startDate).toLocaleDateString('en-AU') : '—'}
-                      {' to '}
-                      {project.endDate ? new Date(project.endDate).toLocaleDateString('en-AU') : '—'}
-                    </Text>
-                  </View>
-                </View>
-              )}
-              {project.jobNumber && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="barcode-outline" size={16} color={colors.secondary} />
-                  <View style={styles.infoText}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.secondary }]}>Job Number</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoValue, { color: colors.text }]}>{project.jobNumber}</Text>
-                  </View>
-                </View>
-              )}
-              {!clientContact?.name && !project.location && !project.contractCost && !project.startDate && !project.endDate && !project.jobNumber && (
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.infoLabel, { color: colors.muted, padding: 4 }]}>No project details on file</Text>
-              )}
-            </View>
-          )}
-        </View>
+        {/* Overview */}
+        {sectionCard({ id: 'projectInfo', title: 'Overview' }, [
+          stage ? <PropertyRow key="stage" label="Stage" value={stage} /> : null,
+          start ? <PropertyRow key="start" label="Start" value={longDate(start)} /> : null,
+          finish ? <PropertyRow key="finish" label="Est. completion" value={longDate(finish)} /> : null,
+          clientContact?.name ? (
+            <PropertyRow
+              key="client"
+              label="Client"
+              value={clientContact.name}
+              onPress={() => navigation.navigate('ClientDetail', { contactId: clientContact.id, contactName: clientContact.name })}
+            />
+          ) : null,
+          phone ? <PropertyRow key="phone" label="Phone" value={phone} /> : null,
+          clientContact?.email ? <PropertyRow key="email" label="Email" value={clientContact.email} link /> : null,
+          project.location ? <PropertyRow key="address" label="Address" value={project.location} /> : null,
+          project.jobNumber ? <PropertyRow key="job" label="Job number" value={project.jobNumber} /> : null,
+          !stage && !start && !finish && !clientContact?.name && !project.location && !project.jobNumber ? (
+            <PropertyRow key="none" label="Details" placeholder="Nothing on file yet" />
+          ) : null,
+        ])}
 
-        <View style={styles.section}>
-          {renderSectionHeader(tasksSectionTitle, 'tasks', tasks.length)}
-          {!collapsed.tasks && (
-            <View>
-              {tasksToShow.length === 0 ? (
-                <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Ionicons name="checkbox-outline" size={28} color={colors.muted} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySectionText, { color: colors.secondary }]}>No tasks due today</Text>
-                </View>
-              ) : (
-                tasksToShow.map(task => (
-                  <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={[styles.priorityDot, { backgroundColor: getPriorityColor(task.priority) }]} />
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
-                    {task.status && (
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.taskStatus, { color: colors.secondary }]}>{task.status.replace(/_/g, ' ')}</Text>
-                    )}
-                  </View>
-                ))
-              )}
-              <TouchableOpacity
-                style={[styles.viewAllBtn, { borderColor: colors.border }]}
-                onPress={() => navigation.navigate('ProjectTasks', { projectId, projectName: project.name })}
-                activeOpacity={0.7}
-              >
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewAllBtnText, { color: colors.accent }]}>View All Tasks</Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.accent} />
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+        {/* Tasks */}
+        {sectionCard({ id: 'tasks', title: 'Tasks', count: openTasks.length, onOpen: () => go('ProjectTasks') }, [
+          todayTasks.length === 0 ? (
+            <Text key="none" style={[type.body, styles.quietRow, { color: c.muted }]}>Nothing due today</Text>
+          ) : null,
+          ...[...todayTasks, ...upcomingTasks].slice(0, pd.maxTaskRows).map(task => (
+            <ListRow
+              key={task.id}
+              onPress={() => go('ProjectTasks')}
+              lead={<Circle size={size.checkbox} color={c.faint} strokeWidth={metrics.iconStroke} />}
+              title={task.title}
+              trailing={dateOnlyStr(task.dueDate) === todayStr ? 'Today' : dayDate(task.dueDate)}
+            />
+          )),
+        ])}
 
-        <View style={styles.section}>
-          {renderSectionHeader(scheduleSectionTitle, 'schedule')}
-          {!collapsed.schedule && (() => {
-            const todayItems = nearScheduleItems.filter(item => {
-              const start = dateOnlyStr(item.startDate);
-              const end = dateOnlyStr(item.endDate) || start;
-              return start <= todayStr && end >= todayStr;
-            });
-            const tomorrowOnlyItems = nearScheduleItems.filter(item => {
-              const start = dateOnlyStr(item.startDate);
-              const end = dateOnlyStr(item.endDate) || start;
-              return (start <= tomorrowStr && end >= tomorrowStr) && !(start <= todayStr && end >= todayStr);
-            });
-            const renderScheduleCard = (item: ScheduleItem) => (
-              <View key={item.id} style={[styles.scheduleRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View style={styles.scheduleContent}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.scheduleTitle, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                  {item.startDate && (
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.scheduleDate, { color: colors.secondary }]}>
-                      {new Date(item.startDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-                      {item.endDate ? ` – ${new Date(item.endDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}` : ''}
-                    </Text>
-                  )}
-                </View>
-                {item.status && (
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.scheduleStatus, { color: colors.muted }]}>{item.status.replace(/_/g, ' ')}</Text>
-                )}
-              </View>
-            );
-            return (
-              <View>
-                {todayItems.length === 0 && tomorrowOnlyItems.length === 0 ? (
-                  <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Ionicons name="calendar-outline" size={28} color={colors.muted} />
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySectionText, { color: colors.secondary }]}>No items scheduled today or tomorrow</Text>
-                  </View>
-                ) : (
-                  <>
-                    {todayItems.length > 0 && (
-                      <>
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.scheduleDayLabel, { color: colors.accent }]}>Today</Text>
-                        {todayItems.map(renderScheduleCard)}
-                      </>
-                    )}
-                    {tomorrowOnlyItems.length > 0 && (
-                      <>
-                        <View style={[styles.scheduleDivider, { backgroundColor: colors.border }]} />
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.scheduleDayLabel, { color: colors.accent }]}>Tomorrow</Text>
-                        {tomorrowOnlyItems.map(renderScheduleCard)}
-                      </>
-                    )}
-                  </>
-                )}
-                <TouchableOpacity
-                  style={[styles.viewAllBtn, { borderColor: colors.border }]}
-                  onPress={() => navigation.navigate('Schedule', { projectId, projectName: project?.name })}
-                  activeOpacity={0.7}
-                >
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewAllBtnText, { color: colors.accent }]}>View Full Schedule</Text>
-                  <Ionicons name="chevron-forward" size={14} color={colors.accent} />
-                </TouchableOpacity>
-              </View>
-            );
-          })()}
-        </View>
+        {/* Schedule: today & tomorrow */}
+        {sectionCard({ id: 'schedule', title: 'Schedule', count: nearScheduleItems.length, onOpen: () => go('Schedule') }, [
+          nearScheduleItems.length === 0 ? (
+            <Text key="none" style={[type.body, styles.quietRow, { color: c.muted }]}>Nothing scheduled today or tomorrow</Text>
+          ) : null,
+          todayItems.length > 0 ? subLabel('Today') : null,
+          ...todayItems.map(item => (
+            <ListRow
+              key={item.id}
+              onPress={() => go('Schedule')}
+              title={item.name}
+              subtitle={[shortDate(item.startDate), item.endDate ? shortDate(item.endDate) : null].filter(Boolean).join(' – ')}
+              trailing={item.status ? sentence(item.status) : undefined}
+            />
+          )),
+          tomorrowOnlyItems.length > 0 ? subLabel('Tomorrow') : null,
+          ...tomorrowOnlyItems.map(item => (
+            <ListRow
+              key={item.id}
+              onPress={() => go('Schedule')}
+              title={item.name}
+              subtitle={[shortDate(item.startDate), item.endDate ? shortDate(item.endDate) : null].filter(Boolean).join(' – ')}
+              trailing={item.status ? sentence(item.status) : undefined}
+            />
+          )),
+        ])}
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <TouchableOpacity style={styles.sectionHeaderRowLeft} onPress={() => toggleSection('siteDiary')} activeOpacity={0.7}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.text }]}>Site Diary</Text>
-              <Ionicons name={collapsed.siteDiary ? 'chevron-forward' : 'chevron-down'} size={18} color={colors.secondary} />
-            </TouchableOpacity>
-            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
-              style={[styles.sectionActionBtn, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '40' }]}
-              onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add" size={14} color={colors.accent} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionActionBtnText, { color: colors.accent }]}>New Entry</Text>
-            </TouchableOpacity>
-          </View>
-          {!collapsed.siteDiary && (
-            <View>
-              {siteDiaryEntries.length === 0 ? (
-                <TouchableOpacity
-                  style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="book-outline" size={28} color={colors.muted} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySectionText, { color: colors.secondary }]}>No diary entries yet</Text>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySectionText, { color: colors.accent, fontSize: 12 }]}>Tap to add first entry</Text>
-                </TouchableOpacity>
-              ) : (
-                <>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.diaryCarouselRow}
-                    style={{ flexShrink: 0, flexGrow: 0 }}
+        {/* Site diary */}
+        {sectionCard(
+          { id: 'siteDiary', title: 'Site diary', count: siteDiaryEntries.length >= 8 ? '8+' : siteDiaryEntries.length, onOpen: () => go('SiteDiary') },
+          siteDiaryEntries.length === 0 ? (
+            <Text style={[type.body, styles.quietRow, { color: c.muted }]}>No diary entries yet</Text>
+          ) : (
+            siteDiaryEntries.slice(0, pd.maxDiaryRows).map(entry => (
+              <ListRow
+                key={entry.id}
+                onPress={() => go('SiteDiary')}
+                title={entry.title || 'Site diary entry'}
+                titleLines={1}
+                trailing={dayDate(entry.entryDateTime)}
+              />
+            ))
+          ),
+        )}
+
+        {/* Checklists (expand a checklist to tick items here) */}
+        {sectionCard(
+          { id: 'checklists', title: 'Checklists', count: checklistInstances.length, onOpen: () => go('Checklists') },
+          checklistInstances.length === 0 ? (
+            <Text style={[type.body, styles.quietRow, { color: c.muted }]}>No checklists</Text>
+          ) : (
+            checklistInstances.map(inst => {
+              const isExpanded = expandedChecklist === inst.id;
+              const progress = inst.totalCount > 0 ? inst.completedCount / inst.totalCount : 0;
+              const items = checklistItems[inst.id] || [];
+              const { groups, ungrouped } = groupChecklistItems(items);
+              return (
+                <View key={inst.id}>
+                  <Pressable
+                    onPress={() => toggleChecklistExpand(inst.id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: isExpanded }}
+                    style={styles.checklistHead}
                   >
-                    {siteDiaryEntries.map(entry => (
-                      <TouchableOpacity
-                        key={entry.id}
-                        style={[styles.diaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                        onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
-                        activeOpacity={0.75}
-                      >
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.diaryCardDate, { color: colors.secondary }]}>
-                          {formatDiaryDate(entry.entryDateTime)}
-                        </Text>
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.diaryCardTitle, { color: colors.text }]} numberOfLines={2}>
-                          {entry.title || 'Site Diary Entry'}
-                        </Text>
-                        {entry.weather?.condition && (
-                          <View style={styles.diaryCardWeather}>
-                            <Ionicons name={getWeatherIcon(entry.weather.condition)} size={13} color={colors.secondary} />
-                            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.diaryCardWeatherText, { color: colors.secondary }]}>
-                              {entry.weather.condition}{entry.weather.temp != null ? ` ${entry.weather.temp}°` : ''}
-                            </Text>
-                          </View>
-                        )}
-                        {entry.createdByName && (
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.diaryCardAuthor, { color: colors.muted }]} numberOfLines={1}>
-                            {entry.createdByName}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                    <TouchableOpacity
-                      style={[styles.diaryCardViewAll, { backgroundColor: colors.accent + '12', borderColor: colors.accent + '30' }]}
-                      onPress={() => navigation.navigate('SiteDiary', { projectId, projectName: project.name })}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="book-outline" size={22} color={colors.accent} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.diaryCardViewAllText, { color: colors.accent }]}>All Entries</Text>
-                    </TouchableOpacity>
-                  </ScrollView>
-                </>
-              )}
-            </View>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          {renderSectionHeader('Checklists', 'checklists')}
-          {!collapsed.checklists && (
-            checklistInstances.length === 0 ? (
-              <View style={[styles.emptySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Ionicons name="checkmark-done-outline" size={28} color={colors.muted} />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySectionText, { color: colors.secondary }]}>No checklists</Text>
-              </View>
-            ) : (
-              checklistInstances.map(inst => {
-                const isExpanded = expandedChecklist === inst.id;
-                const progress = inst.totalCount > 0 ? inst.completedCount / inst.totalCount : 0;
-                const statusColor = inst.status === 'completed' ? theme.statusSuccess : inst.status === 'in_progress' ? theme.statusInfo : inst.status === 'cancelled' ? theme.statusDanger : theme.textMuted;
-                return (
-                  <View key={inst.id} style={[styles.checklistCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <TouchableOpacity onPress={() => toggleChecklistExpand(inst.id)} style={styles.checklistHeader} activeOpacity={0.7}>
-                      <View style={{ flex: 1, gap: 4 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.checklistName, { color: colors.text }]} numberOfLines={1}>{inst.name}</Text>
-                          <View style={[styles.checklistStatusBadge, { backgroundColor: statusColor + '20' }]}>
-                            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 10, fontWeight: '600', color: statusColor }}>{inst.status.replace('_', ' ')}</Text>
-                          </View>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <View style={[styles.checklistProgress, { backgroundColor: colors.border }]}>
-                            <View style={[styles.checklistProgressFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: progress === 1 ? theme.statusSuccessSolid : colors.accent }]} />
-                          </View>
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 11, color: colors.secondary }}>{inst.completedCount}/{inst.totalCount}</Text>
-                        </View>
+                    <Text style={[type.rowTitle, { color: c.text }]} numberOfLines={2}>{inst.name}</Text>
+                    <ProgressLine value={progress} inlineLabel={`${inst.completedCount} of ${inst.totalCount}`} />
+                  </Pressable>
+                  {isExpanded ? (
+                    loadingChecklistItems[inst.id] ? (
+                      <ActivityIndicator style={styles.checklistLoading} size="small" color={c.accent} />
+                    ) : items.length === 0 ? (
+                      <Text style={[type.body, styles.quietRow, { color: c.muted }]}>No items</Text>
+                    ) : (
+                      <View>
+                        {ungrouped.map(renderChecklistItem)}
+                        {Object.entries(groups).map(([groupName, grpItems]) => {
+                          const gk = `${inst.id}:${groupName}`;
+                          const gCollapsed = collapsedChecklistGroups[gk];
+                          const doneInGroup = grpItems.filter(i => i.status === 'completed' || i.status === 'na').length;
+                          return (
+                            <View key={groupName}>
+                              <Pressable onPress={() => toggleChecklistGroup(gk)} accessibilityRole="button" style={styles.checklistGroup}>
+                                <Text style={[type.metaSemi, { color: c.muted, flex: 1 }]} numberOfLines={1}>{groupName}</Text>
+                                <Text style={[type.meta, tabular, { color: c.muted }]}>{`${doneInGroup}/${grpItems.length}`}</Text>
+                              </Pressable>
+                              {!gCollapsed && grpItems.map(renderChecklistItem)}
+                            </View>
+                          );
+                        })}
                       </View>
-                      <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
-                    </TouchableOpacity>
-                    {isExpanded && (
-                      loadingChecklistItems[inst.id] ? (
-                        <View style={{ padding: 16, alignItems: 'center' }}><ActivityIndicator size="small" color={colors.accent} /></View>
-                      ) : (() => {
-                        const items = checklistItems[inst.id] || [];
-                        if (items.length === 0) return <View style={{ padding: 12, alignItems: 'center' }}><Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 12 }}>No items</Text></View>;
-                        const { groups, ungrouped } = groupChecklistItems(items);
-                        const groupKeys = Object.keys(groups).map(g => `${inst.id}:${g}`);
-                        const allCollapsed = groupKeys.length > 0 && groupKeys.every(k => collapsedChecklistGroups[k]);
-                        return (
-                          <View style={[styles.checklistItemsWrap, { borderTopColor: colors.border }]}>
-                            {groupKeys.length > 1 && (
-                              <TouchableOpacity onPress={() => {
-                                const newState = !allCollapsed;
-                                setCollapsedChecklistGroups(prev => {
-                                  const updated = { ...prev };
-                                  groupKeys.forEach(k => { updated[k] = newState; });
-                                  return updated;
-                                });
-                              }} style={{ alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 }} activeOpacity={0.7}>
-                                <Ionicons name={allCollapsed ? 'chevron-down' : 'chevron-up'} size={11} color={colors.secondary} />
-                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 10, color: colors.secondary, fontWeight: '500' }}>{allCollapsed ? 'Expand All' : 'Collapse All'}</Text>
-                              </TouchableOpacity>
-                            )}
-                            {ungrouped.map(item => (
-                              <TouchableOpacity key={item.id} style={[styles.checklistItemRow, { borderColor: colors.border }]} onPress={() => toggleChecklistItem(item)} activeOpacity={0.7} disabled={item.status === 'na'}>
-                                <Ionicons name={item.status === 'completed' ? 'checkbox' : item.status === 'na' ? 'remove-circle-outline' : 'square-outline'} size={20} color={item.status === 'completed' ? theme.statusSuccess : item.status === 'na' ? colors.muted : colors.secondary} />
-                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[{ fontSize: 13, flex: 1, color: item.status === 'completed' ? colors.muted : colors.text }, item.status === 'completed' && { textDecorationLine: 'line-through' }]} numberOfLines={2}>{item.description}</Text>
-                                {item.isRequired && <View style={{ backgroundColor: theme.statusDangerBg, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 }}><Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 9, fontWeight: '600', color: theme.statusDanger }}>Req</Text></View>}
-                              </TouchableOpacity>
-                            ))}
-                            {Object.entries(groups).map(([groupName, grpItems]) => {
-                              const gk = `${inst.id}:${groupName}`;
-                              const gCollapsed = collapsedChecklistGroups[gk];
-                              const doneInGroup = grpItems.filter(i => i.status === 'completed' || i.status === 'na').length;
-                              return (
-                                <View key={groupName}>
-                                  <TouchableOpacity style={[styles.checklistGroupHeader, { borderColor: colors.border }]} onPress={() => toggleChecklistGroup(gk)} activeOpacity={0.7}>
-                                    <Ionicons name={gCollapsed ? 'chevron-forward' : 'chevron-down'} size={13} color={colors.accent} />
-                                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 11, fontWeight: '600', color: colors.accent, textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 }} numberOfLines={1}>{groupName}</Text>
-                                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 10, color: colors.secondary }}>{doneInGroup}/{grpItems.length}</Text>
-                                  </TouchableOpacity>
-                                  {!gCollapsed && grpItems.map(item => (
-                                    <TouchableOpacity key={item.id} style={[styles.checklistItemRow, { borderColor: colors.border }]} onPress={() => toggleChecklistItem(item)} activeOpacity={0.7} disabled={item.status === 'na'}>
-                                      <Ionicons name={item.status === 'completed' ? 'checkbox' : item.status === 'na' ? 'remove-circle-outline' : 'square-outline'} size={20} color={item.status === 'completed' ? theme.statusSuccess : item.status === 'na' ? colors.muted : colors.secondary} />
-                                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[{ fontSize: 13, flex: 1, color: item.status === 'completed' ? colors.muted : colors.text }, item.status === 'completed' && { textDecorationLine: 'line-through' }]} numberOfLines={2}>{item.description}</Text>
-                                      {item.isRequired && <View style={{ backgroundColor: theme.statusDangerBg, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 }}><Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 9, fontWeight: '600', color: theme.statusDanger }}>Req</Text></View>}
-                                    </TouchableOpacity>
-                                  ))}
-                                </View>
-                              );
-                            })}
-                          </View>
-                        );
-                      })()
-                    )}
-                  </View>
-                );
-              })
-            )
-          )}
-        </View>
+                    )
+                  ) : null}
+                </View>
+              );
+            })
+          ),
+        )}
+
+        {/* Header-only cards: open the section */}
+        {canViewSelections ? sectionCard({ title: 'Selections', onOpen: () => go('Selections') }) : null}
+        {sectionCard({ title: 'Scope', onOpen: () => go('Scope') })}
+        {canViewDefects ? sectionCard({ title: 'Defects', onOpen: () => go('DefectsList') }) : null}
       </ScrollView>
+
+      <FAB onPress={() => captureSheetRef.current?.present()} label="Add to this project" />
+
+      <Sheet ref={captureSheetRef} title={`Add to ${project.name}`}>
+        <View style={styles.sheetChips}>
+          {canAddDiary ? <CaptureChip variant="sheet" icon={Camera} label="Photo" onPress={() => runCapture('photo')} /> : null}
+          {canAddDiary ? <CaptureChip variant="sheet" icon={SquarePen} label="Diary" onPress={() => runCapture('diary')} /> : null}
+          {canAddDefect ? <CaptureChip variant="sheet" icon={Hammer} label="Defect" onPress={() => runCapture('defect')} /> : null}
+          <CaptureChip variant="sheet" icon={Receipt} label="Receipt" onPress={() => runCapture('receipt')} />
+        </View>
+      </Sheet>
+
+      <Sheet ref={moreSheetRef} title={project.name}>
+        <View style={styles.sheetBody}>
+          <Card variant="list">
+            <ListRow
+              lead={<MapPin size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
+              title="Set site location (I'm on site now)"
+              trailing={siteLocation.busy ? <ActivityIndicator size="small" color={c.accent} /> : undefined}
+              onPress={() => { moreSheetRef.current?.dismiss(); siteLocation.confirm(); }}
+            />
+            {clientContact?.name ? (
+              <ListRow
+                lead={<Users size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
+                title="Client details"
+                chevron
+                onPress={() => {
+                  moreSheetRef.current?.dismiss();
+                  navigation.navigate('ClientDetail', { contactId: clientContact.id, contactName: clientContact.name });
+                }}
+              />
+            ) : null}
+            <ListRow
+              lead={<ListChecks size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
+              title="All tasks"
+              chevron
+              onPress={() => { moreSheetRef.current?.dismiss(); go('ProjectTasks'); }}
+            />
+          </Card>
+        </View>
+      </Sheet>
     </View>
   );
 }
 
+const pd = metrics.projectDetail;
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { padding: 16, paddingBottom: 32 },
-  compactHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 14,
-  },
-  compactHeaderLeft: { flex: 1, gap: 2 },
-  projectNumber: { fontSize: 12, fontWeight: '600' },
-  projectName: { fontSize: 18, fontWeight: '700' },
-  phaseBadge: { borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
-  phaseBadgeText: { fontSize: 12, fontWeight: '500' },
-  tilesScroll: { marginBottom: 16 },
-  tilesRow: { gap: 10, paddingRight: 4 },
-  tile: {
-    width: 80,
-    height: 80,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    // Keeps two-word labels off the edges, and narrows the text box enough
-    // that "Labour Hours" wraps rather than spanning the full tile.
-    paddingHorizontal: 8,
-    gap: 6,
-    position: 'relative',
-  },
-  tileBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  tileBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
-  tileLabel: { fontSize: 11, fontWeight: '500', textAlign: 'center', lineHeight: 14 },
-  section: { marginBottom: 4 },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-  },
-  sectionTitle: { fontSize: 15, fontWeight: '600' },
-  sectionHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionBadge: {
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    minWidth: 24,
-    alignItems: 'center',
-  },
-  sectionBadgeText: { fontSize: 12, fontWeight: '600' },
-  sectionCard: {
-    borderRadius: 10,
-    padding: 16,
-    borderWidth: 1,
-    marginBottom: 4,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 14,
-  },
-  infoText: { flex: 1 },
-  infoLabel: { fontSize: 11, fontWeight: '500', marginBottom: 2 },
-  infoValue: { fontSize: 14 },
-  clientRow: {
+  nav: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 16,
+    minHeight: pd.navHeight,
+    paddingRight: pd.navPad.right,
+    paddingBottom: pd.navPad.bottom,
+    paddingLeft: pd.navPad.left,
   },
-  clientAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+  navBack: { flexDirection: 'row', alignItems: 'center', gap: pd.navGap },
+  scrollContent: {
+    paddingHorizontal: space.screenX,
+    paddingTop: pd.contentTop,
+    paddingBottom: FAB_CLEARANCE + space.screenBottom,
+    gap: pd.contentGap,
   },
-  clientName: { fontSize: 16, fontWeight: '700' },
-  clientHint: { fontSize: 11, fontWeight: '500', marginTop: 1 },
-  emptySection: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  emptySectionText: { fontSize: 13 },
-  taskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 6,
-    gap: 10,
-  },
-  priorityDot: { width: 8, height: 8, borderRadius: 4 },
-  taskTitle: { flex: 1, fontSize: 14 },
-  taskStatus: { fontSize: 12 },
-  moreText: { fontSize: 13, fontWeight: '500', marginTop: 4, textAlign: 'center', marginBottom: 4 },
-  scheduleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 6,
-    gap: 10,
-  },
-  scheduleContent: { flex: 1 },
-  scheduleTitle: { fontSize: 14, fontWeight: '500' },
-  scheduleDate: { fontSize: 12, marginTop: 2 },
-  scheduleStatus: { fontSize: 12 },
-  scheduleDayLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginTop: 2 },
-  scheduleDivider: { height: 1, marginVertical: 10 },
-  actionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 12,
-    marginBottom: 4,
-  },
-  actionIconBg: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionContent: { flex: 1 },
-  actionTitle: { fontSize: 15, fontWeight: '600' },
-  actionSub: { fontSize: 12, marginTop: 1 },
-  checklistCard: {
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 8,
-    overflow: 'hidden',
-  },
-  checklistHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    gap: 10,
-  },
-  checklistName: { fontSize: 14, fontWeight: '600', flex: 1 },
-  checklistStatusBadge: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
-  checklistProgress: { height: 4, borderRadius: 2, flex: 1, overflow: 'hidden' },
-  checklistProgressFill: { height: 4, borderRadius: 2 },
-  checklistItemsWrap: { borderTopWidth: 1, paddingHorizontal: 12, paddingVertical: 6 },
-  checklistItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    minHeight: 44,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 8,
-  },
-  checklistGroupHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 8,
-    minHeight: 44,
-    marginTop: 2,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    gap: 8,
-  },
-  sectionHeaderRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-  },
-  sectionActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  sectionActionBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  viewAllBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 6,
-    marginBottom: 4,
-  },
-  viewAllBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  diaryCarouselRow: {
-    gap: 10,
-    paddingBottom: 4,
-    paddingRight: 4,
-  },
-  diaryCard: {
-    width: 160,
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 12,
-    gap: 4,
-    marginBottom: 4,
-  },
-  diaryCardDate: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  diaryCardTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-  },
-  diaryCardWeather: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  diaryCardWeatherText: {
-    fontSize: 11,
-  },
-  diaryCardAuthor: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  diaryCardViewAll: {
-    width: 100,
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 12,
-    gap: 6,
-    marginBottom: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  diaryCardViewAllText: {
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: pd.headerGap },
+  metaBlock: { paddingLeft: pd.metaPadLeft, gap: pd.metaGap, marginTop: space.inlineSm },
+  // Tiles run to the screen edge so the last one is visibly cut off.
+  tilesScroll: { marginHorizontal: -space.screenX, flexGrow: 0 },
+  tilesRow: { gap: pd.tileGap, paddingHorizontal: space.screenX },
+  sectionCard: { paddingBottom: pd.cardPadBottom },
+  quietRow: { paddingVertical: metrics.listRow.padY },
+  subLabel: { paddingTop: metrics.listRow.padY, paddingBottom: metrics.workspace.subLabelPad.bottom },
+  checklistHead: { paddingVertical: metrics.listRow.padY, gap: space.inline },
+  checklistGroup: { flexDirection: 'row', alignItems: 'center', gap: space.inline, paddingTop: space.section, paddingBottom: space.inlineSm },
+  checklistLoading: { paddingVertical: space.section },
+  sheetChips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.inline, paddingHorizontal: space.screenX, paddingTop: space.inline },
+  sheetBody: { paddingHorizontal: space.screenX, paddingTop: space.inline },
 });

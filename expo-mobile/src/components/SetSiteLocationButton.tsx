@@ -11,8 +11,7 @@ import { useTheme, MAX_FONT_SCALE } from '../theme';
  * PUT /api/projects/:id/site-location with source 'on_site'). The point is
  * what the arrival alerts fence around.
  */
-export default function SetSiteLocationButton({ projectId }: { projectId: string }) {
-  const theme = useTheme();
+export function useSetSiteLocation(projectId: string) {
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -44,6 +43,13 @@ export default function SetSiteLocationButton({ projectId }: { projectId: string
       { text: 'Cancel', style: 'cancel' },
       { text: "I'm on site", onPress: save },
     ]);
+
+  return { confirm, busy };
+}
+
+export default function SetSiteLocationButton({ projectId }: { projectId: string }) {
+  const theme = useTheme();
+  const { confirm, busy } = useSetSiteLocation(projectId);
 
   return (
     <TouchableOpacity
