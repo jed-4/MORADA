@@ -6,16 +6,20 @@ import {
   KeyboardAvoidingView,
   Linking,
   Platform,
-  TextInput,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import type React from 'react';
+import {
+  Camera, CircleCheck, Ellipsis, ExternalLink, FileText, MessageSquare, Share2, TriangleExclamationPoint,
+} from 'lucide-react-native';
 import type { ScrollViewInstance } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
@@ -28,10 +32,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
 import { readCachedSelections, selectionPhotoSource } from '../services/selectionsOffline';
 import { usePermission } from '../lib/usePermission';
-import { useTheme, fontSize, fontWeight, radius } from '../theme';
+import { useColors, fontSize, fontWeight, metrics, radii, size, space, type } from '../theme';
+import { Sheet, type SheetRef } from '../components/ui/Sheet';
+import { SkeletonList } from '../components/ui/Skeleton';
+import {
+  Card, CommentComposer, DetailHeader, EmptyState, GroupHeader, ListRow, PropertyRow, SecondaryActionBar, SmartImage,
+  StatusDot, Thumb,
+} from '../components/kit';
 import { haptic } from '../lib/haptics';
 import { useToast } from '../components/ui/Toast';
-import StatusPill from '../components/selections/StatusPill';
+import { selectionDot } from '../components/selections/StatusPill';
 import CroppedImage from '../components/selections/CroppedImage';
 import DocumentViewer, { type ViewableDocument } from '../components/DocumentViewer';
 import { readableFrame } from '../components/ui/ReadableColumn';
@@ -92,9 +102,12 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
     projectId: string;
     projectName?: string;
   };
-  const theme = useTheme();
+  const c = useColors();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const moreRef = useRef<SheetRef>(null);
+  // Sections folded on this screen (comments start folded, as "Activity" in the design).
+  const [closedSections, setClosedSections] = useState<string[]>(['comments']);
   const { user } = useAuth();
   const { width, height, isWide } = useLayout();
 
@@ -362,401 +375,337 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
     }
   };
 
+  const shareText = () => {
+    if (!selection) return '';
+    return [
+      `${selection.name}${selection.room ? ` — ${selection.room}` : ''}`,
+      chosen ? `Selected: ${chosen.name}` : 'No option approved yet',
+      [chosen?.brand, chosen?.sku].filter(Boolean).join(' · '),
+      formatQuantity(chosen),
+      chosen?.url ?? '',
+    ].filter(Boolean).join('\n');
+  };
+
+  const share = () => {
+    haptic.light();
+    Share.share({ message: shareText() }).catch(() => {});
+  };
+
+  const sl = metrics.selections;
+
   if (loading) {
     return (
-      <View style={[styles.centre, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+      <View style={[styles.screen, { backgroundColor: c.bg, paddingTop: embedded ? 0 : insets.top + metrics.schedule.top }]}>
+        {!embedded && <View style={styles.pad}><DetailHeader onBack={() => navigation.goBack()} /></View>}
+        <SkeletonList />
       </View>
     );
   }
 
   if (!selection) {
     return (
-      <View style={[styles.centre, { backgroundColor: theme.background, paddingHorizontal: 40 }]}>
-        <Ionicons name="alert-circle-outline" size={34} color={theme.textMuted} />
-        <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>Selection unavailable</Text>
-        <Text style={[styles.emptyBody, { color: theme.textSecondary }]}>
-          It may have been removed, or you may not have access to it.
-        </Text>
-        {!embedded && (
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backLink}>
-            <Text style={[styles.backLinkText, { color: theme.primary }]}>Go back</Text>
-          </TouchableOpacity>
-        )}
+      <View style={[styles.screen, { backgroundColor: c.bg, paddingTop: embedded ? 0 : insets.top + metrics.schedule.top }]}>
+        {!embedded && <View style={styles.pad}><DetailHeader onBack={() => navigation.goBack()} /></View>}
+        <EmptyState icon={TriangleExclamationPoint} title="Selection unavailable" helper="It may have been removed, or you may not have access to it." />
       </View>
     );
   }
 
-  // A taller hero on the big screen, where the photo is the point.
-  const heroHeight = isWide ? 380 : 250;
+  const dot = selectionDot(state);
+  const approvedOn = chosen?.approvedAt
+    ? new Date(chosen.approvedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+    : null;
+  const docs = (chosen?.attachments ?? []).filter((a) => a.fileType?.toLowerCase() !== 'image');
+  const imageSize = isWide ? sl.heroImage * 1.6 : sl.heroImage;
+  const hasMoreActions = (chosen && canEdit) || !!chosen?.url;
+
+  const section = (key: string, title: string, count: number | null, body: React.ReactNode) => {
+    const open = !closedSections.includes(key);
+    return (
+      <View>
+        <GroupHeader
+          title={title}
+          meta={count ?? undefined}
+          open={open}
+          onToggle={() => setClosedSections(open ? [...closedSections, key] : closedSections.filter((k) => k !== key))}
+        />
+        {open ? body : null}
+      </View>
+    );
+  };
 
   return (
     <KeyboardAvoidingView
-      style={[styles.screen, { backgroundColor: theme.background }]}
+      style={[styles.screen, { backgroundColor: c.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: insets.bottom + (isTeam ? 96 : 32) }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
-        }
+        contentContainerStyle={[
+          styles.body,
+          readableFrame,
+          { paddingTop: embedded ? metrics.schedule.top : insets.top + metrics.schedule.top, paddingBottom: space.screenBottom + (isTeam ? 0 : insets.bottom) },
+        ]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
       >
-        {/* Hero */}
-        <View
-          style={[styles.hero, { height: heroHeight, backgroundColor: theme.subtle }]}
-          onLayout={(e) => setHeroWidth(e.nativeEvent.layout.width)}
-        >
-          {photos.length > 0 ? (
-            <ScrollView
-              ref={heroScroll}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(e) =>
-                setPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / heroWidth))
-              }
-            >
-              {photos.map((photo, i) => (
-                <Pressable
-                  key={photo.id}
-                  onPress={() => openViewer(photos, i)}
-                  accessibilityLabel="View photo full screen"
-                >
-                  <CroppedImage
-                    filePath={photo.filePath}
-                    x={photo.thumbnailX}
-                    y={photo.thumbnailY}
-                    zoom={photo.thumbnailZoom}
-                    style={{ width: heroWidth, height: heroHeight }}
-                  />
-                </Pressable>
-              ))}
-            </ScrollView>
-          ) : (
-            <View style={styles.heroEmpty}>
-              <Ionicons name="image-outline" size={38} color={theme.textMuted} />
-            </View>
-          )}
+        <DetailHeader
+          onBack={embedded ? undefined : () => navigation.goBack()}
+          actions={[
+            { icon: Share2, label: 'Share', onPress: share },
+            ...(hasMoreActions ? [{ icon: Ellipsis, label: 'More actions', onPress: () => moreRef.current?.present() }] : []),
+          ]}
+        />
 
-          {!embedded && (
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              hitSlop={10}
-              style={[styles.backFloat, { top: insets.top + 6 }]}
-            >
-              <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
-
+        {/* Product image: contained on a white card, swipe for more */}
+        <Card style={styles.imageCard}>
+          <View style={{ width: '100%' }} onLayout={(e) => setHeroWidth(e.nativeEvent.layout.width)}>
+            {photos.length > 0 ? (
+              <ScrollView
+                ref={heroScroll}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onMomentumScrollEnd={(e) => setPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / heroWidth))}
+              >
+                {photos.map((photo, i) => (
+                  <Pressable
+                    key={photo.id}
+                    onPress={() => openViewer(photos, i)}
+                    accessibilityLabel="View photo full screen"
+                    style={{ width: heroWidth, alignItems: 'center' }}
+                  >
+                    <SmartImage
+                      source={selectionPhotoSource(photo.filePath)}
+                      width={imageSize}
+                      height={imageSize}
+                      resizeMode="contain"
+                      radius={radii.md}
+                      style={{ backgroundColor: 'transparent' }}
+                    />
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={{ alignItems: 'center' }}>
+                <SmartImage uri={null} width={imageSize} height={imageSize} radius={radii.lg} />
+              </View>
+            )}
+          </View>
           {photos.length > 1 && (
             <View style={styles.dots}>
               {photos.map((photo, i) => (
-                <View
-                  key={photo.id}
-                  style={[styles.dot, i === photoIndex && styles.dotActive]}
-                />
+                <View key={photo.id} style={[styles.dot, { backgroundColor: i === photoIndex ? c.accent : c.grabber }]} />
               ))}
             </View>
           )}
+        </Card>
 
-          <View style={styles.heroFoot}>
-            <View style={styles.heroText}>
-              <Text style={styles.heroName} numberOfLines={2}>
-                {settled && chosen ? chosen.name : selection.name}
-              </Text>
-              <Text style={styles.heroMeta} numberOfLines={1}>
-                {[selection.room, selection.name !== chosen?.name ? selection.name : null]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Text>
-            </View>
-            <StatusPill state={state} />
+        {/* Title block */}
+        <View style={styles.titleBlock}>
+          <Text style={[type.detailTitle, { color: c.text }]}>{settled && chosen ? chosen.name : selection.name}</Text>
+          {!!(selection.room || (chosen && selection.name !== chosen.name)) && (
+            <Text style={[type.meta, { color: c.muted }]}>
+              {[selection.room, chosen && selection.name !== chosen.name ? selection.name : null].filter(Boolean).join(' · ')}
+            </Text>
+          )}
+          <View style={styles.statusLine}>
+            <StatusDot status={dot.status} label={undefined} />
+            <Text style={[type.meta, { color: dot.status === 'pending' ? c.status.pendingText : c.text }]}>{dot.label}</Text>
+            {approvedOn ? <Text style={[type.meta, { color: c.muted }]}>{`· ${approvedOn}`}</Text> : null}
           </View>
         </View>
 
-        {/* Capped at a readable width: a no-op on phones, keeps the notes and
-            description from running 7 inches wide on the Duo unfolded. */}
-        <View style={[styles.body, readableFrame]}>
-          {/* Nothing approved: say so plainly instead of showing a spec. */}
-          {!settled && (
-            <View style={[styles.notice, { backgroundColor: theme.statusWarningBg }]}>
-              <Ionicons name="hourglass-outline" size={16} color={theme.statusWarning} />
-              <Text style={[styles.noticeText, { color: theme.statusWarning }]}>
-                No option is approved yet — don’t order against this.
-              </Text>
-            </View>
-          )}
+        {/* Nothing approved: say so plainly instead of showing a spec. */}
+        {!settled && (
+          <Card variant="notes">
+            <Text style={[type.body, { color: c.status.pendingText }]}>
+              No option is approved yet — don’t order against this.
+            </Text>
+          </Card>
+        )}
 
-          {specRows.length > 0 && (
-            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              {specRows.map((row, i) => (
-                <Pressable
-                  key={`${row.label}-${i}`}
-                  disabled={!row.copyable}
-                  onPress={() => row.copyable && copyCode(row.value)}
-                  style={[
-                    styles.specRow,
-                    i < specRows.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
-                  ]}
-                >
-                  <Text style={[styles.specLabel, { color: theme.textMuted }]}>{row.label}</Text>
-                  <Text
-                    style={[styles.specValue, { color: row.copyable ? theme.primary : theme.textPrimary }]}
-                    numberOfLines={2}
-                  >
-                    {row.value}
-                    {row.copyable ? '  ⧉' : ''}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
+        {(specRows.length > 0 || price !== null) && (
+          <Card variant="list">
+            {specRows.map((row, i) => (
+              <PropertyRow
+                key={`${row.label}-${i}`}
+                label={row.label}
+                labelWidth={sl.propLabel}
+                value={row.value}
+                link={row.copyable}
+                onCopy={row.copyable ? () => copyCode(row.value) : undefined}
+              />
+            ))}
+            {/* Money only arrives for roles with selections pricing access — the
+                server strips it for everyone else, so these simply don't render.
+                It is the CLIENT'S price; cost and markup are never shown here. */}
+            {price !== null ? <PropertyRow key="price" label="Price" labelWidth={sl.propLabel} value={formatMoney(price)} /> : null}
+            {price !== null && selection.allowance != null ? (
+              <PropertyRow key="allowance" label="Allowance" labelWidth={sl.propLabel} value={formatMoney(selection.allowance)} />
+            ) : null}
+          </Card>
+        )}
 
-          {/* A client's pick waiting on sign-off: approve it from site. */}
-          {chosen && !chosen.approvedAt && canApprove && (
-            <TouchableOpacity
-              onPress={() => approve(chosen)}
-              disabled={approvingId !== null}
-              style={[styles.approveBtn, { backgroundColor: theme.statusSuccess, opacity: approvingId ? 0.6 : 1 }]}
-              accessibilityLabel={`Approve ${chosen.name}`}
-            >
-              {approvingId === chosen.id ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle-outline" size={17} color="#FFFFFF" />
-                  <Text style={styles.actionText}>Approve this choice</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+        {/* A client's pick waiting on sign-off: approve it from site. */}
+        {chosen && !chosen.approvedAt && canApprove && (
+          <Pressable
+            onPress={() => approve(chosen)}
+            disabled={approvingId !== null}
+            accessibilityRole="button"
+            accessibilityLabel={`Approve ${chosen.name}`}
+            style={[styles.secondaryBtn, { backgroundColor: c.surface, borderColor: c.border, opacity: approvingId ? metrics.disabledOpacity : 1 }]}
+          >
+            {approvingId === chosen.id ? (
+              <ActivityIndicator size="small" color={c.accent} />
+            ) : (
+              <>
+                <CircleCheck size={size.icon.row} color={c.accent} strokeWidth={metrics.iconStroke} />
+                <Text style={[type.body, { color: c.accent }]}>Approve this choice</Text>
+              </>
+            )}
+          </Pressable>
+        )}
 
-          {/* Nothing chosen yet: the options on offer. These only arrive for
-              roles allowed to see undecided selections — a trade gets a stub
-              and never sees this list. */}
-          {!chosen && (selection.options?.length ?? 0) > 0 && (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>Options to choose from</Text>
+        {/* Nothing chosen yet: the options on offer. These only arrive for
+            roles allowed to see undecided selections — a trade gets a stub
+            and never sees this list. */}
+        {!chosen && (selection.options?.length ?? 0) > 0 &&
+          section('options', 'Options to choose from', selection.options?.length ?? 0, (
+            <Card variant="list">
               {(selection.options ?? []).map((option) => {
                 const img = firstImage(option);
                 const optionPhotos = (option.attachments ?? []).filter((a) => a.fileType?.toLowerCase() === 'image');
                 const optionPrice = clientPriceCents(option);
                 return (
-                  <View key={option.id} style={[styles.optionRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    <Pressable
-                      onPress={() => optionPhotos.length > 0 && openViewer(optionPhotos, 0)}
-                      style={[styles.optionThumb, isWide && styles.optionThumbWide, { backgroundColor: theme.subtle }]}
-                      accessibilityLabel={`View ${option.name} photos`}
-                    >
-                      {img ? (
-                        <CroppedImage
-                          filePath={img.filePath}
-                          x={img.thumbnailX}
-                          y={img.thumbnailY}
-                          zoom={img.thumbnailZoom}
-                          style={StyleSheet.absoluteFill}
-                        />
+                  <ListRow
+                    key={option.id}
+                    onPress={optionPhotos.length > 0 ? () => openViewer(optionPhotos, 0) : undefined}
+                    lead={
+                      img ? (
+                        <View style={[styles.optionThumb, { backgroundColor: c.thumbFill, borderColor: c.hairline }]}>
+                          <CroppedImage filePath={img.filePath} x={img.thumbnailX} y={img.thumbnailY} zoom={img.thumbnailZoom} style={StyleSheet.absoluteFill} />
+                        </View>
                       ) : (
-                        <Ionicons name="image-outline" size={18} color={theme.textMuted} />
-                      )}
-                    </Pressable>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={[styles.optionName, { color: theme.textPrimary }]} numberOfLines={2}>{option.name}</Text>
-                      {!!specLine(option) && (
-                        <Text style={[styles.optionMeta, { color: theme.textSecondary }]} numberOfLines={1}>{specLine(option)}</Text>
-                      )}
-                      {optionPrice !== null && (
-                        <Text style={[styles.optionMeta, { color: theme.textPrimary }]}>{formatMoney(optionPrice)}</Text>
-                      )}
-                    </View>
-                    {canApprove && (
-                      <TouchableOpacity
-                        onPress={() => approve(option)}
-                        disabled={approvingId !== null}
-                        style={[styles.optionApprove, { borderColor: theme.statusSuccess, opacity: approvingId && approvingId !== option.id ? 0.5 : 1 }]}
-                        accessibilityLabel={`Approve ${option.name}`}
-                      >
-                        {approvingId === option.id ? (
-                          <ActivityIndicator size="small" color={theme.statusSuccess} />
-                        ) : (
-                          <Text style={[styles.optionApproveText, { color: theme.statusSuccess }]}>Approve</Text>
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                        <Thumb uri={null} />
+                      )
+                    }
+                    title={option.name}
+                    subtitle={[specLine(option), optionPrice !== null ? formatMoney(optionPrice) : null].filter(Boolean).join(' · ') || undefined}
+                    trailing={
+                      canApprove ? (
+                        <Pressable onPress={() => approve(option)} disabled={approvingId !== null} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel={`Approve ${option.name}`}>
+                          {approvingId === option.id ? (
+                            <ActivityIndicator size="small" color={c.accent} />
+                          ) : (
+                            <Text style={[type.metaSemi, { color: c.accent }]}>Approve</Text>
+                          )}
+                        </Pressable>
+                      ) : undefined
+                    }
+                  />
                 );
               })}
-            </View>
-          )}
+            </Card>
+          ))}
 
-          {/* Money only arrives for roles with selections pricing access — the
-              server strips it for everyone else, so this simply doesn't render.
-              It is the CLIENT'S price; cost and markup are never shown here. */}
-          {price !== null && (
-            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <View style={[styles.specRow, selection.allowance != null && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}>
-                <Text style={[styles.specLabel, { color: theme.textMuted }]}>Client price</Text>
-                <Text style={[styles.specValue, { color: theme.textPrimary }]}>{formatMoney(price)}</Text>
-              </View>
-              {selection.allowance != null && (
-                <View style={styles.specRow}>
-                  <Text style={[styles.specLabel, { color: theme.textMuted }]}>Allowance</Text>
-                  <Text style={[styles.specValue, { color: theme.textPrimary }]}>{formatMoney(selection.allowance)}</Text>
-                </View>
+        {/* Notes: the trades notes (the field the web app lets you write and no
+            other screen shows), then the product description. */}
+        {(!!selection.notes?.trim() || !!chosen?.description) &&
+          section('notes', 'Notes', null, (
+            <Card variant="notes">
+              {!!selection.notes?.trim() && (
+                <Text style={[type.bodyRead, { color: c.textLong }]}>{selection.notes.trim()}</Text>
               )}
-            </View>
-          )}
-
-          {!!chosen?.description && (
-            <Text style={[styles.description, { color: theme.textSecondary }]}>
-              {chosen.description}
-            </Text>
-          )}
-
-          {/* Trades notes — the field the web app lets you write and no read
-              surface has ever shown. */}
-          {!!selection.notes?.trim() && (
-            <View style={[styles.tradeNote, { backgroundColor: theme.amberLight, borderColor: theme.amber }]}>
-              <View style={styles.tradeNoteHead}>
-                <Ionicons name="flag" size={13} color={theme.statusWarning} />
-                <Text style={[styles.tradeNoteTitle, { color: theme.statusWarning }]}>
-                  Trades notes
+              {!!chosen?.description && (
+                <Text style={[type.bodyRead, { color: selection.notes?.trim() ? c.muted : c.textLong, marginTop: selection.notes?.trim() ? space.inline : 0 }]}>
+                  {chosen.description}
                 </Text>
-              </View>
-              <Text style={[styles.tradeNoteBody, { color: theme.textPrimary }]}>
-                {selection.notes.trim()}
-              </Text>
-            </View>
-          )}
-
-          {!!chosen?.url && (
-            <TouchableOpacity
-              onPress={() => Linking.openURL(chosen.url!)}
-              style={[styles.linkRow, { backgroundColor: theme.card, borderColor: theme.border }]}
-            >
-              <Ionicons name="open-outline" size={16} color={theme.primary} />
-              <Text style={[styles.linkText, { color: theme.primary }]} numberOfLines={1}>
-                Open product page
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {(chosen?.attachments ?? [])
-            .filter((a) => a.fileType?.toLowerCase() !== 'image')
-            .map((doc) => (
-              <TouchableOpacity
-                key={doc.id}
-                onPress={() => setOpenDoc({ path: doc.filePath, name: doc.fileName || 'Specification' })}
-                style={[styles.linkRow, { backgroundColor: theme.card, borderColor: theme.border }]}
-                accessibilityLabel={`Open ${doc.fileName || 'document'}`}
-              >
-                <Ionicons name="document-text-outline" size={16} color={theme.primary} />
-                <Text style={[styles.linkText, { color: theme.primary }]} numberOfLines={1}>
-                  {doc.fileName || 'Specification'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-
-          {chosen && canEdit && (
-            <TouchableOpacity
-              onPress={addPhoto}
-              disabled={uploading}
-              style={[styles.linkRow, { backgroundColor: theme.card, borderColor: theme.border, opacity: uploading ? 0.6 : 1 }]}
-              accessibilityLabel="Add a photo"
-            >
-              {uploading ? (
-                <ActivityIndicator size="small" color={theme.primary} />
-              ) : (
-                <Ionicons name="camera-outline" size={16} color={theme.primary} />
               )}
-              <Text style={[styles.linkText, { color: theme.primary }]}>
-                {uploading ? 'Uploading…' : 'Add a photo'}
-              </Text>
-            </TouchableOpacity>
-          )}
+            </Card>
+          ))}
 
-          {isTeam && (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>Conversation</Text>
-              {comments.length === 0 && (
-                <Text style={[styles.optionMeta, { color: theme.textMuted }]}>No comments yet.</Text>
-              )}
-              {comments.map((comment) => (
-                <View
-                  key={comment.id}
-                  style={[
-                    styles.comment,
-                    {
-                      backgroundColor: comment.isClientComment ? theme.tealLight : theme.subtle,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.commentWho, { color: theme.textPrimary }]}>
-                    {comment.createdByName || 'Someone'}
-                    {comment.isClientComment ? ' · Client' : ''}
-                  </Text>
-                  <Text style={[styles.commentBody, { color: theme.textPrimary }]}>
-                    {comment.content}
-                  </Text>
-                </View>
-              ))}
-              <View style={[styles.composer, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <TextInput
-                  value={commentText}
-                  onChangeText={setCommentText}
-                  placeholder="Add a comment for the team"
-                  placeholderTextColor={theme.textMuted}
-                  multiline
-                  style={[styles.composerInput, { color: theme.textPrimary }]}
-                  accessibilityLabel="Comment"
+        {(docs.length > 0 || !!chosen?.url) &&
+          section('attachments', 'Attachments', docs.length + (chosen?.url ? 1 : 0), (
+            <Card variant="list">
+              {docs.map((doc) => (
+                <ListRow
+                  key={doc.id}
+                  onPress={() => setOpenDoc({ path: doc.filePath, name: doc.fileName || 'Specification' })}
+                  lead={<View style={[styles.fileIcon, { backgroundColor: c.greyFill }]}><FileText size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} /></View>}
+                  title={doc.fileName || 'Specification'}
+                  titleLines={1}
+                  subtitle={fileKind(doc.fileName)}
+                  chevron
+                  accessibilityLabel={`Open ${doc.fileName || 'document'}`}
                 />
-                <TouchableOpacity
-                  onPress={sendComment}
-                  disabled={!commentText.trim() || sendingComment}
-                  hitSlop={8}
-                  accessibilityLabel="Send comment"
-                  style={{ opacity: !commentText.trim() || sendingComment ? 0.4 : 1 }}
-                >
-                  {sendingComment ? (
-                    <ActivityIndicator size="small" color={theme.primary} />
-                  ) : (
-                    <Ionicons name="send" size={18} color={theme.primary} />
-                  )}
-                </TouchableOpacity>
-              </View>
+              ))}
+              {chosen?.url ? (
+                <ListRow
+                  key="__url"
+                  onPress={() => Linking.openURL(chosen.url!)}
+                  lead={<View style={[styles.fileIcon, { backgroundColor: c.greyFill }]}><ExternalLink size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} /></View>}
+                  title="Product page"
+                  titleLines={1}
+                  subtitle={hostOf(chosen.url)}
+                  chevron
+                />
+              ) : null}
+            </Card>
+          ))}
+
+        {isTeam &&
+          section('comments', 'Comments', comments.length, (
+            <View style={styles.comments}>
+              {comments.length === 0 ? (
+                <Text style={[type.meta, { color: c.muted }]}>No comments yet.</Text>
+              ) : (
+                <Card variant="list">
+                  {comments.map((comment) => (
+                    <View key={comment.id} style={styles.comment}>
+                      <Text style={[type.metaSemi, { color: c.text }]}>
+                        {comment.createdByName || 'Someone'}
+                        {comment.isClientComment ? <Text style={[type.meta, { color: c.muted }]}> · Client</Text> : null}
+                      </Text>
+                      <Text style={[type.bodyRead, { color: c.textBody }]}>{comment.content}</Text>
+                    </View>
+                  ))}
+                </Card>
+              )}
+              <CommentComposer
+                value={commentText}
+                onChangeText={setCommentText}
+                onSend={sendComment}
+                sending={sendingComment}
+                placeholder="Add a comment for the team"
+              />
             </View>
-          )}
-        </View>
+          ))}
       </ScrollView>
 
-      {isTeam && (
-        <View
-          style={[
-            styles.actionBar,
-            {
-              backgroundColor: theme.card,
-              borderTopColor: theme.border,
-              paddingBottom: insets.bottom + 10,
-            },
-          ]}
-        >
-          <TouchableOpacity
-            onPress={postToChat}
-            disabled={posting}
-            style={[styles.action, readableFrame, { backgroundColor: theme.primary, opacity: posting ? 0.6 : 1 }]}
-          >
-            {posting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <Ionicons name="chatbubble-outline" size={16} color="#FFFFFF" />
-                <Text style={styles.actionText}>Post to project chat</Text>
-              </>
-            )}
-          </TouchableOpacity>
+      {isTeam && <SecondaryActionBar icon={MessageSquare} label={posting ? 'Posting…' : 'Post to project chat'} onPress={postToChat} disabled={posting} />}
+
+      <Sheet ref={moreRef} title={settled && chosen ? chosen.name : selection.name}>
+        <View style={styles.sheetBody}>
+          <Card variant="list">
+            {chosen && canEdit ? (
+              <ListRow
+                key="photo"
+                lead={<Camera size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
+                title={uploading ? 'Uploading…' : 'Add a photo'}
+                onPress={() => { moreRef.current?.dismiss(); setTimeout(addPhoto, 300); }}
+              />
+            ) : null}
+            {chosen?.url ? (
+              <ListRow
+                key="url"
+                lead={<ExternalLink size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
+                title="Open product page"
+                onPress={() => { moreRef.current?.dismiss(); Linking.openURL(chosen.url!); }}
+              />
+            ) : null}
+          </Card>
         </View>
-      )}
+      </Sheet>
 
       {/* Full-screen photos: swipe between them, pinch to zoom (iOS), and a
           close button — the whole photo, not the cropped thumbnail. */}
@@ -818,182 +767,48 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
   );
 }
 
+/** "PDF" from "Spec sheet.pdf" (no size: the API doesn't send one). */
+function fileKind(name?: string | null): string {
+  const ext = (name ?? '').split('.').pop();
+  return ext && ext !== name ? ext.toUpperCase() : 'Document';
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
+const SL = metrics.selections;
+
 const styles = StyleSheet.create({
+  // ── Revamp v1 ──
+  pad: { paddingHorizontal: space.screenX, paddingBottom: metrics.scope.gap },
+  body: { paddingHorizontal: space.screenX, gap: metrics.scope.gap },
+  imageCard: { paddingTop: SL.heroPad.top, paddingBottom: SL.heroPad.bottom, paddingHorizontal: 0, alignItems: 'center', gap: space.rowGap },
+  dots: { flexDirection: 'row', justifyContent: 'center', gap: SL.dotGap },
+  dot: { width: SL.dot, height: SL.dot, borderRadius: SL.dot / 2 },
+  titleBlock: { gap: SL.titleGap },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  secondaryBtn: {
+    minHeight: metrics.actionBar.buttonHeight,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space.inline,
+  },
+  optionThumb: { width: size.thumb, height: size.thumb, borderRadius: radii.md, borderWidth: size.border, overflow: 'hidden' },
+  fileIcon: { width: SL.fileIcon, height: SL.fileIcon, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center' },
+  comments: { gap: space.rowGap },
+  comment: { paddingVertical: metrics.listRow.padY, gap: metrics.listRow.bodyGap },
+  sheetBody: { paddingHorizontal: space.screenX, paddingTop: space.inline },
   screen: { flex: 1 },
-  centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  emptyTitle: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
-  emptyBody: { fontSize: fontSize.bodySm, textAlign: 'center', lineHeight: 19 },
-  backLink: { marginTop: 8, padding: 8 },
-  backLinkText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-
-  hero: { position: 'relative', overflow: 'hidden' },
-  heroEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  backFloat: {
-    position: 'absolute',
-    left: 12,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(20,17,22,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dots: { position: 'absolute', top: 14, right: 14, flexDirection: 'row', gap: 5 },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.45)',
-  },
-  dotActive: { width: 16, borderRadius: 3, backgroundColor: '#FFFFFF' },
-  heroFoot: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 26,
-    paddingBottom: 12,
-    backgroundColor: 'rgba(20,17,22,0.62)',
-  },
-  heroText: { flex: 1, minWidth: 0 },
-  heroName: {
-    color: '#FFFFFF',
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
-    letterSpacing: -0.2,
-  },
-  heroMeta: { color: 'rgba(255,255,255,0.84)', fontSize: fontSize.xs, marginTop: 2 },
-
-  body: { padding: 14, gap: 12 },
-  notice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: radius.xl,
-    padding: 11,
-  },
-  noticeText: { flex: 1, fontSize: fontSize.bodySm, fontWeight: fontWeight.medium },
-
-  card: { borderWidth: 1, borderRadius: radius.xl, overflow: 'hidden' },
-  specRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  specLabel: { fontSize: fontSize.xs, width: 96 },
-  specValue: {
-    flex: 1,
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-    textAlign: 'right',
-  },
-  description: { fontSize: fontSize.bodySm, lineHeight: 19 },
-
-  tradeNote: { borderWidth: 1, borderRadius: radius.xl, padding: 12, gap: 6 },
-  tradeNoteHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tradeNoteTitle: {
-    fontSize: fontSize.data,
-    fontWeight: fontWeight.bold,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  tradeNoteBody: { fontSize: fontSize.bodySm, lineHeight: 19 },
-
-  linkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-  linkText: { fontSize: fontSize.bodySm, fontWeight: fontWeight.semibold },
-
-  section: { gap: 8, paddingTop: 4 },
-  sectionTitle: {
-    fontSize: fontSize.data,
-    fontWeight: fontWeight.bold,
-    letterSpacing: 0.7,
-    textTransform: 'uppercase',
-  },
-  comment: { borderRadius: radius.xl, padding: 10, gap: 3 },
-  commentWho: { fontSize: fontSize.xs, fontWeight: fontWeight.bold },
-  commentBody: { fontSize: fontSize.bodySm, lineHeight: 18 },
-
-  actionBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-  },
-  action: {
-    height: 44,
-    borderRadius: radius.xl,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  actionText: { color: '#FFFFFF', fontSize: fontSize.sm, fontWeight: fontWeight.bold },
 
   zoomBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)' },
-  approveBtn: {
-    height: 44,
-    borderRadius: radius.xl,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  optionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    padding: 8,
-  },
-  optionThumb: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  optionThumbWide: { width: 88, height: 88 },
-  optionName: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  optionMeta: { fontSize: fontSize.xs, marginTop: 1 },
-  optionApprove: {
-    borderWidth: 1.5,
-    borderRadius: radius.lg,
-    paddingHorizontal: 10,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 76,
-  },
-  optionApproveText: { fontSize: fontSize.xs, fontWeight: fontWeight.bold },
-  composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  composerInput: { flex: 1, fontSize: fontSize.bodySm, maxHeight: 120, paddingVertical: 2 },
   zoomPage: { flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
   zoomClose: {
     position: 'absolute',

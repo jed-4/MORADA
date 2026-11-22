@@ -1,26 +1,24 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
-import { PressableScale } from '../ui/PressableScale';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { metrics, radii, size, space, tabular, type, useColors } from '../../theme';
 import CroppedImage from './CroppedImage';
 import StatusPill from './StatusPill';
+import { SmartImage } from '../kit';
 import {
   firstImage,
   formatQuantity,
   getChosenOption,
   getSelectionState,
   isSettled,
-  specLine,
   type Selection,
 } from '../../lib/selections';
 
 /**
- * One line of the spec sheet.
+ * One line of the spec sheet (revamp v1, inside a list Card).
  *
- * The layout inverts the web list on purpose: the small grey label on top is
- * the SLOT ("Splashback tiles") and the bold line is the PRODUCT ("Zellige
- * Lily"). Someone standing in the room already knows which slot they're
- * looking at — what they need is the thing going into it.
+ * Title = the PRODUCT going in ("Avi Pop-Up Waste"); the muted line under it
+ * names the slot, then brand and code ("Basin plug waste · ABI · 14275-LF").
+ * Someone standing in the room already knows the slot — what they need is the
+ * thing going into it.
  */
 export default function SpecRow({
   selection,
@@ -32,33 +30,30 @@ export default function SpecRow({
   /** Open in the right panel (Duo unfolded only). */
   selected?: boolean;
 }) {
-  const theme = useTheme();
+  const c = useColors();
   const state = getSelectionState(selection);
   const settled = isSettled(state);
   const chosen = settled ? getChosenOption(selection) : undefined;
   const image = firstImage(chosen);
-  const spec = specLine(chosen);
   const quantity = formatQuantity(chosen);
 
-  // Nothing decided yet: the row states that plainly instead of showing a
-  // product, so nobody orders against a choice that isn't final.
+  // Nothing decided yet: the row says so plainly instead of naming a product,
+  // so nobody orders against a choice that isn't final.
   const productName = chosen?.name ?? (state === 'open' ? 'Not selected yet' : 'Not approved yet');
-  const subtitle = spec || (settled ? '' : 'Don’t order — decision outstanding');
+  const meta = [selection.name, chosen?.brand, chosen?.sku].filter(Boolean).join(' · ');
 
   return (
-    <PressableScale
+    <Pressable
       onPress={() => onPress(selection)}
-      style={[
-        styles.row,
-        {
-          backgroundColor: settled ? theme.card : 'transparent',
-          borderColor: selected ? theme.primary : settled ? theme.border : theme.borderStrong,
-          borderStyle: settled ? 'solid' : 'dashed',
-        },
-      ]}
+      accessibilityRole="button"
       accessibilityLabel={`${selection.name}: ${productName}`}
+      style={({ pressed }) => [
+        styles.row,
+        selected && { backgroundColor: c.tint },
+        pressed && { opacity: metrics.pressedOpacity },
+      ]}
     >
-      <View style={[styles.thumb, { backgroundColor: theme.subtle }]}>
+      <View style={[styles.thumb, { backgroundColor: c.thumbFill, borderColor: c.hairline }]}>
         {image ? (
           <CroppedImage
             filePath={image.filePath}
@@ -68,72 +63,41 @@ export default function SpecRow({
             style={styles.thumbImage}
           />
         ) : (
-          <Ionicons name="image-outline" size={20} color={theme.textMuted} />
+          <SmartImage uri={null} width="100%" height="100%" radius={0} />
         )}
       </View>
 
       <View style={styles.main}>
-        <Text style={[styles.slot, { color: theme.textMuted }]} numberOfLines={1}>
-          {selection.name}
-        </Text>
-        <Text
-          style={[styles.product, { color: settled ? theme.textPrimary : theme.textMuted }]}
-          numberOfLines={2}
-        >
+        <Text style={[type.rowTitle, { color: settled ? c.text : c.muted }]} numberOfLines={2}>
           {productName}
         </Text>
-        {!!subtitle && (
-          <Text style={[styles.spec, { color: theme.textSecondary }]} numberOfLines={1}>
-            {subtitle}
+        {!!meta && (
+          <Text style={[type.caption, { color: c.muted }]} numberOfLines={1}>
+            {meta}
           </Text>
         )}
       </View>
 
       <View style={styles.trailing}>
-        {!!quantity && (
-          <Text style={[styles.qty, { color: theme.textSecondary }]}>{quantity}</Text>
-        )}
+        {!!quantity && <Text style={[type.meta, tabular, { color: c.muted }]}>{quantity}</Text>}
         <StatusPill state={state} />
       </View>
-    </PressableScale>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 11,
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    padding: 10,
-  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, paddingVertical: metrics.selections.rowPadY },
   thumb: {
-    width: 58,
-    height: 58,
-    borderRadius: radius.lg,
+    width: size.thumb,
+    height: size.thumb,
+    borderRadius: radii.md,
+    borderWidth: size.border,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
   },
   thumbImage: { width: '100%', height: '100%' },
-  main: { flex: 1, minWidth: 0, gap: 1 },
-  slot: {
-    fontSize: fontSize.data,
-    fontWeight: fontWeight.semibold,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
-  product: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    lineHeight: 18,
-  },
-  spec: { fontSize: fontSize.xs },
-  trailing: { alignItems: 'flex-end', gap: 5 },
-  qty: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-    fontVariant: ['tabular-nums'],
-  },
+  main: { flex: 1, minWidth: 0, gap: metrics.selections.rowBodyGap },
+  trailing: { alignItems: 'flex-end', gap: metrics.selections.trailingGap },
 });

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { selectionPhotoSource } from '../../services/selectionsOffline';
+import { SmartImage } from '../kit';
 
 /**
  * A selection photo cropped the way the office set it up on the web: a focal
@@ -29,6 +30,9 @@ export default function CroppedImage({
 }) {
   const [frame, setFrame] = useState<{ w: number; h: number } | null>(null);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
+  // A photo that won't load shows the grey fallback tile, never an empty box.
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [filePath]);
 
   const fx = x ?? 50;
   const fy = y ?? 50;
@@ -50,6 +54,10 @@ export default function CroppedImage({
     };
   }
 
+  if (failed) {
+    return <SmartImage uri={null} width="100%" height="100%" radius={0} style={style} />;
+  }
+
   return (
     <View
       style={[styles.frame, fz < 1 && styles.letterbox, style]}
@@ -63,6 +71,7 @@ export default function CroppedImage({
           const src = e.nativeEvent?.source;
           if (src?.width && src?.height) setNatural({ w: src.width, h: src.height });
         }}
+        onError={() => setFailed(true)}
       />
     </View>
   );
