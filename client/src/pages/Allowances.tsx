@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/EmptyState";
+import { DataTableFilterBar } from "@/components/data-table/DataTableFilterBar";
 import {
   DollarSign,
   Search,
@@ -29,7 +30,6 @@ import {
   MoreHorizontal,
   MoreVertical,
   FolderOpen,
-  SlidersHorizontal,
   X,
   Eye,
   EyeOff,
@@ -242,6 +242,11 @@ function StatusBadgePopover({
   );
 }
 
+/** The estimate group an allowance sits in, as shown in the grouped list. */
+function groupKeyOf(a: { item: { groupName?: string | null } }): string {
+  return a.item.groupName?.trim() || "Ungrouped";
+}
+
 // ───────────────────────────────────────────────────────────────────────
 // Main page
 // ───────────────────────────────────────────────────────────────────────
@@ -254,7 +259,37 @@ export default function Allowances() {
   const { statusOptions, getStatusInfo } = useAllowanceStatusOptions();
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  // Funnel filters (status / group / budget), remembered per project in this
+  // browser so leaving an allowance and coming back keeps your place. Search
+  // and the PC/PS toggle are not remembered.
+  type SavedFilters = { status: string[]; groups: string[]; budget: string[] };
+  const filtersKey = `allowances-filters-${projectId}`;
+  const readSavedFilters = (): SavedFilters => {
+    try {
+      const raw = localStorage.getItem(filtersKey);
+      if (raw) {
+        const v = JSON.parse(raw) as Partial<SavedFilters>;
+        return {
+          status: Array.isArray(v.status) ? v.status : [],
+          groups: Array.isArray(v.groups) ? v.groups : [],
+          budget: Array.isArray(v.budget) ? v.budget : [],
+        };
+      }
+    } catch { /* ignore */ }
+    return { status: [], groups: [], budget: [] };
+  };
+  const [savedFilters, setSavedFilters] = useState<SavedFilters>(readSavedFilters);
+  // Project switch: load that project's filters.
+  useEffect(() => { setSavedFilters(readSavedFilters()); }, [filtersKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    try { localStorage.setItem(filtersKey, JSON.stringify(savedFilters)); } catch { /* ignore */ }
+  }, [filtersKey, savedFilters]);
+  const statusFilters = savedFilters.status;
+  const groupFilters = savedFilters.groups;
+  const budgetFilters = savedFilters.budget;
+  const setStatusFilters = (v: string[]) => setSavedFilters((f) => ({ ...f, status: v }));
+  const setGroupFilters = (v: string[]) => setSavedFilters((f) => ({ ...f, groups: v }));
+  const setBudgetFilters = (v: string[]) => setSavedFilters((f) => ({ ...f, budget: v }));
   const [typeFilter, setTypeFilter] = useState<"all" | "pc" | "ps">("all");
   const [selectedEstimateId, setSelectedEstimateId] = useState<string | null>(null);
   const [showSummaryCards, setShowSummaryCards] = useState<boolean>(() => {
@@ -381,12 +416,37 @@ export default function Allowances() {
         )
           return false;
       }
-      if (statusFilter && a.item.allowanceStatus !== statusFilter) return false;
+      if (statusFilters.length > 0 && !statusFilters.includes(a.item.allowanceStatus)) return false;
+      if (groupFilters.length > 0 && !groupFilters.includes(groupKeyOf(a))) return false;
+      if (budgetFilters.length > 0) {
+        // Either chosen budget condition matches (OR within the facet).
+        const over = a.actualCost > (a.item.priceIncTax || 0);
+        const noCost = (a.actualCost || 0) === 0;
+        const hit = (budgetFilters.includes("over") && over) || (budgetFilters.includes("no-cost") && noCost);
+        if (!hit) return false;
+      }
       if (typeFilter === "pc" && a.item.allowance !== "Prime Cost") return false;
       if (typeFilter === "ps" && a.item.allowance !== "Provisional Sum") return false;
       return true;
     });
-  }, [estimateScoped, searchTerm, statusFilter, typeFilter]);
+  }, [estimateScoped, searchTerm, statusFilters, groupFilters, budgetFilters, typeFilter]);
+
+  // Group options for the funnel: the estimate groups present, in estimate order.
+  const groupOptions = useMemo(() => {
+    const order = new Map<string, number>();
+    for (const a of estimateScoped) {
+      const k = groupKeyOf(a);
+      const o = typeof a.item.groupOrder === "number" ? a.item.groupOrder : Number.MAX_SAFE_INTEGER;
+      if (!order.has(k) || o < order.get(k)!) order.set(k, o);
+    }
+    return Array.from(order.entries())
+      .sort((x, y) => {
+        if (x[0] === "Ungrouped") return 1;
+        if (y[0] === "Ungrouped") return -1;
+        return x[1] - y[1] || x[0].localeCompare(y[0]);
+      })
+      .map(([k]) => ({ value: k, label: k }));
+  }, [estimateScoped]);
 
   // Group items
   const grouped = useMemo(() => {
@@ -394,7 +454,7 @@ export default function Allowances() {
     // Track the estimate order of each group so we can sort groups to match the estimate
     const groupOrder = new Map<string, number>();
     filtered.forEach((a) => {
-      const key = a.item.groupName?.trim() || "Ungrouped";
+      const key = groupKeyOf(a);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(a);
       const order = a.item.groupOrder;
@@ -577,87 +637,65 @@ export default function Allowances() {
           })}
         </div>
 
+        {/* Search + filters, same pattern as Bills and Timesheets */}
+        <div className="flex items-center gap-2 ml-2 mr-auto">
+          <div className="relative flex-shrink-0">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Input
+              placeholder="Search allowances..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-7 pr-6 py-0 h-6 text-xs w-44 border border-border/50"
+              data-testid="input-search-allowances"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover-elevate"
+                data-testid="button-clear-search"
+                aria-label="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          <DataTableFilterBar
+            facets={[
+              {
+                key: "status",
+                label: "Status",
+                allLabel: "All statuses",
+                selected: statusFilters,
+                onChange: setStatusFilters,
+                options: filterStatusOptions.map((o) => ({ value: o.key, label: o.name })),
+              },
+              {
+                key: "group",
+                label: "Group",
+                allLabel: "All groups",
+                searchable: true,
+                selected: groupFilters,
+                onChange: setGroupFilters,
+                options: groupOptions,
+              },
+              {
+                key: "budget",
+                label: "Budget",
+                allLabel: "Any",
+                selected: budgetFilters,
+                onChange: setBudgetFilters,
+                options: [
+                  { value: "over", label: "Over budget" },
+                  { value: "no-cost", label: "No cost yet" },
+                ],
+              },
+            ]}
+          />
+        </div>
+
         {/* Right-side actions */}
         <div className="flex items-center gap-1">
-        {/* Search icon button (popover with input) */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className={`h-7 w-7 ${searchTerm ? "text-primary" : "text-muted-foreground"}`}
-              data-testid="button-search-allowances"
-            >
-              <Search className="h-3.5 w-3.5" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-64 p-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-              <Input
-                autoFocus
-                placeholder="Search allowances…"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-7 pr-7 h-8 text-[12px] bg-card border border-border rounded-md"
-                data-testid="input-search-allowances"
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm("")}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover-elevate"
-                  data-testid="button-clear-search"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        {/* Filter icon button (popover with status filter) */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className={`h-7 w-7 ${statusFilter ? "text-primary" : "text-muted-foreground"}`}
-              data-testid="button-filter-allowances"
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-56 p-3">
-            <div className="space-y-2">
-              <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Status
-              </label>
-              <Select
-                value={statusFilter || "all"}
-                onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}
-              >
-                <SelectTrigger
-                  className="w-full h-8 text-[12px] bg-card border-border rounded-md"
-                  data-testid="select-status-filter"
-                >
-                  <SelectValue>
-                    {statusFilter ? getStatusInfo(statusFilter).name : "All Statuses"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  {filterStatusOptions.map((s) => (
-                    <SelectItem key={s.key} value={s.key}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </PopoverContent>
-        </Popover>
-
         {/* Options menu */}
         <Popover>
           <PopoverTrigger asChild>
@@ -780,7 +818,7 @@ export default function Allowances() {
             description={
               allowances.length === 0
                 ? "Add Prime Cost or Provisional Sum items in your estimates to track allowances here."
-                : searchTerm || statusFilter || typeFilter !== "all"
+                : searchTerm || statusFilters.length || groupFilters.length || budgetFilters.length || typeFilter !== "all"
                   ? "Try adjusting your search or filters."
                   : "No allowances found for the selected estimate."
             }
