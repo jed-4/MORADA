@@ -1,0 +1,264 @@
+# Designer annotations (what changed and why), copied from the Figma annotation frames.
+# Note: the 'Projects v3' notes describe v3; the approved Projects v4 swaps the left colour bar for the small colour square.
+# Workspace v4 and Projects v4 have no annotation of their own; the v3 notes still apply. Schedule notes in "Project tasks & schedule v2" were superseded by the Schedule v3 notes (and List v4 = v2 list body + v3 header/tabs).
+
+=== 21:538 Annotation — Workspace v3
+Workspace v3 — changes vs v2
+1
+Projects capped at 5 rows
+Pinned projects first (tiny pin icon), then the most recently active. A quiet “+35 more ›” row in #9B968F opens the Projects tab. The header still shows the full count, 40. Works for Jed (40) and for team members (~6).
+2
+Every section collapses
+Tap the title to toggle. A tiny caret after the title shows the state: down = open, right = collapsed. Collapsed = header row only, with the count. The full-scroll frame shows Timesheets collapsed.
+3
+No more text links
+“See all” and “Open calendar” are gone. One small muted chevron (#9B968F, 16px) at the far right of each header opens the full list: “Projects 40 ›”.
+4
+Header pattern
+Left: grey line icon, 15pt semibold title, caret, muted count. Right: open-list chevron. Same on every card.
+5
+Kept from v2
+Compact quick capture chips, white section cards on #FBFAF8, Today merging tasks and schedule, condensed activity.
+
+=== 26:1028 Annotation — Projects v3
+Projects v3 — minimalist pass
+1
+Quieter cards
+Address (bold) + short price ($486k, $1.19m) on top, client below. No % text. Only Construction cards show a progress line; elsewhere the left colour bar carries the colour.
+2
+A vs B
+v3A bordered: white cards with a 1px #EBE8E3 border. v3B borderless: white cards on #FBFAF8, separated by spacing only (no shadow).
+3
+Search on demand
+Search bar and chips removed. Header = Projects + muted count, with search and + icons. Tapping search shows a field plus All / Mine / Construction / Post-con chips (see “search open”).
+4
+Calmer groups and type
+Group headers lose their icons: title, caret, muted count, muted ›. Post-construction is collapsed by default. Only the address is bold; everything else is regular, and all secondary text is #9B968F.
+5
+Dummy data
+Clients, contract prices, progress and group counts are placeholders.
+
+=== 33:1396 Annotation — Project detail v3
+Project detail v3 — what changed
+1
+Sections one tap away
+A row of quiet tiles sits right under the header: grey line icon, label, muted count. White with a 1px #EBE8E3 border, no pastel colours. It replaces the original tile row, in the new style.
+2
+v3A: scrolling row
+Nine 76×64 tiles: Tasks, Schedule, Variations, Selections, Scope, Documents, Diary, Checklists, Defects. The cut-off tile at the right edge hints that it scrolls. Only one row high, so the overview still shows above the fold.
+3
+v3B: 4×2 grid
+Seven sections plus a More tile (Checklists, Defects) are visible at once with no scrolling, at the cost of about 70px more height.
+4
+Capture moved to a + button
+Photo / Diary / Defect / Variation now open from one floating + button above the tab bar, so the top of the screen holds a single row of controls instead of two. Tapping + would open the four chips as a small sheet.
+5
+Everything else as v2
+Same header, overview and collapsible section cards. Defects is added as a collapsed card. All data are placeholders.
+
+=== 35:492 Annotation — Messages v3
+Messages v3 — what changed
+1
+Pinned on top, then one inbox
+Only Pinned keeps a small group card with the minimal header. Everything else is one list sorted by latest message, newest first, so whatever was updated last rises to the top.
+2
+Mixed thread types, one list
+Project threads, channels and DMs sit together. The marker shows the type: project-colour square, muted #, or grey initials circle.
+3
+Quiet label, no grouping
+A muted "Recent" label sits above the list card. It has no caret or count, because the list is never collapsed or split up.
+4
+Unread in purple only
+An unread thread gets a semibold name, a purple time and a purple count badge. Times run 2m, 14m, 1h, 3h, Yesterday, Thu, Mon, 12 Nov, 27 Oct, 17 Jul.
+5
+Dummy data
+Names, previews, times and counts are placeholders.
+
+=== 38:471 Annotation — Calendar v4
+Calendar v4 — what changed
+1
+Compact header
+One row: "November 2026" with muted ‹ › beside it, and Today + filter on the right. The view switch sits alone underneath.
+2
+Colour means project
+Only project-linked events get the project-colour tint and strip (26 Ocean, 20 Swan, 22 Boanyo, 30 Golfers, 45 Pheasant Point). Internal events (sign on, stand-up, financials, client update) are plain: #F2F0EC fill with a #C9C4BC strip.
+3
+Short events stay clean
+Events of 45 minutes or less show the title only. The time appears only when the block is tall enough.
+4
+All-day collapses
+One line of all-day chips, then a muted "+3 more" with a small caret to expand.
+5
++ moves to a floating button
+The header + is replaced by the same floating purple + as Project detail v3A, bottom-right above the tab bar, clear of the events. All data are placeholders.
+
+=== 39:457 Annotation — More v3
+More v3 — what changed
+1
+Same sheet, final style
+The bottom sheet sits over a dimmed Calendar v4, as in v2. Grabber, then a profile row with a soft accent-tint J, the email in muted grey and a muted ›.
+2
+Create first, slim
+New task, New note and Diary entry as one row of accent-tint chips, because creating is the most common action.
+3
+One plain list
+The pastel tile grid becomes one white bordered card: #6B665F line icons, regular labels, muted counts (My tasks 20, My defects 5), muted ›, #EBE8E3 dividers. Schedule stays (project schedule, not the calendar).
+4
+Settings apart
+Settings, Help & feedback and a muted Sign out sit in a second small card.
+5
+Dummy data
+Email and counts are placeholders.
+
+=== 40:658 Annotation — Project tasks & schedule v2
+Tasks & Schedule v2 — what changed
+1
+Tasks: groups without the noise
+Header is ‹ Tasks with the project square and name, plus quiet show-completed and view icons. No tinted bar. Groups are sentence-case headers with a caret and muted count, and tasks sit in one bordered card each (round checkbox, title, muted due · initials). Empty groups fold into one "Show empty groups" line.
+2
+Schedule list: calm status
+A quiet List / Gantt / Calendar switch. Items are grouped by start date in bordered cards: title, muted dates · trade, and a small status dot (green Done, purple In progress, grey Upcoming) instead of loud pills. Done titles are muted, and older finished items collapse into "8 earlier items done".
+3
+Gantt: just the bars
+A narrower item column in sentence case, no alternating fills, faint gridlines, today as a faint purple column with a thin line. Bars use the Calendar v4 tint + 3px strip in three calm trade colours (slate, blue, teal). Items beyond the range show their date at the edge.
+4
+Calendar: same as Calendar v4
+One row with November 2026 and ‹ ›, Month / Week as quiet text, events as tint + strip blocks, purple now-line. The second filled control is gone.
+5
+One + everywhere
+The floating purple + from Project detail v3A sits on all four screens. All data are placeholders.
+
+=== 42:553 Annotation — Schedule v3
+Schedule v3 — what changed
+1
+One header row
+‹ Schedule with the project square and name muted beside it, and a quiet bell. No second line.
+2
+Lighter view switch
+List / Gantt / Calendar are plain text tabs with a thin purple underline on the active one. On Gantt and Calendar the same row holds ‹ Today ›, so the separate date and arrows line is gone.
+3
+Gantt
+Weekends (Sat/Sun) are a soft grey #F2F0EC through the header and body. "Nov" sits in the corner above the item column. Today is still the purple circle and a thin line, and an extra item row now fits.
+4
+List
+One card instead of one per date. The date is a muted left column shown once per day, with dividers only between days. A thin purple "Today" marker separates done from upcoming. Status is still a dot.
+5
+Calendar
+The month and Month/Week rows are gone. "Nov" sits in the gutter of the day header, the weekend column is grey, and tint + strip events and the purple now-line stay.
+
+=== 44:548 Annotation — Scope v2
+Scope v2 — what changed
+1
+One header row
+‹ Scope with the project square and name muted beside it, then quiet search and filter icons. A thin progress line ("4 of 18 done") sits under it.
+2
+Categories, not caps
+Sentence-case headers with a caret and a muted done count (0/3). No big category checkboxes. Less-used categories sit collapsed as plain rows at the bottom.
+3
+One card per category
+Items are rows with dividers inside one bordered card: a small rounded checkbox, the title, and the type as a tiny dot + muted word (Scope lilac, Material soft salmon) instead of coloured pills.
+4
+Readable scope text
+An expanded item shows its scope as a bulleted list: 14pt, 21px line height, muted bullets. The viewport shows 4 lines then "Show all · 2 more"; the full-scroll frame shows them all.
+5
+Same + everywhere
+The floating purple + sits bottom-right above the tab bar. All data are placeholders.
+
+=== 45:792 Annotation — Selections v2
+Selections v2 — what changed
+1
+List: one header, one card
+‹ Selections with the project square and name muted, search as an icon (opens the field + chips like Projects). A thin progress line ("20 of 21 selected · 1 pending") replaces the subtitle. By room / By category are text tabs with a purple underline.
+2
+Rows, not tiles
+Room groups are collapsible headers (Ensuite 19/20). Items sit as rows in one bordered card: 48px rounded thumbnail, product name, muted "Category · Brand · Code", qty on the right and a status dot (green Approved, amber Pending, grey Not selected) instead of pills.
+3
+Images that fail gracefully
+Thumbnails are neutral product renders on a soft tile. When an image is missing or fails to load (current live bug), the row shows a soft #F2F0EC tile with a small grey image icon ("Existing Basin") instead of an empty lilac box.
+4
+Detail: quiet and scannable
+Plain header (‹, share, more). The product sits in a bordered image card with carousel dots. Title, muted room · category, and a status dot with who/when. Properties are a Notion-style list (muted label left, value right); the product code is link-coloured with a copy icon.
+5
+Sections + quiet action
+Notes, Attachments (spec sheet), Supplier and a collapsed Activity follow. The heavy purple button becomes a slim bottom bar with an outlined "Post to project chat".
+
+=== 46:534 Annotation — Defects v2
+Defects v2 — what changed
+1
+List: one header, quiet filters
+‹ Defects with the project square and name muted, search and filter icons. Status is one scrollable row of small chips with counts (All, Open, Sent to trade, Accepted, Rejected, Closed). Job stage, Mine and Overdue move behind the filter icon.
+2
+Grouped rows
+Defects are grouped by location under collapsible headers, as rows in one bordered card: a 48px photo, muted D-number + full-width title, then a meta line starting with a status dot + word (amber Open, blue Sent to trade, green Accepted/Closed, red Rejected) · trade · due date (overdue in red). A defect with no photo shows a soft tile with a camera icon.
+3
+Empty: calm
+No search bar or chips when there is nothing to filter. A soft circle with a line icon, "No defects" and one muted helper line. The purple camera button sits in the usual + spot instead of a big centred pill.
+4
+Add: Notion-style form
+Cancel / New defect / Done header. Take photo and Library are two equal dashed tiles with purple icons, with captured photos below. The title is a large borderless field and notes a muted one. Location, Trade, Assignee, Due date and Priority are a property list. The bottom bar has a plain "Done" and "Save & next", shown disabled (light) until a title is entered.
+
+=== 47:970 Annotation — Site diary v1
+Site diary v1 — what changed
+1
+No more repeated titles
+Each entry leads with its date (Fri 20 Nov) and time muted. The project name and "01. Daily Log – 13/11" no longer repeat on every card. The project shows once in the header as the small square + name.
+2
+Grouped by week, one card each
+This week / Last week are collapsible headers with the date range and count muted. Entries are rows in one bordered card with a two-line preview of Work completed and small muted meta icons: weather + temp, people on site, photo count.
+3
+Quiet template picker
+The bordered "Daily …" button becomes "All types ▾" muted text beside the entry count. Choosing a template moves into the + flow. Non-daily types (Inspection, Delay) show their label in purple; Daily log stays muted.
+4
+Entry detail: date as title
+Minimal header (‹ and ••• for edit/delete). The date is the title, with "11:00 am · Daily log · ■ 45 Pheasant Point" muted. Weather, On site, Hours and Logged by are a property list. Work completed, Issues / delays, Deliveries and Notes are plain blocks with small muted labels, then a photo strip with an add tile.
+
+=== 48:552 Annotation — Checklists v1
+Checklists v1 — what changed
+1
+List: one card, quiet progress
+The header matches Defects and Site diary. Active checklists are rows in one bordered card: sentence-case name ("Contract to kick off · Rev 2"), muted "28 of 58" and a thin 3px progress line, with a muted ›. The grey Active pills are gone. Completed and Archived sit collapsed at the bottom.
+2
+Detail opens on its own screen
+No more expanding inside a card. Opening a checklist shows the title, muted "3 of 71 · ■ 45 Pheasant Point" and a thin progress line, with "Collapse all" as quiet text.
+3
+Phases as toggles
+Sentence-case toggles ("Phase 0 · Lock the job") with muted "Day 0–3" and "3/12" instead of purple caps. Phase 0 is open with its items in one bordered card; phases 1–3 are collapsed rows.
+4
+Calmer items
+Small soft-square checkboxes; checked = purple fill and muted strikethrough text. Some items carry muted initials · due date. The per-row ⋮ menu is gone: long-press or swipe for edit, assign, due date and delete.
+
+=== 49:631 Annotation — Labour hours v1
+Labour hours v1 — what changed
+1
+One summary, no caps
+BUDGETED / USED / REMAINING becomes one small card: "Used 47h of 214h", a thin purple progress line and a muted "167h left". No green.
+2
+Groups, one card each
+Management, On-site and Labourer are collapsible headers with muted "used / budget" totals. Codes are rows in one bordered card: muted code, name without the "Labour –" prefix, right-aligned "1.8 / 18h", and a thin 3px bar underneath.
+3
+One warning colour
+Normal progress is purple. Over budget is the only other colour: the hours, the bar and a small "+3h over" in a muted warm red. The green/blue remaining pills are gone; remaining shows in the summary and on the code detail.
+4
+Code detail + log hours
+Tapping a code opens its own screen: title, muted code · group · project, the same summary card, a "By person" row and logged hours by person/date with a short note. The + logs hours. Numbers should use Inter tabular figures (tnum); set this on the text styles in Figma, as the plugin cannot set it.
+
+=== 53:322 Annotation — Duo / unfolded v1
+Duo / unfolded v1 — patterns
+1
+Same language, wider canvas
+All 7 screens reuse the approved phone parts: one-row headers with the project square + name, sentence-case collapsible groups, one bordered card per group, thin progress lines, status dots, tint + strip bars, and the floating + where the phone has it.
+2
+Master-detail
+Tasks, Selections, Site diary and Messages split into a list pane (380–420px, right hairline) and a detail pane. The selected row gets a soft #F3F0F7 tint instead of a coloured left bar. Destructive actions (delete task) live in •••.
+3
+Project switcher rail
+Project detail has an 88px rail: small colour square, job number and short name, the current job tinted. It replaces the stacked coloured tiles. Section tiles fit in one row at this width (Tasks … Labour), and the main pane splits into Project info (property list) and Tasks · today.
+4
+Workspace fills the space
+Left: quick capture tiles with the project picker inline, Today agenda (tint strips by project colour) and My tasks. Right: projects list with colour squares and stage text, then recent activity.
+5
+Gantt + Messages
+Gantt shows 12–29 Nov with weekends grey, "Nov" in the corner and ‹ Today › in the tab row. Messages follows the v3 rule: Pinned at top, then one Recent list newest first, unread in purple; the open thread sits on the right.
+6
+Quieter tab bar
+Horizontal icon + label, centred. Active item is purple text/icon on a soft tint; the rest are muted.
