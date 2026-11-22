@@ -9,7 +9,7 @@
 // Editing model: rows edit INLINE — click a row (or the + Add line row) and its
 // cells become inputs aligned to the same grid columns; ✓ commits, Esc cancels.
 
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -156,11 +156,31 @@ function deriveRow(row: LineItemRow) {
   };
 }
 
+/**
+ * Why a draft can't be saved, or null when it can. $0 is a valid price — an
+ * allowance that ends up costing nothing is closed with a $0 line — but the
+ * cost must be TYPED (a blank box is not a deliberate $0), and negative costs
+ * are not allowed here.
+ */
+// The tick / cross / delete column stays pinned to the right edge of the
+// scroll area, so on a table wider than the card you can confirm a line without
+// scrolling sideways to find the tick. Solid card background so the columns
+// scrolling underneath don't show through.
+const ACTION_CELL = "sticky right-0 z-[1] flex justify-end self-stretch items-center bg-card pl-1";
+
+function draftProblem(draft: Draft): string | null {
+  if (!draft.description.trim() && !draft.itemName.trim()) return "Add an item name or description";
+  if (!((parseFloat(draft.quantity) || 0) > 0)) return "Quantity must be more than 0";
+  if (draft.unitCostEx.trim() === "") return "Enter a unit cost (0 is fine)";
+  if (dollarsToCents(draft.unitCostEx) < 0) return "Unit cost can't be negative";
+  return null;
+}
+
 function draftToLine(draft: Draft): NewLineItem | null {
   const qty = parseFloat(draft.quantity) || 0;
   const unitCostEx = dollarsToCents(draft.unitCostEx);
   const markup = parseFloat(draft.markupPercent) || 0;
-  if ((!draft.description.trim() && !draft.itemName.trim()) || qty <= 0 || unitCostEx <= 0) return null;
+  if (draftProblem(draft)) return null;
   const builderEx = Math.round(qty * unitCostEx);
   const amountEx = builderEx + Math.round((builderEx * markup) / 100);
   const amountInc = incGstFromEx(amountEx);
@@ -342,7 +362,14 @@ export function LineItemsTable({
     setEditingId(row.id);
   };
 
+  // Shown under the edit row when the tick is pressed on a draft that can't be
+  // saved — previously the tick silently did nothing.
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => { setProblem(null); }, [draft, editingId]);
+
   const commit = () => {
+    const reason = draftProblem(draft);
+    if (reason) { setProblem(reason); return; }
     const line = draftToLine(draft);
     if (!line) return;
     if (editingId === "new") onAdd?.(line);
@@ -452,7 +479,7 @@ export function LineItemsTable({
       {columns.map((c) => (
         <div key={c.key} className={c.align === "right" ? "flex justify-end" : ""}>{inputCell(c.key)}</div>
       ))}
-      <span className="flex justify-end gap-0.5">
+      <span className={`${ACTION_CELL} gap-0.5`}>
         <Button variant="ghost" size="icon" className="h-6 w-6 text-primary" onClick={commit} data-testid="button-confirm-line">
           <Check className="h-3.5 w-3.5" />
         </Button>
@@ -460,6 +487,15 @@ export function LineItemsTable({
           <X className="h-3 w-3" />
         </Button>
       </span>
+      {problem && (
+        <p
+          className="text-[11px] text-[hsl(var(--coral))] sticky left-0"
+          style={{ gridColumn: `1 / span ${columns.length + 1}` }}
+          data-testid="text-line-problem"
+        >
+          {problem}
+        </p>
+      )}
     </div>
   );
 
@@ -499,7 +535,7 @@ export function LineItemsTable({
                 </span>
               </span>
             ))}
-            <span />
+            <span className={ACTION_CELL} />
           </div>
 
           {/* Rows */}
@@ -526,7 +562,7 @@ export function LineItemsTable({
                     {cellValue(row, c.key)}
                   </span>
                 ))}
-                <span className="flex justify-end">
+                <span className={ACTION_CELL}>
                   {onDelete && row.deletable !== false && (
                     <Button
                       variant="ghost"
