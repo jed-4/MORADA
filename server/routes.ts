@@ -35997,6 +35997,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Labour Hours drill-down — the timesheets behind one cost code's Pending
+  // (?status=submitted) or Approved (?status=approved) hours. Hours only, no
+  // pay rates, so it sits behind the same permission as the hours budget.
+  app.get("/api/projects/:projectId/labour-hours-entries", requireAuth, requirePermission("financial.budget_labour", "view"), async (req, res) => {
+    try {
+      if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
+      const costCodeId = typeof req.query.costCodeId === "string" ? req.query.costCodeId : "";
+      const status = req.query.status === "submitted" ? "submitted" : req.query.status === "approved" ? "approved" : null;
+      if (!costCodeId || !status) return res.status(400).json({ error: "costCodeId and status (submitted|approved) are required" });
+      const { loadLabourHoursEntries } = await import("./services/labourHoursEntries");
+      res.json(await loadLabourHoursEntries(req.params.projectId, costCodeId, status));
+    } catch (error: any) {
+      console.error("[GET /api/projects/:projectId/labour-hours-entries] Error:", error);
+      res.status(500).json({ error: "Failed to fetch labour hours entries" });
+    }
+  });
+
   app.post("/api/projects/:projectId/labour-hours-budget/recalculate", requireAuth, requirePermission("financial.budget_labour", "view"), async (req, res) => {
     try {
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
