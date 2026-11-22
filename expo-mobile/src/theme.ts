@@ -517,7 +517,6 @@ export const metrics = {
     sectionGap: 28,
     headerIcon: 22,
     headerGap: 2,
-    weatherIcon: 13,
     captureGap: 8,
     chipGap: 6,
     pill: { padTop: 5, padRight: 8, padBottom: 5, padLeft: 10, gap: 5, icon: 13, caret: 12, maxName: 150 },

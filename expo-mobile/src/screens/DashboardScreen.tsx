@@ -39,8 +39,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme, useColors, fontSize, fontWeight, radius, projectColors, metrics, radii, size, space, tabular, type, fonts } from '../theme';
 import {
-  Activity, AtSign, Bell, Building, ChevronDown, ChevronRight, CircleCheck, Clock, Cloud, CloudFog, CloudLightning, CloudRain,
-  CloudSun, Folder, Lightbulb, LogOut, Settings, Snowflake, Sun, type LucideIcon,
+  Activity, AtSign, Bell, Building, ChevronDown, ChevronRight, CircleCheck, Clock, Folder, Lightbulb, LogOut, Settings,
 } from 'lucide-react-native';
 import { Avatar, Card, Checkbox, Divider, ListRow, UnreadBadge } from '../components/kit';
 import { AgendaRow, EmptyLine, MoreRow, ProjectLineRow, Rows, SubLabel, WorkspaceSection } from '../components/home/WorkspaceSections';
@@ -153,16 +152,6 @@ interface CostCode {
   title: string;
 }
 
-interface SiteWeather {
-  tempMax: number;
-  tempMin: number;
-  description: string;
-  iconKey: string;
-  precipChance: number;
-  rainFromHour: number | null;
-  locationName: string;
-}
-
 interface MentionNotification {
   id: string;
   type: string;
@@ -211,25 +200,6 @@ function formatDateLabel(dateStr: string): string {
 }
 
 const isComplete = (s?: string) => s === 'completed' || s === 'done';
-
-/** Server weather iconKey → Lucide icon. */
-const weatherIcons: Record<string, LucideIcon> = {
-  clear: Sun,
-  'partly-cloudy': CloudSun,
-  cloudy: Cloud,
-  fog: CloudFog,
-  rain: CloudRain,
-  thunderstorm: CloudLightning,
-  snow: Snowflake,
-};
-
-/** 0-23 → "12am" / "2pm". */
-function formatHour(hour: number): string {
-  if (hour === 0) return '12am';
-  if (hour < 12) return `${hour}am`;
-  if (hour === 12) return '12pm';
-  return `${hour - 12}pm`;
-}
 
 const BREAK_OPTIONS = [0, 15, 30, 45, 60, 90, 120];
 
@@ -294,7 +264,6 @@ export default function DashboardScreen({ navigation }: Props) {
   const [taskDetailLoading, setTaskDetailLoading] = useState(false);
   const [savingChecklist, setSavingChecklist] = useState(false);
   const [scheduleDetail, setScheduleDetail] = useState<ScheduleItem | null>(null);
-  const [weather, setWeather] = useState<SiteWeather | null>(null);
   const [mentions, setMentions] = useState<MentionNotification[]>([]);
   const [scheduleStatusOptions, setScheduleStatusOptions] = useState<{ key: string; name: string; color: string }[]>([]);
   const [phaseLabels, setPhaseLabels] = useState<Record<string, string>>({});
@@ -416,32 +385,6 @@ export default function DashboardScreen({ navigation }: Props) {
       fetchMentions();
     }, [fetchMentions])
   );
-
-  // Site weather for the active (clocked-in) project, else the first project.
-  // Weather is garnish — any failure just means no weather line.
-  const weatherProjectId = activeTimesheet?.projectId || projects[0]?.id;
-  useEffect(() => {
-    if (!weatherProjectId) {
-      setWeather(null);
-      return;
-    }
-    const cacheKey = `weather:${weatherProjectId}`;
-    const cached = getCached<SiteWeather>(cacheKey);
-    if (cached) {
-      setWeather(cached);
-      return;
-    }
-    let cancelled = false;
-    apiFetch<SiteWeather>(`/api/weather?projectId=${weatherProjectId}`)
-      .then(data => {
-        setCached(cacheKey, data);
-        if (!cancelled) setWeather(data);
-      })
-      .catch(() => {
-        if (!cancelled) setWeather(null);
-      });
-    return () => { cancelled = true; };
-  }, [weatherProjectId]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -669,19 +612,6 @@ export default function DashboardScreen({ navigation }: Props) {
         <Text style={[type.display, { color: c.text }]} numberOfLines={1}>
           {firstName || fullDisplayName}
         </Text>
-        {weather && (
-          <View style={styles.weatherRow}>
-            {(() => {
-              const W = weatherIcons[weather.iconKey] || CloudSun;
-              return <W size={ws.weatherIcon} color={c.mutedStrong} strokeWidth={metrics.iconStroke} />;
-            })()}
-            <Text style={[type.caption, { color: c.mutedStrong, flexShrink: 1 }]} numberOfLines={1}>
-              {weather.tempMax}° · {weather.description} at{' '}
-              {projects.find(p => p.id === weatherProjectId)?.name || weather.locationName}
-              {weather.rainFromHour !== null ? ` · rain from ${formatHour(weather.rainFromHour)}` : ''}
-            </Text>
-          </View>
-        )}
       </View>
       <View style={styles.headerRight}>
         <Pressable
@@ -1355,7 +1285,6 @@ const styles = StyleSheet.create({
   headerWrap: { marginBottom: metrics.workspace.sectionGap },
   headerLeft: { flex: 1, gap: metrics.workspace.headerGap },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: metrics.pageHeader.actionGap, paddingTop: metrics.workspace.headerGap },
-  weatherRow: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
   bellBadge: { position: 'absolute', left: metrics.tabBar.icon - metrics.tabBar.badgeOffsetX, top: metrics.tabBar.badgeOffsetY },
   userMenuBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 9 },
   userMenuDropdown: { position: 'absolute', right: space.screenX, top: metrics.workspace.menuTop, width: metrics.workspace.menuWidth, zIndex: 10 },
