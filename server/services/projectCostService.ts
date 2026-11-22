@@ -14,6 +14,7 @@ import type { CommittedPo } from "@shared/cashflow/jobCosts";
 import * as schema from "@shared/schema";
 import {
   allocateLabourCents,
+  isPoCostedTimesheet,
   computeProjectCost,
   variationLineCostCents,
   variationRowKeyResolver,
@@ -108,6 +109,7 @@ export async function loadProjectCost(
           total: schema.timesheets.total,
           costCodeId: schema.timesheets.costCodeId,
           workItemId: schema.timesheets.workItemId,
+          poStatus: schema.timesheets.poStatus,
         })
         .from(schema.timesheets)
         .where(approvedTs),
@@ -131,7 +133,8 @@ export async function loadProjectCost(
 
   // Timesheets logged against an estimate line, with no cost code of their own.
   const workItemIds = Array.from(new Set(
-    (timesheets as { costCodeId: string | null; workItemId: string | null }[])
+    (timesheets as { costCodeId: string | null; workItemId: string | null; poStatus: string | null }[])
+      .filter((t) => !isPoCostedTimesheet(t))
       .filter((t) => !t.costCodeId && t.workItemId)
       .map((t) => t.workItemId as string),
   ));

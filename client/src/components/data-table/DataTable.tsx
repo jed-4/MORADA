@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   ColumnDef,
   ColumnOrderState,
@@ -171,7 +172,7 @@ function isPinnedRightCol<TData>(c: ColumnDef<TData, unknown>): boolean {
   return meta.pinnedRight === true || c.id === "actions";
 }
 
-function lsKey(scope: string, kind: "widths" | "order" | "hidden" | "sort" | "expanded") {
+function lsKey(scope: string, kind: "widths" | "order" | "hidden" | "sort" | "expanded" | "flexReleased") {
   return `buildpro_table_${kind}_${scope}`;
 }
 
@@ -387,12 +388,22 @@ export function DataTable<TData>({
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(initialSizing);
   const [expanded, setExpanded] = useState<ExpandedState>(initialExpanded);
+  // A meta.flex column soaks up leftover width only until the user resizes
+  // any column on this table. After that every column keeps exactly the width
+  // it was dragged to (like Google Sheets) and spare space goes to the blank
+  // filler. Without this, widening a column to the right of the flex column
+  // shrank the flex column instead — the dragged column appeared to grow
+  // leftwards — and dragging the flex column itself did nothing visible.
+  const [flexReleased, setFlexReleased] = useState<boolean>(() =>
+    loadJSON<boolean>(lsKey(storageKey, "flexReleased"), false),
+  );
 
   // Persist on change
   useEffect(() => saveJSON(lsKey(storageKey, "order"), columnOrder), [columnOrder, storageKey]);
   useEffect(() => saveJSON(lsKey(storageKey, "hidden"), columnVisibility), [columnVisibility, storageKey]);
   useEffect(() => saveJSON(lsKey(storageKey, "sort"), sorting), [sorting, storageKey]);
   useEffect(() => saveJSON(lsKey(storageKey, "widths"), columnSizing), [columnSizing, storageKey]);
+  useEffect(() => saveJSON(lsKey(storageKey, "flexReleased"), flexReleased), [flexReleased, storageKey]);
   useEffect(() => {
     if (expansionEnabled) saveJSON(lsKey(storageKey, "expanded"), expanded);
   }, [expanded, storageKey, expansionEnabled]);
@@ -546,12 +557,33 @@ export function DataTable<TData>({
   // A column flagged meta.flex takes the leftover space that would otherwise
   // sit in the blank filler, so the columns span the full width and any
   // pinned-right actions column lands flush against the last real column.
-  const flexColId = visibleLeafColumns.find(
-    (c) => ((c.columnDef.meta as DataTableColumnMeta | undefined) ?? {}).flex,
-  )?.id;
+  const flexColId = flexReleased
+    ? undefined
+    : visibleLeafColumns.find(
+        (c) => ((c.columnDef.meta as DataTableColumnMeta | undefined) ?? {}).flex,
+      )?.id;
   const slack = flexColId ? Math.max(0, containerWidth - totalWidth) : 0;
   const widthFor = (c: { id: string; getSize: () => number }) =>
     c.getSize() + (c.id === flexColId ? slack : 0);
+  // Before the first resize, bake the flex column's current on-screen width
+  // into its saved size and switch flex off, so nothing jumps when the drag
+  // starts. flushSync lands the new size before TanStack reads the start size.
+  const startResize = (handler: (e: unknown) => void) => (e: React.MouseEvent | React.TouchEvent) => {
+    if (flexColId) {
+      const flexId = flexColId;
+      const bonus = slack;
+      flushSync(() => {
+        if (bonus > 0) {
+          setColumnSizing((prev) => {
+            const base = prev[flexId] ?? table.getColumn(flexId)?.getSize() ?? 0;
+            return { ...prev, [flexId]: base + bonus };
+          });
+        }
+        setFlexReleased(true);
+      });
+    }
+    handler(e);
+  };
 
   return (
     <div ref={scrollRef} className={cn("relative w-full h-full overflow-auto dt-autohide-scrollbar", className)} data-testid={`datatable-${storageKey}`}>
@@ -626,8 +658,8 @@ export function DataTable<TData>({
                           {!isFixed && (
                             <div
                               role="separator"
-                              onMouseDown={header.getResizeHandler()}
-                              onTouchStart={header.getResizeHandler()}
+                              onMouseDown={startResize(header.getResizeHandler())}
+                              onTouchStart={startResize(header.getResizeHandler())}
                               onClick={(e) => e.stopPropagation()}
                               onPointerDown={(e) => e.stopPropagation()}
                               className="absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none group/resize"

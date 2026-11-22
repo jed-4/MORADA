@@ -31,6 +31,8 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
 import { usePermission, useBudgetAccess } from "@/hooks/use-permission";
 import { useAuth } from "@/hooks/use-auth";
+import { TimesheetDialog } from "@/components/TimesheetDialog";
+import type { Timesheet } from "@shared/schema";
 
 type BudgetTone = SharedBudgetTone;
 
@@ -141,7 +143,7 @@ const PHASE_LABELS: Record<string, string> = {
 export default function BudgetPage() {
   const { projectId } = useParams();
   const pageTitle = usePageTitle({ pageName: "Budget" });
-  const { isLoading: authLoading } = useAuth();
+  const { isLoading: authLoading, user: authUser } = useAuth();
   const canViewLabour = usePermission("financial.budget_labour", "view");
   // A role with "Summary Only" and no "View" on the cost budget: the server
   // answers cost-summary with % used and status per category, and refuses
@@ -296,6 +298,25 @@ export default function BudgetPage() {
 
   // Drill-down: which cost code's Labour is being inspected (null = closed).
   const [labourDrill, setLabourDrill] = useState<{ costCodeId: string | null; title: string } | null>(null);
+  // A timesheet opened from the labour drill-down. Fetched on demand — the
+  // drill-down only carries a summary of each one.
+  const [openTimesheetId, setOpenTimesheetId] = useState<string | null>(null);
+  const { data: openTimesheet } = useQuery<Timesheet>({
+    queryKey: ["/api/timesheets", openTimesheetId],
+    queryFn: () => apiRequest(`/api/timesheets/${openTimesheetId}`, "GET"),
+    enabled: !!openTimesheetId,
+  });
+  // GET /api/timesheets/:id strips the pay rate for non-admin roles; saving
+  // from a rate-less copy would wipe it, so those users get a read-only view.
+  const timesheetEditable = (() => {
+    const role = String((authUser as { roleName?: string } | null | undefined)?.roleName ?? "").toLowerCase();
+    return role.includes("admin") || role.includes("owner") || role.includes("general manager");
+  })();
+  const closeTimesheet = () => {
+    setOpenTimesheetId(null);
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "cost-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "labour-actuals"] });
+  };
   const { data: labourDrillData, isLoading: labourDrillLoading } = useQuery<{
     total: number;
     entries: Array<{
@@ -1446,6 +1467,37 @@ export default function BudgetPage() {
                   </div>
                 ))}
               </div>
+              {/* Gross margin — contract less forecast final cost, the same
+                  figure the Forecast tab leads with. Right-aligned so the cost
+                  figures on the left stay a pure "budget vs spent" read. */}
+              <div className="ml-auto flex items-center gap-4 pl-4 border-l border-border flex-shrink-0">
+                <div className="flex flex-col leading-tight items-end">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                    Gross margin <span className="normal-case font-normal">ex GST</span>
+                  </span>
+                  <span
+                    className={cn(
+                      "text-sm font-semibold tabular-nums",
+                      contractKnown ? getVarianceColor(forecastMarginCents) : "text-muted-foreground",
+                    )}
+                    data-testid="header-costs-margin-amount"
+                  >
+                    {money(forecastMarginCents, contractKnown)}
+                  </span>
+                </div>
+                <div className="flex flex-col leading-none items-end">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Margin</span>
+                  <span
+                    className={cn(
+                      "text-3xl font-bold tabular-nums leading-none",
+                      contractKnown ? getVarianceColor(forecastMarginCents) : "text-muted-foreground",
+                    )}
+                    data-testid="header-costs-margin-percent"
+                  >
+                    {pct(forecastMarginPct)}
+                  </span>
+                </div>
+              </div>
             </>
           )}
 
@@ -1522,7 +1574,8 @@ export default function BudgetPage() {
 
           <ChevronDown
             className={cn(
-              "h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-auto",
+              "h-4 w-4 text-muted-foreground transition-transform flex-shrink-0",
+              !(activeTab === "costs" && canViewActuals && !summaryOnly) && "ml-auto",
               headerExpanded && "rotate-180",
             )}
           />
@@ -2201,9 +2254,12 @@ export default function BudgetPage() {
           ) : (
             <div className="space-y-2 max-h-[60vh] overflow-y-auto">
               {labourDrillData.entries.map((e, idx) => (
-                <div
+                <button
+                  type="button"
                   key={`${e.timesheetId}-${idx}`}
-                  className="block p-2.5 border rounded-md"
+                  onClick={() => setOpenTimesheetId(e.timesheetId)}
+                  className="block w-full text-left p-2.5 border rounded-md hover-elevate"
+                  title="Open timesheet"
                   data-testid={`drill-labour-${e.timesheetId}-${idx}`}
                 >
                   <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -2223,7 +2279,7 @@ export default function BudgetPage() {
                       {formatCurrency(e.costCents)}
                     </span>
                   </div>
-                </div>
+                </button>
               ))}
               <div className="flex items-center justify-between gap-2 pt-2 border-t">
                 <span className="text-sm font-semibold">Total</span>
@@ -2235,6 +2291,16 @@ export default function BudgetPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {openTimesheetId && openTimesheet && (
+        <TimesheetDialog
+          open
+          onOpenChange={(o) => { if (!o) closeTimesheet(); }}
+          timesheet={openTimesheet}
+          defaultProjectId={projectId}
+          readonly={!timesheetEditable}
+        />
+      )}
 
       <Dialog open={!!variationDrill} onOpenChange={(o) => { if (!o) setVariationDrill(null); }}>
         <DialogContent className="max-w-2xl gap-0 p-0 overflow-hidden" data-testid="dialog-variation-drill">
