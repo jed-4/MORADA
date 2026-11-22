@@ -1,22 +1,24 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, type JSX } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SectionList,
-  TouchableOpacity,
-  ActivityIndicator,
+  ScrollView,
+  Pressable,
+  TextInput,
   RefreshControl,
-  useColorScheme,
   Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronDown, ChevronRight, Layers, Search, SlidersHorizontal, X } from 'lucide-react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme, lightTheme, darkTheme } from '../theme';
+import { metrics, radii, size, space, type, useColors } from '../theme';
+import { usePersistedState } from '../lib/usePersistedState';
+import { Card, Checkbox, CollapsedGroupList, EmptyState, GroupHeader, PageHeader, ProgressLine, type CollapsedGroup } from '../components/kit';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { haptic } from '../lib/haptics';
 import { SkeletonList } from '../components/ui/Skeleton';
@@ -75,17 +77,6 @@ function stripHtml(html?: string): string {
     .trim();
 }
 
-function getTypeBadgeColor(type: string, isDark: boolean): { bg: string; text: string } {
-  const th = isDark ? darkTheme : lightTheme;
-  const t = type.toLowerCase();
-  if (t === 'e-note') return { bg: th.primaryLight, text: th.primary };
-  if (t === 'note') return { bg: th.statusInfoBg, text: th.statusInfo };
-  if (t === 'material') return { bg: th.coralLight, text: th.coral };
-  if (t === 'tool') return { bg: th.statusSuccessBg, text: th.statusSuccess };
-  if (t === 'proposal') return { bg: th.statusWarningBg, text: th.statusWarning };
-  if (t === 'checklist') return { bg: th.tealLight, text: th.teal };
-  return { bg: th.subtle, text: th.textSecondary };
-}
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -93,10 +84,8 @@ type Props = {
 };
 
 export default function ScopeScreen({ navigation, route }: Props) {
-  const { projectId } = route.params as { projectId: string };
+  const { projectId, projectName, projectColor } = route.params as { projectId: string; projectName?: string; projectColor?: string | null };
   const { user } = useAuth();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
 
   const [stages, setStages] = useState<ScopeStage[]>([]);
   const [items, setItems] = useState<ScopeItem[]>([]);
@@ -105,18 +94,27 @@ export default function ScopeScreen({ navigation, route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
+  // Which categories are folded, remembered per project (GOTCHAS #15).
+  const [collapsedIds, setCollapsedIds] = usePersistedState<string[]>(`scope.collapsed.${projectId}`, []);
+  const [showAllLines, setShowAllLines] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [hideDone, setHideDone] = useState(false);
+  const insets = useSafeAreaInsets();
+  const k = useColors();
 
-  const theme = useTheme();
-const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    muted: theme.textMuted,
-    success: theme.statusSuccess,
-};
+  // One-row PageHeader instead of the stack header.
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
+
+  const toggleShowAll = (id: string) =>
+    setShowAllLines(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
 
   const roleName = user?.roleName ?? '';
   const isAdmin =
@@ -221,8 +219,10 @@ const colors = {
     // Collapse the stage when marking complete, expand when uncompleting
     if (newVal) {
       setCollapsedStages(prev => new Set([...prev, stage.id]));
+      if (!collapsedIds.includes(stage.id)) setCollapsedIds([...collapsedIds, stage.id]);
     } else {
       setCollapsedStages(prev => { const next = new Set(prev); next.delete(stage.id); return next; });
+      setCollapsedIds(collapsedIds.filter(x => x !== stage.id));
     }
     try {
       await apiRequest(`/api/scope-stages/${stage.id}`, 'PATCH', {
@@ -247,6 +247,7 @@ const colors = {
     }
   };
 
+  // Items per stage (top-level, visible to this role), in display order.
   const sectionData = stages.map(stage => {
     const stageItems = items
       .filter(item => item.stage === stage.name && !item.parentId && isItemVisible(item))
@@ -257,341 +258,270 @@ const colors = {
       // Numerator computed from the SAME filtered list as the denominator so
       // hidden/child items can't push the count above the total (e.g. "3/2").
       completedCount: stageItems.filter(i => i.isCompleted).length,
-      // Show no items if collapsed (but keep section header visible)
-      data: collapsedStages.has(stage.id) ? [] : stageItems,
+      items: stageItems,
     };
   }).filter(s => s.allItemCount > 0 || s.stage.isCompleted);
 
+  const totalCount = sectionData.reduce((n, sct) => n + sct.allItemCount, 0);
+  const doneCount = sectionData.reduce((n, sct) => n + sct.completedCount, 0);
+
+  // Search + "hide done" narrow what's shown; counts stay the real ones.
+  const q = search.trim().toLowerCase();
+  const matches = (item: ScopeItem) =>
+    (!hideDone || !item.isCompleted) &&
+    (!q || item.title.toLowerCase().includes(q) || stripHtml(item.description).toLowerCase().includes(q));
+
+  const toggleStage = (id: string) => {
+    haptic.select();
+    const next = collapsedIds.includes(id) ? collapsedIds.filter(x => x !== id) : [...collapsedIds, id];
+    setCollapsedIds(next);
+  };
+
+  // Long-press a category to tick (or un-tick) every item in it — the old
+  // category checkbox, which the design drops from view.
+  const confirmStageCompletion = (stage: ScopeStage) => {
+    if (!canEdit) return;
+    haptic.light();
+    Alert.alert(
+      stage.isCompleted ? `Reopen ${stage.name}?` : `Mark all of ${stage.name} done?`,
+      stage.isCompleted ? 'Every item in this category goes back to not done.' : 'Every item in this category will be ticked.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: stage.isCompleted ? 'Reopen' : 'Mark done', onPress: () => toggleStageCompletion(stage) },
+      ],
+    );
+  };
+
+  const header = (
+    <View style={sx.top}>
+      <PageHeader
+        title="Scope"
+        project={{ name: projectName ?? '', color: projectColor ?? null, id: projectId }}
+        onBack={() => navigation.goBack()}
+        actions={[
+          { icon: searchVisible ? X : Search, label: searchVisible ? 'Close search' : 'Search scope', onPress: () => { if (searchVisible) setSearch(''); setSearchVisible(v => !v); } },
+          { icon: SlidersHorizontal, label: hideDone ? 'Show done items' : 'Hide done items', onPress: () => setHideDone(v => !v), active: hideDone },
+        ]}
+      />
+      {searchVisible ? (
+        <View style={[sx.searchBar, { backgroundColor: k.surface, borderColor: k.border }]}>
+          <Search size={metrics.projects.searchIcon} color={k.muted} strokeWidth={metrics.iconStroke} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search scope"
+            placeholderTextColor={k.faint}
+            autoFocus
+            style={[type.body, sx.searchInput, { color: k.text }]}
+          />
+        </View>
+      ) : null}
+      {totalCount > 0 ? (
+        <ProgressLine
+          value={totalCount ? doneCount / totalCount : 0}
+          label={`${doneCount} of ${totalCount} done`}
+          rightLabel={`${totalCount ? Math.round((doneCount / totalCount) * 100) : 0}%`}
+        />
+      ) : null}
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={{ backgroundColor: colors.bg, flex: 1 }}>
+      <View style={[sx.container, { backgroundColor: k.bg, paddingTop: insets.top + metrics.schedule.top }]}>
+        <View style={sx.topPad}><PageHeader title="Scope" project={{ name: projectName ?? '', color: projectColor ?? null, id: projectId }} onBack={() => navigation.goBack()} /></View>
         <SkeletonList />
       </View>
     );
   }
 
-  if (sectionData.length === 0) {
+  const renderItem = (item: ScopeItem) => {
+    const expanded = expandedItems.has(item.id);
+    const typeKey = (item.itemType || 'scope').toLowerCase();
+    const lines = htmlToLines(item.description);
+    const gearList = (item.gearList as GearItem[] | null) ?? [];
+    const checklistItems = (item.checklistItems as ChecklistItemEntry[] | null) ?? [];
+    const hasDetail = lines.length > 0 || gearList.length > 0 || checklistItems.length > 0;
+    const showAll = showAllLines.has(item.id);
+    const shownLines = showAll ? lines : lines.slice(0, MAX_LINES);
+    const dotColor = typeKey === 'material' ? k.type.material : typeKey === 'scope' ? k.type.scope : k.faint;
+    const Chevron = expanded ? ChevronDown : ChevronRight;
     return (
-      <View style={[styles.center, { backgroundColor: colors.bg, flex: 1 }]}>
-        <Ionicons name="layers-outline" size={40} color={colors.muted} />
-        <Text style={[styles.emptyText, { color: colors.secondary }]}>No scope items yet</Text>
-        <Text style={[styles.emptySubText, { color: colors.muted }]}>Scope items will appear here once added</Text>
+      <View key={item.id}>
+        <Pressable
+          onPress={hasDetail ? () => toggleExpand(item.id) : undefined}
+          disabled={!hasDetail}
+          accessibilityRole={hasDetail ? 'button' : undefined}
+          accessibilityState={hasDetail ? { expanded } : undefined}
+          style={sx.itemRow}
+        >
+          <View style={sx.check}>
+            <Checkbox
+              checked={item.isCompleted}
+              onPress={canEdit ? () => toggleCompletion(item) : undefined}
+              disabled={!canEdit}
+              accessibilityLabel={`Mark ${item.title} ${item.isCompleted ? 'not done' : 'done'}`}
+            />
+          </View>
+          <View style={sx.itemBody}>
+            <Text style={[type.rowTitle, { color: item.isCompleted ? k.muted : k.text }]} numberOfLines={expanded ? undefined : 2}>
+              {item.title}
+            </Text>
+            <View style={sx.typeRow}>
+              <View style={[sx.typeDot, { backgroundColor: dotColor }]} />
+              <Text style={[type.caption, { color: k.muted }]}>{typeKey.charAt(0).toUpperCase() + typeKey.slice(1)}</Text>
+            </View>
+          </View>
+          {hasDetail ? <Chevron size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} /> : null}
+        </Pressable>
+
+        {expanded && hasDetail ? (
+          <View style={sx.detail}>
+            {shownLines.map((line, i) => (
+              <View key={i} style={sx.bulletRow}>
+                <View style={[sx.bullet, { backgroundColor: k.faint }]} />
+                <Text style={[type.bodyRead, { color: k.textLong, flex: 1 }]}>{line}</Text>
+              </View>
+            ))}
+            {lines.length > MAX_LINES ? (
+              <Pressable onPress={() => toggleShowAll(item.id)} hitSlop={metrics.hitSlop} accessibilityRole="button">
+                <Text style={[type.meta, { color: k.accent }]}>
+                  {showAll ? 'Show less' : `Show all · ${lines.length - MAX_LINES} more`}
+                </Text>
+              </Pressable>
+            ) : null}
+            {gearList.length > 0 ? (
+              <View style={sx.subList}>
+                <Text style={[type.caption, { color: k.muted }]}>Materials and gear</Text>
+                {gearList.map((gear, idx) => (
+                  <View key={idx} style={sx.subRow}>
+                    <Checkbox checked={gear.checked} />
+                    <Text style={[type.body, { color: gear.checked ? k.muted : k.textLong, flex: 1 }]}>{gear.name}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {checklistItems.length > 0 ? (
+              <View style={sx.subList}>
+                <Text style={[type.caption, { color: k.muted }]}>Checklist</Text>
+                {checklistItems.map((ci, idx) => (
+                  <View key={ci.id || idx} style={sx.subRow}>
+                    <Checkbox checked={ci.completed} />
+                    <Text style={[type.body, { color: ci.completed ? k.muted : k.textLong, flex: 1 }]}>{ci.text}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
       </View>
     );
-  }
+  };
+
+  // Render in stage order; runs of collapsed stages become plain divider rows.
+  const blocks: JSX.Element[] = [];
+  let collapsedRun: CollapsedGroup[] = [];
+  const flushCollapsed = () => {
+    if (collapsedRun.length) {
+      blocks.push(<CollapsedGroupList key={`c-${blocks.length}`} groups={collapsedRun} />);
+      collapsedRun = [];
+    }
+  };
+  const searching = !!q || hideDone;
+  sectionData.forEach(sct => {
+    const shown = sct.items.filter(matches);
+    if (searching && shown.length === 0) return;
+    // While searching, every matching category is open.
+    const collapsed = !searching && collapsedIds.includes(sct.stage.id);
+    const meta = `${sct.completedCount}/${sct.allItemCount}`;
+    if (collapsed) {
+      collapsedRun.push({ key: sct.stage.id, title: sct.stage.name, meta, onPress: () => toggleStage(sct.stage.id) });
+      return;
+    }
+    flushCollapsed();
+    blocks.push(
+      <View key={sct.stage.id} style={sx.group}>
+        <GroupHeader
+          title={sct.stage.name}
+          meta={meta}
+          open
+          onToggle={() => toggleStage(sct.stage.id)}
+          onLongPress={canEdit ? () => confirmStageCompletion(sct.stage) : undefined}
+        />
+        {shown.length === 0 ? (
+          <Text style={[type.meta, { color: k.muted }]}>Nothing in this category yet</Text>
+        ) : (
+          <Card variant="list">{shown.map(renderItem)}</Card>
+        )}
+      </View>
+    );
+  });
+  flushCollapsed();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <SectionList
-        sections={sectionData}
-        keyExtractor={item => item.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        stickySectionHeadersEnabled
-        contentContainerStyle={[styles.listContent, readableFrame]}
-        renderSectionHeader={({ section }) => {
-          const isCollapsed = collapsedStages.has(section.stage.id);
-          return (
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => {
-                setCollapsedStages(prev => {
-                  const next = new Set(prev);
-                  if (next.has(section.stage.id)) { next.delete(section.stage.id); } else { next.add(section.stage.id); }
-                  return next;
-                });
-              }}
-            >
-              <View style={[styles.stageHeader, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
-                <TouchableOpacity
-                  onPress={() => toggleStageCompletion(section.stage)}
-                  disabled={!canEdit}
-                  style={[
-                    styles.stageCheckbox,
-                    {
-                      borderColor: section.stage.isCompleted ? colors.success : colors.muted,
-                      backgroundColor: section.stage.isCompleted ? colors.success : 'transparent',
-                    },
-                  ]}
-                  activeOpacity={0.7}
-                >
-                  {section.stage.isCompleted ? (
-                    <Ionicons name="checkmark" size={12} color="#fff" />
-                  ) : null}
-                </TouchableOpacity>
-                <Text
-                  style={[
-                    styles.stageHeaderText,
-                    {
-                      color: section.stage.isCompleted ? colors.secondary : colors.text,
-                      textDecorationLine: section.stage.isCompleted ? 'line-through' : 'none',
-                      flex: 1,
-                    },
-                  ]}
-                >
-                  {section.stage.name}
-                </Text>
-                <Text style={[styles.stageCount, { color: colors.secondary }]}>
-                  {section.completedCount}/{section.allItemCount}
-                </Text>
-                <Ionicons
-                  name={isCollapsed ? "chevron-forward" : "chevron-down"}
-                  size={16}
-                  color={colors.secondary}
-                  style={{ marginLeft: 4 }}
-                />
-              </View>
-            </TouchableOpacity>
-          );
-        }}
-        renderItem={({ item }) => {
-          const expanded = expandedItems.has(item.id);
-          const typeKey = item.itemType || 'scope';
-          const typeBadge = getTypeBadgeColor(typeKey, isDark);
-          const descText = stripHtml(item.description);
-          const gearList = (item.gearList as GearItem[] | null) ?? [];
-          const checklistItems = (item.checklistItems as ChecklistItemEntry[] | null) ?? [];
-          const hasDetail = descText.length > 0 || gearList.length > 0 || checklistItems.length > 0;
-
-          return (
-            <View style={[styles.itemCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={styles.itemRow}>
-                <TouchableOpacity
-                  style={[styles.checkboxArea, !canEdit && styles.disabled]}
-                  onPress={() => toggleCompletion(item)}
-                  activeOpacity={canEdit ? 0.6 : 1}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <View style={[
-                    styles.checkbox,
-                    {
-                      borderColor: item.isCompleted ? colors.success : colors.muted,
-                      backgroundColor: item.isCompleted ? colors.success + '20' : 'transparent',
-                    }
-                  ]}>
-                    {item.isCompleted ? (
-                      <Ionicons name="checkmark" size={13} color={colors.success} />
-                    ) : null}
-                  </View>
-                </TouchableOpacity>
-
-                <View style={styles.itemContent}>
-                  <View style={styles.itemTopRow}>
-                    <View style={[styles.typeBadge, { backgroundColor: typeBadge.bg }]}>
-                      <Text style={[styles.typeBadgeText, { color: typeBadge.text }]}>
-                        {typeKey.charAt(0).toUpperCase() + typeKey.slice(1).toLowerCase()}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text
-                    style={[
-                      styles.itemTitle,
-                      {
-                        color: item.isCompleted ? colors.secondary : colors.text,
-                        textDecorationLine: item.isCompleted ? 'line-through' : 'none',
-                      },
-                    ]}
-                    numberOfLines={expanded ? undefined : 2}
-                  >
-                    {item.title}
-                  </Text>
-                </View>
-
-                {hasDetail ? (
-                  <TouchableOpacity
-                    style={styles.expandBtn}
-                    onPress={() => toggleExpand(item.id)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Ionicons
-                      name={expanded ? 'chevron-up' : 'chevron-down'}
-                      size={16}
-                      color={colors.secondary}
-                    />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-
-              {expanded && hasDetail ? (
-                <View style={[styles.expandedContent, { borderTopColor: colors.border }]}>
-                  {descText.length > 0 ? (
-                    <Text style={[styles.descText, { color: colors.secondary }]}>{descText}</Text>
-                  ) : null}
-
-                  {gearList.length > 0 ? (
-                    <View style={styles.gearSection}>
-                      <Text style={[styles.gearSectionTitle, { color: colors.secondary }]}>Materials / Gear</Text>
-                      {gearList.map((gear, idx) => (
-                        <View key={idx} style={styles.gearRow}>
-                          <Ionicons
-                            name={gear.checked ? 'checkbox' : 'square-outline'}
-                            size={16}
-                            color={gear.checked ? colors.success : colors.muted}
-                          />
-                          <Text style={[styles.gearName, { color: gear.checked ? colors.secondary : colors.text }]}>
-                            {gear.name}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-
-                  {checklistItems.length > 0 ? (
-                    <View style={styles.gearSection}>
-                      <Text style={[styles.gearSectionTitle, { color: colors.secondary }]}>Checklist</Text>
-                      {checklistItems.map((ci, idx) => (
-                        <View key={ci.id || idx} style={styles.gearRow}>
-                          <Ionicons
-                            name={ci.completed ? 'checkbox' : 'square-outline'}
-                            size={16}
-                            color={ci.completed ? colors.success : colors.muted}
-                          />
-                          <Text style={[styles.gearName, { color: ci.completed ? colors.secondary : colors.text }]}>
-                            {ci.text}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-            </View>
-          );
-        }}
-      />
+    <View style={[sx.container, { backgroundColor: k.bg }]}>
+      <ScrollView
+        contentContainerStyle={[sx.list, { paddingTop: insets.top + metrics.schedule.top, paddingBottom: space.screenBottom + insets.bottom }, readableFrame]}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
+      >
+        {header}
+        {sectionData.length === 0 ? (
+          <View style={sx.empty}>
+            <EmptyState icon={Layers} title="No scope items yet" helper="Scope items will appear here once they're added on the website." />
+          </View>
+        ) : blocks.length === 0 ? (
+          <Text style={[type.body, { color: k.muted }]}>{q ? 'Nothing matches your search' : 'Everything here is done'}</Text>
+        ) : (
+          blocks
+        )}
+      </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  center: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 8,
-  },
-  emptySubText: {
-    fontSize: 13,
-  },
-  listContent: {
-    paddingBottom: 32,
-  },
-  stageHeader: {
+/** Scope descriptions are HTML: lists, paragraphs, line breaks → one line each. */
+function htmlToLines(html?: string): string[] {
+  if (!html) return [];
+  const withBreaks = html
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|li|div|h[1-6])\s*>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '\n');
+  return stripHtml(withBreaks.replace(/\n/g, '\u0000'))
+    .split('\u0000')
+    .map(line => line.replace(/^[\s•·\-–*]+/, '').trim())
+    .filter(Boolean);
+}
+
+const MAX_LINES = 4;
+const sp = metrics.scope;
+
+const sx = StyleSheet.create({
+  container: { flex: 1 },
+  list: { paddingHorizontal: space.screenX, gap: sp.gap },
+  top: { gap: sp.gap },
+  topPad: { paddingHorizontal: space.screenX, paddingBottom: sp.gap },
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    gap: 8,
+    gap: space.inline,
+    minHeight: metrics.projects.searchHeight,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+    paddingHorizontal: metrics.projects.cardPad,
   },
-  stageCheckbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  stageHeaderText: {
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  stageCount: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  itemCard: {
-    marginHorizontal: 12,
-    marginTop: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 12,
-  },
-  checkboxArea: {
-    paddingTop: 2,
-    marginRight: 10,
-  },
-  disabled: {
-    opacity: 0.6,
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  itemContent: {
-    flex: 1,
-    gap: 4,
-  },
-  itemTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  typeBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  typeBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  itemTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    lineHeight: 20,
-  },
-  expandBtn: {
-    paddingLeft: 8,
-    paddingTop: 2,
-  },
-  expandedContent: {
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    gap: 10,
-  },
-  descText: {
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  gearSection: {
-    gap: 6,
-  },
-  gearSectionTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  gearRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  gearName: {
-    fontSize: 13,
-    flex: 1,
-  },
+  searchInput: { flex: 1, paddingVertical: 0 },
+  group: {},
+  itemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.rowGap, paddingVertical: sp.itemPadY },
+  check: { paddingTop: sp.checkOffset },
+  itemBody: { flex: 1, gap: sp.itemBodyGap },
+  typeRow: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  typeDot: { width: size.typeDot, height: size.typeDot, borderRadius: size.typeDot / 2 },
+  detail: { paddingLeft: sp.detailIndent, paddingBottom: sp.itemPadY, gap: sp.bulletGap },
+  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.rowGap - space.inlineSm },
+  // Centred on the first line of 14/21 text.
+  bullet: { width: sp.bullet, height: sp.bullet, borderRadius: sp.bullet / 2, marginTop: (type.bodyRead.lineHeight - sp.bullet) / 2 },
+  subList: { gap: sp.bulletGap, paddingTop: space.inlineSm },
+  subRow: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap - space.inlineSm },
+  empty: { minHeight: metrics.emptyState.circle * 6 },
 });

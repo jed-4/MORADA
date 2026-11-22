@@ -463,6 +463,7 @@ export const metrics = {
   solidPressedOpacity: 0.9,
   inlineGap: 6,
   hitSlop: 10,
+  longPressMs: 450,
   minHit: 44,
   card: { sectionPad: { top: 14, right: 14, bottom: 6, left: 16 }, sectionGap: 4, padTop: 12, padBottom: 14, notesPadY: 12, duoPad: 4 },
   square: {
@@ -595,6 +596,15 @@ export const metrics = {
       endHour: 18,
       blockInset: 3,
     },
+  },
+  scope: {
+    gap: 14,
+    itemPadY: 12,
+    checkOffset: 2,
+    itemBodyGap: 3,
+    detailIndent: 30,
+    bulletGap: 8,
+    bullet: 4,
   },
   composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18 },
 } as const;

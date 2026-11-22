@@ -17,12 +17,15 @@ export function GroupHeader({
   open,
   onToggle,
   onOpen,
+  onLongPress,
 }: {
   title: string;
   meta?: (string | number | null | undefined)[] | string | number | null;
   open: boolean;
   onToggle: () => void;
   onOpen?: () => void;
+  /** Secondary action on the title (e.g. Scope: tick the whole category). */
+  onLongPress?: () => void;
 }) {
   const c = useColors();
   const metas = (Array.isArray(meta) ? meta : [meta]).filter((m) => m != null && m !== '');
@@ -30,6 +33,8 @@ export function GroupHeader({
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.gap, minHeight: metrics.groupHeader.height, marginBottom: space.groupHeaderToCard }}>
       <Pressable
         onPress={onToggle}
+        onLongPress={onLongPress}
+        delayLongPress={metrics.longPressMs}
         hitSlop={metrics.hitSlop}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
