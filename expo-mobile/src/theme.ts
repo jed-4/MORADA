@@ -448,3 +448,68 @@ export const breakpoints = {
   /** Two-pane layouts when width >= 700 AND width > height. */
   wide: 700,
 } as const;
+
+// ─── Component geometry (design/COMPONENTS.md) ───────────────────────────
+// The fixed measurements of each shared component, so components/kit never
+// inlines a number. Screens use the components, not these values.
+export const metrics = {
+  iconStroke: 1.7,
+  iconStrokeActive: 1.8,
+  checkStroke: 2.5,
+  disabledOpacity: 0.5,
+  pressedOpacity: 0.6,
+  solidPressedOpacity: 0.9,
+  inlineGap: 6,
+  hitSlop: 10,
+  minHit: 44,
+  card: { sectionPad: { top: 14, right: 14, bottom: 6, left: 16 }, sectionGap: 4, padTop: 12, padBottom: 14, notesPadY: 12, duoPad: 4 },
+  square: {
+    radius: { header: 3, taskHeader: 3, row: 4, rail: 4, card: 5 },
+    opacity: 0.9,
+  },
+  pageHeader: { height: 28, padY: 2, gap: 4, projectPadLeft: 8, projectGap: 6, actionGap: 18, back: 22, backTasks: 24, rootAction: 22 },
+  sheetHeader: { height: 44, sideWidth: 70 },
+  underlineTabs: { height: 27, gap: 20, underlineGap: 7, navGap: 14, navIcon: 16 },
+  segmented: { height: 32, pad: 2, gap: 2, segPadY: 5, segPadX: 12 },
+  groupHeader: { height: 18, gap: 8, toggleGap: 4, collapsedRowPad: 11, sectionCardPad: 12, sectionIcon: 16 },
+  listRow: { padY: 11, gap: 12, bodyGap: 2 },
+  propertyRow: { padY: 9, gap: 10, labelWidth: 116, formPadY: 12, copyIcon: 15, swatch: 12, avatar: 20, valueIcon: 15 },
+  statusDot: { gap: 5 },
+  checkbox: { borderWidth: 1.5, check: 12 },
+  progress: { labelGap: 6, inlineLabelWidth: 56, inlineGap: 10 },
+  fab: { cameraIcon: 22 },
+  tabBar: { padTop: 8, padX: 8, minPadBottom: 8, icon: 22, gap: 3, badgeOffsetX: 10, badgeOffsetY: -4 },
+  filterChip: { gap: 2, padY: 5, padX: 10, innerGap: 5 },
+  captureChip: {
+    workspace: { width: 85, height: 40, icon: 16, gap: 4 },
+    sheet: { width: 114, height: 34, padY: 9, padX: 4, icon: 15, gap: 6 },
+    duo: { width: 99, height: 76, icon: 20, gap: 6 },
+  },
+  sectionTile: { width: 76, height: 64, pad: { top: 9, right: 4, bottom: 9, left: 7 }, icon: 18, gap: 8 },
+  avatar: {
+    row: { size: 28, font: 11 },
+    duo: { size: 32, font: 11 },
+    activity: { size: 22, font: 9 },
+    chip: { size: 20, font: 9 },
+    profile: { size: 40, font: 16 },
+  },
+  badge: { height: 18, padX: 6 },
+  emptyState: { gap: 10, padBottom: 80, circle: 56, icon: 26, maxWidth: 250 },
+  sheet: { grabberWidth: 36, grabberHeight: 5, grabberTop: 8, padX: 16, padBottom: 34, gap: 14 },
+  actionBar: { padY: 10, padX: 16, buttonHeight: 39, primaryWidth: 140, primaryHeight: 40, icon: 16, gap: 12, savePadLeft: 20 },
+  thumb: { fallbackIcon: 18, diary: 80 },
+  calendarBlock: {
+    strip: 3,
+    tint: 0.16,
+    tintDark: 0.28,
+    weekPad: { top: 5, right: 5, left: 6 },
+    listPad: { y: 6, right: 8, left: 9 },
+    showTimeMinHeight: 49,
+    allDayHeight: 21,
+    agendaWidth: 3,
+    agendaHeight: 32,
+  },
+  ganttBar: { height: 22, strip: 3, labelPadX: 6, minLabelWidth: 44 },
+  divider: { gap: 10, nowDot: 7, nowLine: 2 },
+  composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18 },
+} as const;

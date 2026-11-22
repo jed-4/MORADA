@@ -11,7 +11,7 @@ import {
   type BottomSheetFooterProps,
 } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, fontSize, fontWeight, MAX_FONT_SCALE } from '../../theme';
+import { useTheme, useColors, fontSize, fontWeight, MAX_FONT_SCALE, metrics, radii, shadow } from '../../theme';
 import { haptic } from '../../lib/haptics';
 import { useLayout } from '../../lib/useLayout';
 
@@ -73,6 +73,7 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
   ref,
 ) {
   const theme = useTheme();
+  const c = useColors();
   const insets = useSafeAreaInsets();
   const { width, isWide } = useLayout();
   // Equal side margins centre the sheet; the backdrop still covers the screen.
@@ -89,10 +90,11 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
         appearsOnIndex={0}
         disappearsOnIndex={-1}
         pressBehavior="close"
-        opacity={0.45}
+        opacity={1}
+        style={[props.style, { backgroundColor: c.scrim }]}
       />
     ),
-    [],
+    [c.scrim],
   );
 
   const points = useMemo(() => snapPoints, [snapPoints]);
@@ -134,13 +136,20 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
       onAnimate={(_from, to) => {
         if (to === 0) haptic.light();
       }}
-      style={sheetStyle}
+      style={[shadow.sheet, sheetStyle]}
       backdropComponent={renderBackdrop}
       footerComponent={footer ? renderFooter : undefined}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
-      backgroundStyle={{ backgroundColor: theme.card, borderRadius: 20 }}
-      handleIndicatorStyle={{ backgroundColor: theme.borderStrong, width: 40 }}
+      // Revamp v1 (COMPONENTS §24): bg fill, 20 top radius, 36×5 grabber.
+      backgroundStyle={{ backgroundColor: c.bg, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet }}
+      handleStyle={{ paddingTop: metrics.sheet.grabberTop }}
+      handleIndicatorStyle={{
+        backgroundColor: c.grabber,
+        width: metrics.sheet.grabberWidth,
+        height: metrics.sheet.grabberHeight,
+        borderRadius: metrics.sheet.grabberHeight / 2,
+      }}
     >
       {scrollable ? (
         <BottomSheetScrollView
