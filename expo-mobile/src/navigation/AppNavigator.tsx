@@ -15,6 +15,8 @@ import { handleNotificationAction, registerNotificationCategories } from '../ser
 import { refreshSiteFences } from '../services/siteGeofence';
 import { useTheme, fonts, type Theme } from '../theme';
 import { TabBar } from '../components/kit/TabBar';
+import { DESIGN_PREVIEW } from '../lib/designPreview';
+import DesignPreviewScreen from '../screens/dev/DesignPreviewScreen';
 import { goBackOrHome, isFirstRoute } from './back';
 import OfflineFrame from '../components/ui/OfflineBanner';
 import { navigationIntegration } from '../lib/sentry';
@@ -275,6 +277,9 @@ function MoreStack() {
       />
       <Stack.Screen name="DefectDetail" component={DefectDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
+      {DESIGN_PREVIEW ? (
+        <Stack.Screen name="DesignPreview" component={DesignPreviewScreen} options={{ headerShown: false }} />
+      ) : null}
     </Stack.Navigator>
   );
 }

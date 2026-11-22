@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiRequest } from '../services/api';
 import { useTheme, fontSize, fontWeight, radius, type Theme, MAX_FONT_SCALE } from '../theme';
 import { haptic } from '../lib/haptics';
+import { DESIGN_PREVIEW } from '../lib/designPreview';
 import { Sheet, SheetTextInput, type SheetRef } from './ui/Sheet';
 import { useToast } from './ui/Toast';
 import { SectionHeader } from './ui/SectionHeader';
@@ -196,6 +197,22 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
             </PressableScale>
           </Animated.View>
         )}
+
+        {DESIGN_PREVIEW ? (
+          <PressableScale
+            haptics
+            onPress={() => goToMoreScreen('DesignPreview')}
+            style={[styles.profileRow, { borderBottomColor: theme.border }]}
+          >
+            <Ionicons name="color-palette-outline" size={20} color={theme.primary} />
+            <View style={styles.profileInfo}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.profileName, { color: theme.textPrimary }]}>
+                Design preview
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+          </PressableScale>
+        ) : null}
 
         <Animated.View entering={FadeInDown.duration(300).delay(60)} style={styles.section}>
           <SectionHeader title="Workspace" />
