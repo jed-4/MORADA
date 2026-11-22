@@ -15,6 +15,7 @@ import {
   Platform,
   FlatList,
   Switch,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -24,7 +25,14 @@ import { fromLocalDateStr, toLocalDateStr } from '../lib/dates';
 import { ScheduleActivityFeedButton } from '../components/ScheduleActivityFeedButton';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, currentTheme, typeColors as themeTypeColors, MAX_FONT_SCALE } from '../theme';
+import { useTheme, useColors, currentTheme, typeColors as themeTypeColors, MAX_FONT_SCALE, metrics, size, space, tabular, type } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Calendar as CalendarIcon, ChevronDown, ChevronRight, Ellipsis, FolderOpen } from 'lucide-react-native';
+import {
+  CalendarBlock, Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, GanttBar, ListRow, NowLine, PageHeader, StatusDot,
+  TodayMarker, UnderlineTabs, type DotStatus,
+} from '../components/kit';
+import { SkeletonList } from '../components/ui/Skeleton';
 import { useLayout } from '../lib/useLayout';
 import { sheetFrame } from '../components/ui/Sheet';
 import type { ScrollViewInstance } from 'react-native';
@@ -90,15 +98,15 @@ interface Project {
   name: string;
   jobNumber?: string | null;
   currentSystemPhase?: string | null;
+  color?: string | null;
 }
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
-  route?: { params?: { projectId?: string } };
+  route?: { params?: { projectId?: string; projectName?: string; projectColor?: string | null } };
 };
 
 type ViewMode = 'list' | 'gantt' | 'calendar';
-type CalendarMode = 'month' | 'week';
 
 const PHASE_ORDER: Record<string, number> = {
   construction: 0,
@@ -177,10 +185,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const DAY_NAMES_MON = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function formatDateRange(start: string, end: string): string {
   const s = new Date(start);
@@ -230,15 +235,6 @@ function getMondayOfWeek(date: Date): Date {
   return d;
 }
 
-const DAY_COL_WIDTH = 40;
-const NAME_COL_WIDTH = 140;
-// Wide screen (Duo unfolded): a roomier pinned name column. Day columns keep
-// their 40pt width, so the extra width shows more days rather than stretching
-// bars — and the bars' x positions don't change across a fold, so the
-// horizontal scroll stays on the same dates.
-const NAME_COL_WIDTH_WIDE = 220;
-const GANTT_ROW_HEIGHT = 36;
-const HOUR_HEIGHT = 60;
 
 export default function ScheduleScreen({ navigation, route }: Props) {
   const { user } = useAuth();
@@ -251,21 +247,10 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   // (project page, More menu, home, a notification). The native one only
   // appears when there's a screen underneath in the same stack (Jed, 11-21:
   // "Schedule screen doesn't have a back button").
+  // Revamp v1: the screen draws its own one-row header (‹ Schedule ■ Project),
+  // so the stack header is off wherever Schedule is opened from.
   useLayoutEffect(() => {
-    navigation.setOptions({
-      headerShown: true,
-      headerLeft: ({ tintColor }: { tintColor?: string }) => (
-        <TouchableOpacity
-          onPress={() => goBackOrHome(navigation as any)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={{ width: 44, height: 44, marginLeft: -10, alignItems: 'center', justifyContent: 'center' }}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <Ionicons name="chevron-back" size={26} color={tintColor} />
-        </TouchableOpacity>
-      ),
-    });
+    navigation.setOptions({ headerShown: false });
   }, [navigation]);
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -294,10 +279,6 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [newNoteText, setNewNoteText] = useState('');
   const [addingNote, setAddingNote] = useState(false);
 
-  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
-  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [calendarMode, setCalendarMode] = useState<CalendarMode>('week');
   const [weekStartDate, setWeekStartDate] = useState<Date>(getMondayOfWeek(new Date()));
 
   const [checklistSteps, setChecklistSteps] = useState<ScheduleItemStep[]>([]);
@@ -339,6 +320,16 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [showNamesCol, setShowNamesCol] = useState(true);
   const [showBarStatus, setShowBarStatus] = useState(false);
   const [showGanttMenu, setShowGanttMenu] = useState(false);
+  // List: done items from before this week fold into one line.
+  const [showEarlierDone, setShowEarlierDone] = useState(false);
+  // Gantt: month shown in the corner, and where the timeline is scrolled to.
+  const [ganttMonth, setGanttMonth] = useState(MONTHS[new Date().getMonth()]);
+  const ganttXRef = useRef(0);
+  // Calendar: the week's days scroll sideways; the time grid fills the rest.
+  const calScrollRef = useRef<ScrollViewInstance>(null);
+  const [calBodyHeight, setCalBodyHeight] = useState(0);
+  const insets = useSafeAreaInsets();
+  const k = useColors();
 
   const theme = useTheme();
 const colors = {
@@ -691,38 +682,6 @@ const colors = {
     return p.jobNumber ? `${p.jobNumber} - ${p.name}` : p.name;
   };
 
-  const getCalendarGrid = useCallback(() => {
-    const firstDay = new Date(calendarYear, calendarMonth, 1);
-    const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    let startOffset = firstDay.getDay();
-
-    const prevMonthLastDay = new Date(calendarYear, calendarMonth, 0).getDate();
-    const cells: { day: number; month: number; year: number; isCurrentMonth: boolean }[] = [];
-
-    const prevMonth = calendarMonth === 0 ? 11 : calendarMonth - 1;
-    const prevYear = calendarMonth === 0 ? calendarYear - 1 : calendarYear;
-    for (let i = startOffset - 1; i >= 0; i--) {
-      cells.push({ day: prevMonthLastDay - i, month: prevMonth, year: prevYear, isCurrentMonth: false });
-    }
-    for (let d = 1; d <= daysInMonth; d++) {
-      cells.push({ day: d, month: calendarMonth, year: calendarYear, isCurrentMonth: true });
-    }
-    const nextMonth = calendarMonth === 11 ? 0 : calendarMonth + 1;
-    const nextYear = calendarMonth === 11 ? calendarYear + 1 : calendarYear;
-    const remaining = 7 - (cells.length % 7);
-    if (remaining < 7) {
-      for (let d = 1; d <= remaining; d++) {
-        cells.push({ day: d, month: nextMonth, year: nextYear, isCurrentMonth: false });
-      }
-    }
-
-    const rows: typeof cells[] = [];
-    for (let i = 0; i < cells.length; i += 7) {
-      rows.push(cells.slice(i, i + 7));
-    }
-    return rows;
-  }, [calendarYear, calendarMonth]);
 
   const getItemsForDate = useCallback((date: Date): ScheduleItem[] => {
     return items.filter(item => {
@@ -736,19 +695,6 @@ const colors = {
     });
   }, [items]);
 
-  const getDotsForDate = useCallback((date: Date): string[] => {
-    const dayItems = getItemsForDate(date);
-    const dotColors: string[] = [];
-    const seen = new Set<string>();
-    dayItems.forEach(item => {
-      const c = statusColorFor(item.status) || theme.statusInfo;
-      if (!seen.has(c) && dotColors.length < 3) {
-        seen.add(c);
-        dotColors.push(c);
-      }
-    });
-    return dotColors;
-  }, [getItemsForDate]);
 
   const parseLocalMidnight = (d: string | null | undefined): Date => {
     if (!d) return new Date();
@@ -811,87 +757,145 @@ const colors = {
     ? statusOptions
     : Object.entries(STATUS_LABELS).map(([key, label]) => ({ key, name: label, color: statusColorFor(key) || theme.textMuted }));
 
-  const renderItemCard = (item: ScheduleItem) => {
-    const status = getStatusOption(item.status);
-
-    return (
-      <TouchableOpacity
-        key={item.id}
-        style={[styles.itemCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-        onPress={() => openDetail(item)}
-        activeOpacity={0.75}
-      >
-        <View style={styles.itemContent}>
-          <View style={styles.itemTopRow}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
-            <View style={[styles.itemStatusPill, { borderColor: status.color }]}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemStatusPillText, { color: status.color }]}>{status.name}</Text>
-            </View>
-          </View>
-          <View style={styles.itemMetaLine}>
-            <Ionicons name="calendar-outline" size={12} color={colors.secondary} />
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemMetaText, { color: colors.secondary }]}>
-              {formatDateRange(item.startDate, item.endDate)}
-            </Text>
-          </View>
-          {item.assignedToName && (
-            <View style={styles.itemMetaLine}>
-              <Ionicons name="person-outline" size={12} color={colors.secondary} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemMetaText, { color: colors.secondary }]}>{item.assignedToName}</Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
+  // ── Status → dot ──────────────────────────────────────────────────────────
+  const dotFor = (status?: string | null): DotStatus => {
+    switch (status) {
+      case 'completed': return 'done';
+      case 'in_progress': return 'inProgress';
+      case 'on_hold': return 'pending';
+      case 'cancelled': return 'rejected';
+      default: return 'upcoming';
+    }
   };
 
+  const itemMeta = (item: ScheduleItem) =>
+    [formatDateRange(item.startDate, item.endDate), item.assignedToName].filter(Boolean).join(' · ');
+
+  const sc = metrics.schedule;
+
+  // ── List: one card per start day; older done items folded away ─────────────
   const renderListView = () => {
     const sorted = [...items].sort((a, b) =>
-      new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+      parseLocalMidnight(a.startDate).getTime() - parseLocalMidnight(b.startDate).getTime()
     );
     if (sorted.length === 0) {
       return (
-        <View style={styles.emptyState}>
-          <Ionicons name="calendar-outline" size={48} color={colors.secondary} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>No schedule items found</Text>
+        <View style={styles.flex1}>
+          <EmptyState icon={CalendarIcon} title="Nothing scheduled yet" helper="Tap + to add the first schedule item." />
         </View>
       );
     }
 
-    const rows: JSX.Element[] = [];
-    let lastDateKey = '';
-    sorted.forEach(item => {
-      const d = new Date(item.startDate);
-      const dateKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      if (dateKey !== lastDateKey) {
-        lastDateKey = dateKey;
-        const label = `${DAY_NAMES[d.getDay()]} - ${MONTHS[d.getMonth()]} ${d.getDate()}`;
-        rows.push(
-          <View key={`div-${dateKey}`} style={styles.dateDivider}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dateDividerText, { color: colors.secondary }]}>{label}</Text>
-            <View style={[styles.dateDividerLine, { borderColor: colors.border }]} />
-          </View>
-        );
-      }
-      rows.push(renderItemCard(item));
+    const todayMs = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+    // "Earlier": done items that finished before this week started.
+    const weekStartMs = getMondayOfWeek(new Date()).getTime();
+    const isEarlierDone = (it: ScheduleItem) =>
+      it.status === 'completed' && parseLocalMidnight(it.endDate).getTime() < weekStartMs;
+    const earlierCount = sorted.filter(isEarlierDone).length;
+    const visible = showEarlierDone ? sorted : sorted.filter(it => !isEarlierDone(it));
+
+    const days: { key: string; date: Date; items: ScheduleItem[] }[] = [];
+    visible.forEach(item => {
+      const d = parseLocalMidnight(item.startDate);
+      const key = toLocalDateStr(d);
+      const last = days[days.length - 1];
+      if (last && last.key === key) last.items.push(item);
+      else days.push({ key, date: d, items: [item] });
     });
+    const todayIdx = days.findIndex(d => d.date.getTime() >= todayMs);
+    const now = new Date();
+    const todayLabel = `Today · ${DAY_NAMES[now.getDay()]} ${now.getDate()}`;
 
     return (
       <ScrollView
         style={styles.flex1}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        contentContainerStyle={[ss.list, { paddingBottom: FAB_CLEARANCE + space.screenBottom }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
       >
-        {rows}
+        {earlierCount > 0 ? (
+          <Pressable
+            onPress={() => setShowEarlierDone(v => !v)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showEarlierDone }}
+            style={ss.earlier}
+          >
+            <Text style={[type.meta, tabular, { color: k.muted }]}>
+              {showEarlierDone ? 'Hide earlier done items' : `${earlierCount} earlier ${earlierCount === 1 ? 'item' : 'items'} done`}
+            </Text>
+            {showEarlierDone
+              ? <ChevronDown size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />
+              : <ChevronRight size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />}
+          </Pressable>
+        ) : null}
+        {days.map((day, i) => (
+          <View key={day.key} style={ss.dayGroup}>
+            {i === todayIdx ? <View style={ss.todayMarker}><TodayMarker label={todayLabel} /></View> : null}
+            <Text style={[type.meta, { color: k.muted, marginBottom: sc.dayLabelGap }]}>
+              {`${DAY_NAMES[day.date.getDay()]} ${day.date.getDate()} ${MONTHS[day.date.getMonth()]}`}
+            </Text>
+            <Card variant="list">
+              {day.items.map(item => {
+                const status = getStatusOption(item.status);
+                const done = item.status === 'completed';
+                return (
+                  <ListRow
+                    key={item.id}
+                    onPress={() => openDetail(item)}
+                    title={item.name}
+                    done={done}
+                    subtitle={itemMeta(item)}
+                    trailing={<StatusDot status={dotFor(item.status)} label={status.name} />}
+                  />
+                );
+              })}
+            </Card>
+          </View>
+        ))}
+        {todayIdx < 0 ? <View style={ss.todayMarker}><TodayMarker label={todayLabel} /></View> : null}
       </ScrollView>
     );
   };
 
+  // ── Gantt ──────────────────────────────────────────────────────────────────
+  const g = sc.gantt;
+  const nameColWidth = showNamesCol ? (isWide ? g.nameColWide : g.nameCol) : 0;
+  const visibleDays = isWide ? g.visibleDaysWide : g.visibleDays;
+  // Day columns size so a week (two on a big screen) fills the width.
+  const dayW = Math.max(
+    (screenWidth - 2 * space.screenX - nameColWidth) / visibleDays,
+    metrics.minHit * 0.6,
+  );
+
   const syncGanttHeader = (x: number) => {
+    ganttXRef.current = x;
     if (isSyncingRef.current) return;
     isSyncingRef.current = true;
     ganttHeaderScrollRef.current?.scrollTo({ x, animated: false });
     setTimeout(() => { isSyncingRef.current = false; }, 30);
+  };
+
+  const scrollGanttTo = (x: number, animated = true) => {
+    const nx = Math.max(0, x);
+    ganttXRef.current = nx;
+    ganttScrollRef.current?.scrollTo({ x: nx, animated });
+    ganttHeaderScrollRef.current?.scrollTo({ x: nx, animated });
+    updateGanttMonth(nx);
+  };
+
+  const updateGanttMonth = (x: number) => {
+    const { minDate } = ganttData();
+    const d = new Date(minDate);
+    d.setDate(d.getDate() + Math.round(x / dayW));
+    const label = MONTHS[d.getMonth()];
+    setGanttMonth(prev => (prev === label ? prev : label));
+  };
+
+  const ganttTodayX = () => {
+    const { minDate } = ganttData();
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    // Week containing today, starting Monday.
+    const monday = getMondayOfWeek(today);
+    return Math.round((monday.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) * dayW;
   };
 
   const renderGanttView = () => {
@@ -899,83 +903,54 @@ const colors = {
 
     if (sortedItems.length === 0) {
       return (
-        <View style={styles.emptyState}>
-          <Ionicons name="bar-chart-outline" size={48} color={colors.secondary} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>No schedule items to display</Text>
+        <View style={styles.flex1}>
+          <EmptyState icon={CalendarIcon} title="Nothing scheduled yet" helper="Tap + to add the first schedule item." />
         </View>
       );
     }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayDayIndex = Math.floor((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
-    const todayX = todayDayIndex * DAY_COL_WIDTH + DAY_COL_WIDTH / 2 - 1;
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    const todayDayIndex = Math.floor((today.getTime() - minDate.getTime()) / MS_PER_DAY);
+    const todayX = todayDayIndex * dayW + dayW / 2 - g.todayLine / 2;
 
-    const dateHeaders: { date: Date; label: string; isWeekend: boolean }[] = [];
+    const dateHeaders: { date: Date; isWeekend: boolean }[] = [];
     for (let i = 0; i < days; i++) {
       const d = new Date(minDate);
       d.setDate(d.getDate() + i);
       const dow = d.getDay();
-      dateHeaders.push({ date: d, label: `${d.getDate()}`, isWeekend: dow === 0 || dow === 6 });
+      dateHeaders.push({ date: d, isWeekend: dow === 0 || dow === 6 });
     }
 
-    const showMonthHeaders = days > 14;
-    const monthBreaks: { month: string; startIdx: number; count: number }[] = [];
-    if (showMonthHeaders) {
-      let curMonth = '';
-      dateHeaders.forEach((dh, idx) => {
-        const m = `${MONTHS[dh.date.getMonth()]} ${dh.date.getFullYear()}`;
-        if (m !== curMonth) {
-          curMonth = m;
-          monthBreaks.push({ month: m, startIdx: idx, count: 1 });
-        } else {
-          monthBreaks[monthBreaks.length - 1].count++;
-        }
-      });
-    }
-
-    const totalWidth = days * DAY_COL_WIDTH;
-    const headerHeight = showMonthHeaders ? 52 : 32;
-    const weekendBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
-    const barAreaHeight = sortedItems.length * GANTT_ROW_HEIGHT;
-    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    const totalWidth = days * dayW;
+    const barAreaHeight = sortedItems.length * g.rowHeight;
 
     const headerDateRow = (
-      <View style={{ width: totalWidth }}>
-        {showMonthHeaders && (
-          <View style={[styles.ganttMonthRow, { borderBottomColor: colors.border }]}>
-            {monthBreaks.map((mb, i) => (
-              <View key={i} style={[styles.ganttMonthCell, { width: mb.count * DAY_COL_WIDTH, backgroundColor: colors.card, borderRightColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttMonthText, { color: colors.text }]}>{mb.month}</Text>
+      <View style={{ width: totalWidth, height: g.headerHeight, flexDirection: 'row' }}>
+        {dateHeaders.map((dh, i) => {
+          const isTodayCol = isToday(dh.date);
+          return (
+            <View key={i} style={[ss.ganttDateCell, { width: dayW }, dh.isWeekend && { backgroundColor: k.greyFill }]}>
+              <Text style={[type.tiny, { color: isTodayCol ? k.accent : k.muted }]}>
+                {DAY_NAMES[dh.date.getDay()].charAt(0)}
+              </Text>
+              <View style={[ss.ganttDateNum, isTodayCol && { backgroundColor: k.accent }]}>
+                <Text style={[type.caption, tabular, { color: isTodayCol ? k.onAccent : k.text }]}>{dh.date.getDate()}</Text>
               </View>
-            ))}
-          </View>
-        )}
-        <View style={[styles.ganttDateRow, { borderBottomColor: colors.border }]}>
-          {dateHeaders.map((dh, i) => {
-            const todayHighlight = isToday(dh.date);
-            const bg = todayHighlight
-              ? theme.primaryLight
-              : dh.isWeekend ? weekendBg : colors.card;
-            return (
-              <View key={i} style={[styles.ganttDateCell, { backgroundColor: bg, borderRightColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttDateText, { color: todayHighlight ? colors.accent : colors.secondary, fontWeight: dh.isWeekend ? '400' : '500' }]}>
-                  {dh.label}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
+            </View>
+          );
+        })}
       </View>
     );
 
     return (
       <View style={styles.flex1}>
-        {/* Sticky date header */}
-        <View style={[styles.ganttStickyHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+        {/* Date header: month in the corner, weekday + date per column */}
+        <View style={[ss.ganttHeader, { borderBottomColor: k.border }]}>
           {showNamesCol && (
-            <View style={[styles.ganttNamesCol, isWide && { width: NAME_COL_WIDTH_WIDE }, { height: headerHeight, justifyContent: 'center', borderRightColor: colors.border, borderRightWidth: 1 }]}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttHeaderText, { color: colors.secondary, paddingHorizontal: 8 }]}>Item</Text>
+            <View style={[ss.ganttCorner, { width: nameColWidth }]}>
+              <Text style={[type.meta, { color: k.text }]}>{ganttMonth}</Text>
             </View>
           )}
           <ScrollView
@@ -989,44 +964,46 @@ const colors = {
           </ScrollView>
         </View>
 
-        {/* Scrollable body */}
-        <ScrollView ref={ganttBodyRef} style={styles.flex1} showsVerticalScrollIndicator>
-          <View style={styles.ganttContainer}>
+        {/* Body */}
+        <ScrollView
+          ref={ganttBodyRef}
+          style={styles.flex1}
+          contentContainerStyle={{ paddingBottom: FAB_CLEARANCE + space.screenBottom }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
+        >
+          <View style={ss.ganttContainer}>
             {showNamesCol && (
-              <View style={[styles.ganttNamesCol, isWide && { width: NAME_COL_WIDTH_WIDE }, { borderRightColor: colors.border, borderRightWidth: 1 }]}>
-                {sortedItems.map((item, idx) => (
-                  <TouchableOpacity
+              <View style={{ width: nameColWidth }}>
+                {sortedItems.map(item => (
+                  <Pressable
                     key={item.id}
-                    style={[styles.ganttNameRow, { backgroundColor: idx % 2 === 0 ? colors.bg : colors.card, borderBottomColor: colors.border }]}
+                    style={[ss.ganttNameRow, { borderBottomColor: k.hairline }]}
                     onPress={() => openDetail(item)}
+                    accessibilityRole="button"
                   >
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttNameText, isWide && styles.ganttNameTextWide, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                  </TouchableOpacity>
+                    <Text style={[type.ganttName, { color: k.text }]} numberOfLines={1}>{item.name}</Text>
+                  </Pressable>
                 ))}
               </View>
             )}
             <ScrollView
               horizontal
-              showsHorizontalScrollIndicator
+              showsHorizontalScrollIndicator={false}
               ref={ganttScrollRef}
               scrollEventThrottle={16}
               onScroll={(e) => {
                 syncGanttHeader(e.nativeEvent.contentOffset.x);
                 if (showGanttMenu) setShowGanttMenu(false);
               }}
+              onMomentumScrollEnd={(e) => updateGanttMonth(e.nativeEvent.contentOffset.x)}
+              onScrollEndDrag={(e) => updateGanttMonth(e.nativeEvent.contentOffset.x)}
               onLayout={() => {
                 if (ganttScrolledRef.current) return;
                 ganttScrolledRef.current = true;
-                const todayOffset = Math.floor((today.getTime() - minDate.getTime()) / MS_PER_DAY) * DAY_COL_WIDTH;
-                const scrollX = Math.max(0, todayOffset - screenWidth / 3);
-                ganttScrollRef.current?.scrollTo({ x: scrollX, animated: false });
-                ganttHeaderScrollRef.current?.scrollTo({ x: scrollX, animated: false });
-                // And down to today's work: the first row running today, else
-                // the next one to start, else the last row. A couple of rows
-                // of context stay above it.
-                const todayMidnight = new Date(today);
-                todayMidnight.setHours(0, 0, 0, 0);
-                const todayMs = todayMidnight.getTime();
+                // Open on this week (Monday first), scrolled down to today's work:
+                // the first row running today, else the next to start, else the last.
+                scrollGanttTo(ganttTodayX(), false);
+                const todayMs = today.getTime();
                 let row = sortedItems.findIndex(it => {
                   const s0 = parseLocalMidnight(it.startDate).getTime();
                   const e0 = parseLocalMidnight(it.endDate).getTime();
@@ -1034,21 +1011,21 @@ const colors = {
                 });
                 if (row < 0) row = sortedItems.findIndex(it => parseLocalMidnight(it.startDate).getTime() >= todayMs);
                 if (row < 0) row = sortedItems.length - 1;
-                const scrollY = Math.max(0, (row - 2) * GANTT_ROW_HEIGHT);
+                const scrollY = Math.max(0, (row - 2) * g.rowHeight);
                 ganttBodyRef.current?.scrollTo({ y: scrollY, animated: false });
               }}
             >
               <View style={{ width: totalWidth, height: barAreaHeight, position: 'relative' }}>
-                {/* Weekend column shading */}
+                {/* Weekend columns */}
                 {dateHeaders.map((dh, ci) =>
                   dh.isWeekend ? (
-                    <View key={`wk-${ci}`} style={{ position: 'absolute', left: ci * DAY_COL_WIDTH, top: 0, width: DAY_COL_WIDTH, height: barAreaHeight, backgroundColor: weekendBg }} />
+                    <View key={`wk-${ci}`} style={{ position: 'absolute', left: ci * dayW, top: 0, width: dayW, height: barAreaHeight, backgroundColor: k.greyFill }} />
                   ) : null
                 )}
 
-                {/* Day gridlines — drawn once as full-height columns, not per row */}
+                {/* Day gridlines */}
                 {dateHeaders.map((_, ci) => (
-                  <View key={`gl-${ci}`} style={[styles.ganttGridLine, { left: ci * DAY_COL_WIDTH, height: barAreaHeight, borderRightColor: colors.border }]} />
+                  <View key={`gl-${ci}`} style={[ss.ganttGridLine, { left: ci * dayW, height: barAreaHeight, backgroundColor: k.hairline }]} />
                 ))}
 
                 {/* Bar rows */}
@@ -1057,46 +1034,32 @@ const colors = {
                   const itemEnd = parseLocalMidnight(item.endDate);
                   const startDay = Math.max(0, Math.floor((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
                   const durationDays = Math.max(1, Math.round((itemEnd.getTime() - itemStart.getTime()) / MS_PER_DAY) + 1);
-                  const barLeft = startDay * DAY_COL_WIDTH;
-                  const barWidth = Math.max(durationDays * DAY_COL_WIDTH - 4, DAY_COL_WIDTH - 4);
-                  const barColor = getItemColor(item);
+                  const barLeft = startDay * dayW + g.barInset;
+                  const barWidth = Math.max(durationDays * dayW - 2 * g.barInset, dayW - 2 * g.barInset);
                   const status = getStatusOption(item.status);
-                  const nameFits = (item.name.length * 7 + 16) <= barWidth;
-
+                  const range = (() => {
+                    const sd = itemStart.getDate();
+                    const ed = itemEnd.getDate();
+                    return durationDays > 1 ? `${sd} – ${ed}` : `${sd}`;
+                  })();
                   return (
                     <View
                       key={item.id}
-                      style={[styles.ganttBarRow, { position: 'absolute', left: 0, right: 0, top: idx * GANTT_ROW_HEIGHT, backgroundColor: idx % 2 === 0 ? 'transparent' : (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'), borderBottomColor: colors.border }]}
+                      style={[ss.ganttBarRow, { top: idx * g.rowHeight, height: g.rowHeight, borderBottomColor: k.hairline }]}
                     >
-                      {showBarStatus && (
-                        <View
-                          style={[styles.ganttStatusChip, {
-                            left: Math.max(2, barLeft - 68),
-                            backgroundColor: status.color + '22',
-                            borderColor: status.color + '77',
-                            maxWidth: Math.min(64, barLeft - 6),
-                          }]}
-                        >
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttStatusChipText, { color: status.color }]} numberOfLines={1}>{status.name}</Text>
+                      {showBarStatus && barLeft > dayW ? (
+                        <View style={[ss.ganttStatus, { right: totalWidth - barLeft + space.inline }]}>
+                          <StatusDot status={dotFor(item.status)} label={status.name} small />
                         </View>
-                      )}
-                      <TouchableOpacity
-                        style={[styles.ganttBar, { left: barLeft + 2, width: barWidth, backgroundColor: barColor }]}
+                      ) : null}
+                      <Pressable
+                        style={{ position: 'absolute', left: barLeft }}
                         onPress={() => openDetail(item)}
-                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${item.name}, ${formatDateRange(item.startDate, item.endDate)}`}
                       >
-                        {nameFits ? (
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.ganttBarText} numberOfLines={1}>{item.name}</Text>
-                        ) : null}
-                      </TouchableOpacity>
-                      {!nameFits && (
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-                          style={[styles.ganttBarOuterText, { left: barLeft + barWidth + 8, color: colors.text }]}
-                          numberOfLines={1}
-                        >
-                          {item.name}
-                        </Text>
-                      )}
+                        <GanttBar color={item.color || item.assignedToColor} width={barWidth} label={range} />
+                      </Pressable>
                     </View>
                   );
                 })}
@@ -1107,8 +1070,8 @@ const colors = {
                   if (deps.length === 0) return null;
                   const itemStart = parseLocalMidnight(item.startDate);
                   const depStartDay = Math.max(0, Math.floor((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
-                  const depBarLeft = depStartDay * DAY_COL_WIDTH + 2;
-                  const depRowTop = idx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
+                  const depBarLeft = depStartDay * dayW + g.barInset;
+                  const depRowTop = idx * g.rowHeight + g.rowHeight / 2;
 
                   return deps.map(dep => {
                     const predIdx = sortedItems.findIndex(si => String(si.id) === String(dep.id));
@@ -1116,9 +1079,9 @@ const colors = {
                     const pred = sortedItems[predIdx];
                     const predEnd = parseLocalMidnight(pred.endDate);
                     const predEndDay = Math.max(1, Math.round((predEnd.getTime() - minDate.getTime()) / MS_PER_DAY) + 1);
-                    const predBarRight = predEndDay * DAY_COL_WIDTH - 2;
-                    const predRowMid = predIdx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
-                    const lineColor = colors.accent;
+                    const predBarRight = predEndDay * dayW - g.barInset;
+                    const predRowMid = predIdx * g.rowHeight + g.rowHeight / 2;
+                    const lineColor = k.accentLine;
                     const cornerX = Math.min(predBarRight + 8, depBarLeft);
                     const hLineWidth = Math.abs(cornerX - predBarRight);
                     const vTop = Math.min(predRowMid, depRowTop);
@@ -1130,17 +1093,17 @@ const colors = {
                         <View style={[styles.depLineH, { left: predBarRight, top: predRowMid - 1, width: hLineWidth, backgroundColor: lineColor }]} />
                         {vHeight > 0 && <View style={[styles.depLineV, { left: cornerX - 1, top: vTop, height: vHeight, backgroundColor: lineColor }]} />}
                         {hLineToDepWidth > 0 && <View style={[styles.depLineH, { left: cornerX, top: depRowTop - 1, width: hLineToDepWidth, backgroundColor: lineColor }]} />}
-                        <View style={[styles.depArrow, { left: depBarLeft - 4, top: depRowTop - 3, borderLeftColor: lineColor }]} />
+                        <View style={[styles.depArrow, { left: depBarLeft - g.depArrow, top: depRowTop - 3, borderLeftColor: lineColor }]} />
                       </View>
                     );
                   });
                 })}
 
-                {/* Today vertical line */}
+                {/* Today line */}
                 {todayDayIndex >= 0 && todayDayIndex < days && (
                   <View
                     pointerEvents="none"
-                    style={{ position: 'absolute', left: todayX, top: 0, width: 2, height: barAreaHeight, backgroundColor: colors.accent, opacity: 0.6, zIndex: 10 }}
+                    style={{ position: 'absolute', left: todayX, top: 0, width: g.todayLine, height: barAreaHeight, backgroundColor: k.ganttToday }}
                   />
                 )}
               </View>
@@ -1151,244 +1114,167 @@ const colors = {
     );
   };
 
-  const renderCalendarModeToggle = () => (
-    <View style={[styles.calModeToggle, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-      {(['month', 'week'] as CalendarMode[]).map(mode => (
-        <TouchableOpacity hitSlop={{ top: 8, bottom: 8 }}
-          key={mode}
-          style={[styles.calModeBtn, calendarMode === mode && { backgroundColor: colors.accent }]}
-          onPress={() => {
-            setCalendarMode(mode);
-            if (mode === 'week') setWeekStartDate(getMondayOfWeek(selectedDate));
-          }}
-        >
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calModeText, { color: calendarMode === mode ? '#fff' : colors.secondary }]}>
-            {mode.charAt(0).toUpperCase() + mode.slice(1)}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-
-  const renderMonthView = () => {
-    const rows = getCalendarGrid();
-    const selectedDayItems = getItemsForDate(selectedDate);
-
-    return (
-      <>
-        <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.calendarNav}>
-            <TouchableOpacity hitSlop={12} onPress={() => {
-              if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); }
-              else setCalendarMonth(m => m - 1);
-            }}>
-              <Ionicons name="chevron-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity hitSlop={{ top: 10, bottom: 10 }} onPress={() => { setCalendarMonth(new Date().getMonth()); setCalendarYear(new Date().getFullYear()); setSelectedDate(new Date()); }}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calendarTitle, { color: colors.text }]}>
-                {MONTHS_FULL[calendarMonth]} {calendarYear}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity hitSlop={12} onPress={() => {
-              if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); }
-              else setCalendarMonth(m => m + 1);
-            }}>
-              <Ionicons name="chevron-forward" size={24} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.calendarDayNames}>
-            {DAY_NAMES.map(d => (
-              <View key={d} style={styles.calendarDayNameCell}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calendarDayNameText, { color: colors.secondary }]}>{d}</Text>
-              </View>
-            ))}
-          </View>
-
-          {rows.map((row, ri) => (
-            <View key={ri} style={styles.calendarRow}>
-              {row.map((cell, ci) => {
-                const cellDate = new Date(cell.year, cell.month, cell.day);
-                const today = isToday(cellDate);
-                const selected = isSameDay(cellDate, selectedDate);
-                const dots = cell.isCurrentMonth ? getDotsForDate(cellDate) : [];
-
-                return (
-                  <TouchableOpacity
-                    key={ci}
-                    style={[
-                      styles.calendarCell,
-                      today && !selected && { backgroundColor: theme.primaryLight },
-                      selected && { backgroundColor: colors.accent },
-                    ]}
-                    onPress={() => setSelectedDate(cellDate)}
-                  >
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
-                      styles.calendarDayText,
-                      { color: cell.isCurrentMonth ? colors.text : colors.secondary },
-                      !cell.isCurrentMonth && { opacity: 0.4 },
-                      selected && { color: '#fff' },
-                      today && !selected && { color: colors.accent, fontWeight: '700' },
-                    ]}>
-                      {cell.day}
-                    </Text>
-                    {dots.length > 0 && (
-                      <View style={styles.dotsRow}>
-                        {dots.map((color, di) => (
-                          <View key={di} style={[styles.dot, { backgroundColor: selected ? '#fff' : color }]} />
-                        ))}
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.selectedDaySection}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.selectedDayTitle, { color: colors.text }]}>
-            {selectedDate.getDate()} {MONTHS_FULL[selectedDate.getMonth()]} {selectedDate.getFullYear()}
-          </Text>
-          {selectedDayItems.length === 0 ? (
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noDayItems, { color: colors.secondary }]}>No items scheduled for this day</Text>
-          ) : (
-            selectedDayItems.map(renderItemCard)
-          )}
-        </View>
-      </>
-    );
+  // ── Calendar: week time grid, days scroll sideways ────────────────────────
+  const cal = sc.calendar;
+  const timeOf = (t?: string | null): number | null => {
+    if (!t) return null;
+    const [h, m] = t.split(':').map(Number);
+    return Number.isFinite(h) ? h + (Number.isFinite(m) ? m / 60 : 0) : null;
+  };
+  const hourLabel = (h: number) => (h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`);
+  const shortTime = (t?: string | null) => {
+    const v = timeOf(t);
+    if (v == null) return '';
+    const h = Math.floor(v);
+    const m = Math.round((v - h) * 60);
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${String(m).padStart(2, '0')}`;
   };
 
-  const renderWeekView = () => {
+  const renderCalendarView = () => {
     const weekDays = getWeekDays();
-    const weekEnd = new Date(weekStartDate);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-    const startMonth = weekStartDate.getMonth();
-    const titleText = startMonth === weekEnd.getMonth()
-      ? `${MONTHS_FULL[startMonth]} ${weekStartDate.getFullYear()}`
-      : `${MONTHS[startMonth]} – ${MONTHS[weekEnd.getMonth()]} ${weekEnd.getFullYear()}`;
-
-    const CAL_DAY_WIDTH = 115;
+    const timed = items.filter(it => timeOf(it.startTime) != null);
+    let startHour: number = cal.startHour;
+    let endHour: number = cal.endHour;
+    timed.forEach(it => {
+      const s0 = timeOf(it.startTime) ?? cal.startHour;
+      const e0 = timeOf(it.endTime) ?? s0 + 1;
+      startHour = Math.min(startHour, Math.floor(s0));
+      endHour = Math.max(endHour, Math.ceil(e0));
+    });
+    const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i);
+    const gridHeight = (endHour - startHour) * cal.hourHeight;
+    const now = new Date();
+    const nowH = now.getHours() + now.getMinutes() / 60;
+    const nowY = (nowH - startHour) * cal.hourHeight;
+    const showNow = nowH >= startHour && nowH <= endHour;
+    const nowLabel = shortTime(`${now.getHours()}:${now.getMinutes()}`);
+    const allDayRows = weekDays.map(day => getItemsForDate(day).filter(it => timeOf(it.startTime) == null));
+    const hasAllDay = allDayRows.some(r => r.length > 0);
 
     return (
       <View style={styles.flex1}>
-        {/* Nav bar */}
-        <View style={[styles.calWeekNav, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <TouchableOpacity hitSlop={4}
-            style={styles.calNavArrow}
-            onPress={() => { const d = new Date(weekStartDate); d.setDate(d.getDate() - 7); setWeekStartDate(d); }}
-          >
-            <Ionicons name="chevron-back" size={22} color={colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity hitSlop={{ top: 10, bottom: 10 }} onPress={() => setWeekStartDate(getMondayOfWeek(new Date()))}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calWeekNavTitle, { color: colors.accent }]}>{titleText}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity hitSlop={4}
-            style={styles.calNavArrow}
-            onPress={() => { const d = new Date(weekStartDate); d.setDate(d.getDate() + 7); setWeekStartDate(d); }}
-          >
-            <Ionicons name="chevron-forward" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Scrollable week grid */}
         <ScrollView
-          style={styles.flex1}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          horizontal
+          ref={calScrollRef}
+          showsHorizontalScrollIndicator={false}
+          onLayout={() => {
+            // Show today (or the week's start) in view.
+            const idx = weekDays.findIndex(d => isToday(d));
+            calScrollRef.current?.scrollTo({ x: Math.max(0, (idx - 2) * cal.dayWidth), animated: false });
+          }}
         >
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View>
-              {/* Day header chips */}
-              <View style={[styles.calWeekHeaderRow, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-                {weekDays.map((day, i) => {
-                  const today = isToday(day);
-                  return (
-                    <View
-                      key={i}
-                      style={[styles.calDayHeaderCol, { width: CAL_DAY_WIDTH, borderRightColor: colors.border },
-                        today && { backgroundColor: colors.accent + '14' }]}
-                    >
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calDayName, { color: today ? colors.accent : colors.secondary }]}>
-                        {DAY_NAMES_MON[i]}
-                      </Text>
-                      <View style={today ? [styles.calTodayCircle, { backgroundColor: colors.accent }] : styles.calDayNumWrap}>
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calDayNum, { color: today ? '#fff' : colors.text }]}>
-                          {day.getDate()}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
+          {/* A fixed-height column: header on top, the time grid scrolls below it. */}
+          <View style={calBodyHeight ? { height: calBodyHeight } : styles.flex1}>
+            {/* Day header */}
+            <View style={[ss.calHeader, { borderBottomColor: k.border }]}>
+              <View style={[ss.calGutter, { justifyContent: 'flex-end' }]}>
+                <Text style={[type.meta, { color: k.text }]}>{MONTHS[weekDays[0].getMonth()]}</Text>
               </View>
-
-              {/* Day content columns */}
-              <View style={{ flexDirection: 'row' }}>
-                {weekDays.map((day, i) => {
-                  const dayItems = getItemsForDate(day);
-                  const today = isToday(day);
-                  return (
-                    <View
-                      key={i}
-                      style={[styles.calDayCol, { width: CAL_DAY_WIDTH, borderRightColor: colors.border },
-                        today && { backgroundColor: colors.accent + '06' }]}
-                    >
-                      {dayItems.length === 0 ? (
-                        <View style={styles.calDayEmpty} />
-                      ) : (
-                        dayItems.map(item => {
-                          const itemColor = getItemColor(item);
-                          return (
-                            <TouchableOpacity
-                              key={item.id}
-                              style={[styles.calItemCard, { backgroundColor: itemColor + '22', borderColor: itemColor + '66' }]}
-                              onPress={() => openDetail(item)}
-                              activeOpacity={0.75}
-                            >
-                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calItemName, { color: colors.text }]} numberOfLines={3}>{item.name}</Text>
-                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calItemSub, { color: colors.secondary }]} numberOfLines={1}>
-                                {TYPE_LABELS[item.type] || item.type}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })
-                      )}
+              {weekDays.map((day, i) => {
+                const isTodayCol = isToday(day);
+                const weekend = day.getDay() === 0 || day.getDay() === 6;
+                return (
+                  <View key={i} style={[ss.calDayHead, { width: cal.dayWidth }, weekend && { backgroundColor: k.greyFill }]}>
+                    <Text style={[type.tiny, { color: isTodayCol ? k.accent : k.muted }]}>{DAY_NAMES[day.getDay()].toUpperCase()}</Text>
+                    <View style={[ss.calDateCircle, isTodayCol && { backgroundColor: k.accent }]}>
+                      <Text style={[type.body, tabular, { color: isTodayCol ? k.onAccent : k.text }]}>{day.getDate()}</Text>
                     </View>
-                  );
-                })}
-              </View>
+                  </View>
+                );
+              })}
             </View>
-          </ScrollView>
-          <View style={{ height: 40 }} />
+
+            {/* All-day items (schedule items without a time) */}
+            {hasAllDay ? (
+              <View style={[ss.calAllDay, { borderBottomColor: k.border }]}>
+                <View style={ss.calGutter} />
+                {allDayRows.map((row, i) => (
+                  <View key={i} style={[ss.calAllDayCol, { width: cal.dayWidth }]}>
+                    {row.map(it => (
+                      <Pressable key={it.id} onPress={() => openDetail(it)} accessibilityRole="button" accessibilityLabel={it.name}>
+                        <CalendarBlock variant="allDay" title={it.name} color={getItemColor(it)} />
+                      </Pressable>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {/* Time grid */}
+            <ScrollView
+              style={styles.flex1}
+              contentContainerStyle={{ paddingBottom: FAB_CLEARANCE }}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
+            >
+              <View style={{ flexDirection: 'row', height: gridHeight + cal.hourHeight / 2 }}>
+                <View style={ss.calGutter}>
+                  {hours.map(h => (
+                    <Text key={h} style={[type.micro, ss.calHour, { top: (h - startHour) * cal.hourHeight, color: k.muted }]}>{hourLabel(h)}</Text>
+                  ))}
+                  {showNow ? (
+                    <Text style={[type.micro, ss.calHour, { top: nowY, color: k.accent, backgroundColor: k.bg }]}>{nowLabel}</Text>
+                  ) : null}
+                </View>
+                {weekDays.map((day, i) => {
+                  const weekend = day.getDay() === 0 || day.getDay() === 6;
+                  const dayTimed = getItemsForDate(day).filter(it => timeOf(it.startTime) != null);
+                  const isTodayCol = isToday(day);
+                  return (
+                    <View key={i} style={[ss.calDayCol, { width: cal.dayWidth, borderLeftColor: k.hairline }, weekend && { backgroundColor: k.greyFill }]}>
+                      {hours.map(h => (
+                        <View key={h} style={[ss.calHourLine, { top: (h - startHour) * cal.hourHeight, backgroundColor: k.hairline }]} />
+                      ))}
+                      {dayTimed.map(it => {
+                        const s0 = timeOf(it.startTime) ?? startHour;
+                        const e0 = Math.max(timeOf(it.endTime) ?? s0 + 1, s0 + 0.5);
+                        const top = (s0 - startHour) * cal.hourHeight;
+                        const height = (e0 - s0) * cal.hourHeight - cal.blockInset;
+                        return (
+                          <Pressable
+                            key={it.id}
+                            onPress={() => openDetail(it)}
+                            accessibilityRole="button"
+                            accessibilityLabel={it.name}
+                            style={{ position: 'absolute', top, left: cal.blockInset, right: cal.blockInset }}
+                          >
+                            <CalendarBlock
+                              title={it.name}
+                              time={`${shortTime(it.startTime)} – ${shortTime(it.endTime)}`}
+                              color={getItemColor(it)}
+                              height={height}
+                            />
+                          </Pressable>
+                        );
+                      })}
+                      {showNow ? (
+                        <View pointerEvents="none" style={{ position: 'absolute', top: nowY - metrics.divider.nowDot / 2, left: 0, right: 0 }}>
+                          <NowLine faint={!isTodayCol} />
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
         </ScrollView>
       </View>
     );
   };
 
-  const renderCalendarView = () => {
-    if (calendarMode === 'week') {
-      return (
-        <View style={styles.flex1}>
-          <View style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            {renderCalendarModeToggle()}
-          </View>
-          {renderWeekView()}
-        </View>
-      );
-    }
-    return (
-      <ScrollView
-        style={styles.flex1}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-      >
-        <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
-          {renderCalendarModeToggle()}
-        </View>
-        {renderMonthView()}
-        <View style={{ height: 40 }} />
-      </ScrollView>
-    );
+  // ‹ Today › in the tab row: a week at a time.
+  const navPrev = () => {
+    if (viewMode === 'gantt') scrollGanttTo(ganttXRef.current - visibleDays * dayW);
+    else { const d = new Date(weekStartDate); d.setDate(d.getDate() - 7); setWeekStartDate(d); }
+  };
+  const navNext = () => {
+    if (viewMode === 'gantt') scrollGanttTo(ganttXRef.current + visibleDays * dayW);
+    else { const d = new Date(weekStartDate); d.setDate(d.getDate() + 7); setWeekStartDate(d); }
+  };
+  const navToday = () => {
+    if (viewMode === 'gantt') scrollGanttTo(ganttTodayX());
+    else setWeekStartDate(getMondayOfWeek(new Date()));
   };
 
   const closeDetail = () => {
@@ -1978,50 +1864,24 @@ const colors = {
     </Modal>
   );
 
-  if (loading && projects.length === 0) {
-    return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
-    );
-  }
+  const selectedProject = projects.find(p => p.id === selectedProjectId);
+  const headerProject = selectedProject
+    ? { name: selectedProject.name, color: selectedProject.color ?? null, id: selectedProject.id }
+    : route?.params?.projectName
+      ? { name: route.params.projectName, color: route.params.projectColor ?? null, id: route.params.projectId ?? null }
+      : !isProjectContext
+        ? { name: 'Choose project', color: null, id: null }
+        : null;
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <View style={[styles.viewToggle, { backgroundColor: colors.inputBg, borderColor: colors.border, flex: 1 }]}>
-          {(['list', 'gantt', 'calendar'] as ViewMode[]).map(mode => (
-            <TouchableOpacity hitSlop={{ top: 6, bottom: 6 }}
-              key={mode}
-              style={[styles.viewToggleBtn, viewMode === mode && { backgroundColor: colors.accent }]}
-              onPress={() => setViewMode(mode)}
-            >
-              <Ionicons
-                name={mode === 'list' ? 'list-outline' : mode === 'gantt' ? 'bar-chart-outline' : 'calendar-outline'}
-                size={16}
-                color={viewMode === mode ? '#fff' : colors.secondary}
-              />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewToggleText, { color: viewMode === mode ? '#fff' : colors.secondary }]}>
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {!isProjectContext && (
-          <TouchableOpacity hitSlop={{ top: 8, bottom: 8 }}
-            style={[styles.projectSelectorBtn, { borderColor: colors.border, backgroundColor: colors.inputBg }]}
-            onPress={() => setShowProjectPicker(true)}
-          >
-            <Ionicons name="folder-outline" size={15} color={colors.accent} />
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.projectSelectorText, { color: colors.text }]} numberOfLines={1}>
-              {getSelectedProjectLabel()}
-            </Text>
-            <Ionicons name="chevron-down" size={14} color={colors.secondary} />
-          </TouchableOpacity>
-        )}
-
-        {scheduleId && (
+  const header = (
+    <View style={[ss.top, { paddingTop: insets.top + sc.top, gap: viewMode === 'list' ? sc.gapList : sc.gapOther }]}>
+      <PageHeader
+        title="Schedule"
+        project={headerProject}
+        onBack={() => goBackOrHome(navigation as any)}
+        onProjectPress={!isProjectContext ? () => setShowProjectPicker(true) : undefined}
+        actions={viewMode === 'gantt' ? [{ icon: Ellipsis, label: 'Gantt options', onPress: () => setShowGanttMenu(v => !v) }] : undefined}
+        right={scheduleId ? (
           <ScheduleActivityFeedButton
             scheduleId={scheduleId}
             userId={user?.id ?? null}
@@ -2030,73 +1890,74 @@ const colors = {
               if (target) openDetail(target);
             }}
           />
-        )}
+        ) : undefined}
+      />
+      <UnderlineTabs
+        tabs={[{ key: 'list', label: 'List' }, { key: 'gantt', label: 'Gantt' }, { key: 'calendar', label: 'Calendar' }]}
+        value={viewMode}
+        onChange={(m) => { setViewMode(m); if (m !== 'gantt') ganttScrolledRef.current = false; }}
+        nav={viewMode === 'list' ? undefined : { onPrev: navPrev, onToday: navToday, onNext: navNext }}
+      />
+      {showGanttMenu && viewMode === 'gantt' && (
+        <View style={ss.ganttMenu}>
+          <Card variant="list">
+            <ListRow
+              lead={<Checkbox checked={showNamesCol} />}
+              title="Show names column"
+              titleLines={1}
+              onPress={() => {
+                const next = !showNamesCol;
+                setShowNamesCol(next);
+                AsyncStorage.setItem('@buildpro/gantt_show_names', String(next));
+                setShowGanttMenu(false);
+              }}
+            />
+            <ListRow
+              lead={<Checkbox checked={showBarStatus} />}
+              title="Show status"
+              titleLines={1}
+              onPress={() => {
+                const next = !showBarStatus;
+                setShowBarStatus(next);
+                AsyncStorage.setItem('@buildpro/gantt_show_status', String(next));
+                setShowGanttMenu(false);
+              }}
+            />
+          </Card>
+        </View>
+      )}
+    </View>
+  );
 
-        {viewMode === 'gantt' && (
-          <View style={{ position: 'relative', zIndex: 200 }}>
-            <TouchableOpacity hitSlop={4}
-              style={[styles.headerMenuBtn, { borderColor: colors.border }]}
-              onPress={() => setShowGanttMenu(v => !v)}
-            >
-              <Ionicons name="ellipsis-vertical" size={18} color={colors.secondary} />
-            </TouchableOpacity>
-            {showGanttMenu && (
-              <View style={[styles.ganttMenuDropdown, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: '#000' }]}>
-                <TouchableOpacity
-                  style={styles.ganttMenuRow}
-                  onPress={() => {
-                    const next = !showNamesCol;
-                    setShowNamesCol(next);
-                    AsyncStorage.setItem('@buildpro/gantt_show_names', String(next));
-                    setShowGanttMenu(false);
-                  }}
-                >
-                  <Ionicons name={showNamesCol ? 'checkbox' : 'square-outline'} size={18} color={showNamesCol ? colors.accent : colors.secondary} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Table</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.ganttMenuRow}
-                  onPress={() => {
-                    const next = !showBarStatus;
-                    setShowBarStatus(next);
-                    AsyncStorage.setItem('@buildpro/gantt_show_status', String(next));
-                    setShowGanttMenu(false);
-                  }}
-                >
-                  <Ionicons name={showBarStatus ? 'checkbox' : 'square-outline'} size={18} color={showBarStatus ? colors.accent : colors.secondary} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Status</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
+  if (loading && projects.length === 0) {
+    return (
+      <View style={[styles.container, { backgroundColor: k.bg }]}>
+        {header}
+        <SkeletonList />
       </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { backgroundColor: k.bg }]}>
+      {header}
 
       {!selectedProjectId && !isProjectContext ? (
-        <View style={[styles.flex1, styles.center]}>
-          <Ionicons name="folder-open-outline" size={56} color={colors.secondary} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.promptText, { color: colors.secondary }]}>Tap a project in the Projects tab to view its schedule here</Text>
+        <View style={styles.flex1}>
+          <EmptyState icon={FolderOpen} title="Choose a project" helper="Tap the project name at the top to see its schedule." />
         </View>
       ) : loading ? (
-        <View style={[styles.flex1, styles.center]}>
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
+        <SkeletonList />
       ) : (
-        <>
+        <View style={styles.flex1} onLayout={(e) => setCalBodyHeight(e.nativeEvent.layout.height)}>
           {viewMode === 'list' && renderListView()}
           {viewMode === 'gantt' && renderGanttView()}
           {viewMode === 'calendar' && renderCalendarView()}
-        </>
+        </View>
       )}
 
       {selectedProjectId && !loading && (
-        <TouchableOpacity
-          style={[styles.fab, { backgroundColor: colors.accent }]}
-          onPress={() => setShowAddModal(true)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add" size={28} color="#fff" />
-        </TouchableOpacity>
+        <FAB onPress={() => setShowAddModal(true)} label="Add schedule item" />
       )}
 
       {renderProjectPickerModal()}
@@ -2109,131 +1970,10 @@ const colors = {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   flex1: { flex: 1 },
-  center: { justifyContent: 'center', alignItems: 'center' },
-
-  header: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerMenuBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: 8 },
-  projectSelectorBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderRadius: 8, maxWidth: 160 },
-  projectSelectorText: { flex: 1, fontSize: 13, fontWeight: '500' },
-
-  viewToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
-  viewToggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, gap: 4 },
-  viewToggleText: { fontSize: 12, fontWeight: '600' },
-
-  promptText: { fontSize: 15, marginTop: 12, textAlign: 'center', paddingHorizontal: 32 },
-
-  listContent: { padding: 16, paddingBottom: 40 },
-  groupSection: { marginBottom: 20 },
-  groupHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
-  groupDot: { width: 8, height: 8, borderRadius: 4 },
-  groupTitle: { fontSize: 15, fontWeight: '700' },
-  groupCount: { fontSize: 12, fontWeight: '500' },
-
-  itemCard: { borderWidth: 1, borderRadius: 12, marginBottom: 10 },
-  itemContent: { padding: 14 },
-  itemTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
-  itemStatusPill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
-  itemStatusPillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
-  itemTitle: { fontSize: 15, fontWeight: '700', flex: 1 },
-  itemMetaLine: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
-  itemMetaText: { fontSize: 12 },
-  progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 },
-  progressTrack: { flex: 1, height: 3, borderRadius: 2, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 2 },
-  progressText: { fontSize: 11, fontWeight: '500', width: 32, textAlign: 'right' },
-
-  dateDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6, marginBottom: 8 },
-  dateDividerText: { fontSize: 12, fontWeight: '600' },
-  dateDividerLine: { flex: 1, borderBottomWidth: 1 },
-
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
-  typeBadgeText: { fontSize: 11, fontWeight: '600' },
-
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
-  emptyText: { fontSize: 15, marginTop: 12 },
-
-  ganttContainer: { flexDirection: 'row' },
-  ganttStickyHeader: { flexDirection: 'row', borderBottomWidth: 1, alignItems: 'stretch' },
-  ganttMenuDropdown: { position: 'absolute', right: 0, top: 40, width: 170, borderWidth: 1, borderRadius: 8, paddingVertical: 4, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 8, zIndex: 1000 },
-  ganttMenuRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  ganttMenuLabel: { fontSize: 13, fontWeight: '500' },
-  ganttNamesCol: { width: NAME_COL_WIDTH, zIndex: 1 },
-  ganttHeaderCell: { justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: 1 },
-  ganttHeaderText: { fontSize: 11, fontWeight: '600' },
-  ganttNameRow: { height: GANTT_ROW_HEIGHT, justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth },
-  ganttNameText: { fontSize: 11, fontWeight: '500' },
-  ganttNameTextWide: { fontSize: 13 },
-  ganttMonthRow: { flexDirection: 'row', height: 20, borderBottomWidth: StyleSheet.hairlineWidth },
-  ganttMonthCell: { justifyContent: 'center', alignItems: 'center', borderRightWidth: StyleSheet.hairlineWidth },
-  ganttMonthText: { fontSize: 10, fontWeight: '600' },
-  ganttDateRow: { flexDirection: 'row', height: 32, borderBottomWidth: 1 },
-  ganttDateCell: { width: DAY_COL_WIDTH, justifyContent: 'center', alignItems: 'center', borderRightWidth: StyleSheet.hairlineWidth },
-  ganttDateText: { fontSize: 9, fontWeight: '500' },
-  ganttBarRow: { height: GANTT_ROW_HEIGHT, position: 'relative', borderBottomWidth: StyleSheet.hairlineWidth },
-  ganttGridLine: { position: 'absolute', top: 0, width: 0, borderRightWidth: StyleSheet.hairlineWidth },
-  ganttBar: { position: 'absolute', top: 6, height: GANTT_ROW_HEIGHT - 12, borderRadius: 4, justifyContent: 'center', paddingHorizontal: 4 },
-  ganttBarText: { color: '#fff', fontSize: 9, fontWeight: '600' },
-  ganttBarOuterText: { position: 'absolute', top: 0, height: GANTT_ROW_HEIGHT, lineHeight: GANTT_ROW_HEIGHT, fontSize: 10, fontWeight: '500', maxWidth: DAY_COL_WIDTH * 5 },
-  ganttStatusChip: { position: 'absolute', top: 8, borderWidth: 1, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 },
-  ganttStatusChipText: { fontSize: 9, fontWeight: '600' },
-
-  calModeToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
-  calModeBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 7 },
-  calModeText: { fontSize: 12, fontWeight: '600' },
-
-  calWeekNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingVertical: 10, borderBottomWidth: 1 },
-  calNavArrow: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  calWeekNavTitle: { fontSize: 18, fontWeight: '700' },
-  calWeekHeaderRow: { flexDirection: 'row', borderBottomWidth: 1 },
-  calDayHeaderCol: { alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4, borderRightWidth: StyleSheet.hairlineWidth },
-  calDayName: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase' },
-  calTodayCircle: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  calDayNumWrap: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  calDayNum: { fontSize: 17, fontWeight: '600' },
-  calDayCol: { paddingTop: 8, paddingHorizontal: 5, paddingBottom: 12, minHeight: 280, borderRightWidth: StyleSheet.hairlineWidth },
-  calDayEmpty: { height: 40 },
-  calItemCard: { borderWidth: 1, borderRadius: 6, padding: 8, marginBottom: 6 },
-  calItemName: { fontSize: 12, fontWeight: '700', lineHeight: 16 },
-  calItemSub: { fontSize: 10, marginTop: 3 },
-
-  calendarCard: { margin: 16, marginBottom: 8, borderWidth: 1, borderRadius: 12, padding: 12 },
-  calendarNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  calendarTitle: { fontSize: 16, fontWeight: '700' },
-  calendarDayNames: { flexDirection: 'row' },
-  calendarDayNameCell: { flex: 1, alignItems: 'center', paddingVertical: 4 },
-  calendarDayNameText: { fontSize: 11, fontWeight: '600' },
-  calendarRow: { flexDirection: 'row' },
-  calendarCell: { flex: 1, alignItems: 'center', paddingVertical: 6, borderRadius: 6, minHeight: 40, justifyContent: 'center' },
-  calendarDayText: { fontSize: 13, fontWeight: '500' },
-  dotsRow: { flexDirection: 'row', marginTop: 2, gap: 2 },
-  dot: { width: 5, height: 5, borderRadius: 3 },
-  selectedDaySection: { paddingHorizontal: 16, paddingBottom: 40 },
-  selectedDayTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
-  noDayItems: { fontSize: 14, textAlign: 'center', paddingVertical: 20 },
-
-  weekRow: { flexDirection: 'row', gap: 2 },
-  weekDayCol: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8, minHeight: 64, justifyContent: 'center' },
-  weekDayName: { fontSize: 10, fontWeight: '600', marginBottom: 2 },
-  weekDayNum: { fontSize: 16, fontWeight: '600' },
-
-  allDaySection: { marginHorizontal: 16, marginBottom: 8 },
-  allDayLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
-  allDayItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, borderLeftWidth: 3, borderRadius: 6, marginBottom: 4 },
-  allDayItemText: { fontSize: 13, fontWeight: '500', flex: 1, marginRight: 8 },
-
-  timelineContainer: { marginHorizontal: 16, borderWidth: 1, borderRadius: 12, padding: 0, position: 'relative', overflow: 'hidden' },
-  hourRow: { height: HOUR_HEIGHT, flexDirection: 'row', alignItems: 'flex-start', borderBottomWidth: StyleSheet.hairlineWidth },
-  hourLabel: { width: 52, fontSize: 10, fontWeight: '500', paddingTop: 4, paddingLeft: 8 },
-  hourLine: { flex: 1, height: StyleSheet.hairlineWidth, marginTop: 12 },
-  timeBlock: { position: 'absolute', right: 8, borderLeftWidth: 3, borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4, justifyContent: 'center' },
-  timeBlockName: { fontSize: 12, fontWeight: '600' },
-  timeBlockTime: { fontSize: 10, marginTop: 1 },
 
   modalContainer: { flex: 1 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 56 : 16, paddingBottom: 12, borderBottomWidth: 1 },
   modalHeaderTitle: { fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center' },
-  detailTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  detailBadgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 },
   detailInfoSection: { borderTopWidth: 1, paddingTop: 12, marginBottom: 16 },
   detailInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
   detailInfoLabel: { fontSize: 12, fontWeight: '500', width: 70 },
@@ -2281,8 +2021,6 @@ const styles = StyleSheet.create({
   actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   actionBtnText: { fontWeight: '600', fontSize: 14 },
 
-  fab: { position: 'absolute', bottom: 24, right: 20, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4 },
-
   pickerOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   pickerContainer: { maxHeight: '70%', borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
@@ -2291,4 +2029,46 @@ const styles = StyleSheet.create({
   pickerSectionText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   pickerItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
   pickerItemText: { fontSize: 14, fontWeight: '500' },
+});
+
+const S = metrics.schedule;
+
+// Revamp v1 header + list / gantt / calendar styles (sheets below use `styles`).
+const ss = StyleSheet.create({
+  top: { paddingHorizontal: space.screenX, paddingBottom: S.gapOther, zIndex: 10 },
+  list: { paddingHorizontal: space.screenX, gap: S.dayGroupGap },
+  earlier: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  dayGroup: {},
+  todayMarker: { marginBottom: S.dayGroupGap },
+  ganttMenu: { position: 'absolute', right: space.screenX, top: '100%', width: metrics.workspace.menuWidth, zIndex: 20 },
+  ganttHeader: { flexDirection: 'row', borderBottomWidth: size.border, marginHorizontal: space.screenX },
+  ganttCorner: { justifyContent: 'flex-end', paddingBottom: space.inline },
+  ganttDateCell: { alignItems: 'center', justifyContent: 'flex-end', paddingBottom: space.inlineSm, gap: space.inlineSm / 2 },
+  ganttDateNum: {
+    width: S.gantt.todayCircle,
+    height: S.gantt.todayCircle,
+    borderRadius: S.gantt.todayCircle / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ganttContainer: { flexDirection: 'row', marginHorizontal: space.screenX },
+  ganttNameRow: { height: S.gantt.rowHeight, justifyContent: 'center', borderBottomWidth: size.border, paddingRight: space.inline },
+  ganttGridLine: { position: 'absolute', top: 0, width: size.border },
+  ganttBarRow: { position: 'absolute', left: 0, right: 0, justifyContent: 'center', borderBottomWidth: size.border },
+  ganttStatus: { position: 'absolute' },
+  calHeader: { flexDirection: 'row', height: S.calendar.headerHeight, borderBottomWidth: size.border, paddingLeft: space.screenX },
+  calGutter: { width: S.calendar.gutter, paddingBottom: space.inline },
+  calDayHead: { alignItems: 'center', justifyContent: 'center', gap: space.inlineSm / 2 },
+  calDateCircle: {
+    width: S.calendar.dateCircle,
+    height: S.calendar.dateCircle,
+    borderRadius: S.calendar.dateCircle / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calAllDay: { flexDirection: 'row', borderBottomWidth: size.border, paddingLeft: space.screenX, paddingVertical: space.inlineSm },
+  calAllDayCol: { gap: space.inlineSm / 2, paddingHorizontal: S.calendar.blockInset },
+  calHour: { position: 'absolute', left: 0, marginTop: -space.inline },
+  calDayCol: { borderLeftWidth: size.border },
+  calHourLine: { position: 'absolute', left: 0, right: 0, height: size.border },
 });

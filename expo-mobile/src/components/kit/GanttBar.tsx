@@ -1,12 +1,16 @@
 import { Text, View } from 'react-native';
-import { metrics, radii, tabular, type, useColors } from '../../theme';
+import { useColorScheme } from 'react-native';
+import { metrics, projectTint, radii, tabular, type, useColors } from '../../theme';
 
 export type Trade = 'slate' | 'blue' | 'teal' | 'leave';
 
 /** Schedule Gantt bar: trade tint + 3dp strip; date label inside when it fits, else after. */
-export function GanttBar({ trade = 'slate', width, label }: { trade?: Trade; width: number; label?: string | null }) {
+export function GanttBar({ trade = 'slate', color, width, label }: { trade?: Trade; /** Item colour: tint fill + full-colour strip. Overrides `trade`. */ color?: string | null; width: number; label?: string | null }) {
   const c = useColors();
-  const t = c.trade[trade];
+  const dark = useColorScheme() === 'dark';
+  const t = color
+    ? { fill: projectTint(color, dark ? metrics.calendarBlock.tintDark : metrics.calendarBlock.tint, c.bg), strip: color }
+    : c.trade[trade];
   const m = metrics.ganttBar;
   const inside = !!label && width >= m.minLabelWidth;
   return (

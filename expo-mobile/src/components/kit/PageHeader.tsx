@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { ChevronLeft, type LucideIcon } from 'lucide-react-native';
+import { ChevronDown, ChevronLeft, type LucideIcon } from 'lucide-react-native';
 import { metrics, size, tabular, type, useColors } from '../../theme';
 import { ProjectSquare } from './ProjectSquare';
 
@@ -55,7 +55,23 @@ function ProjectLine({ project, square = 'header', textStyle = type.meta }: { pr
 }
 
 /** One-row inner-screen header: back · title · project · spacer · actions. */
-export function PageHeader({ title, project, onBack, actions }: { title: string; project?: HeaderProject | null; onBack?: () => void; actions?: HeaderAction[] }) {
+export function PageHeader({
+  title,
+  project,
+  onBack,
+  actions,
+  onProjectPress,
+  right,
+}: {
+  title: string;
+  project?: HeaderProject | null;
+  onBack?: () => void;
+  actions?: HeaderAction[];
+  /** Makes the project a picker (screens opened outside a project). */
+  onProjectPress?: () => void;
+  /** Extra trailing content after the action icons (a self-contained button). */
+  right?: ReactNode;
+}) {
   const c = useColors();
   return (
     <View
@@ -72,12 +88,26 @@ export function PageHeader({ title, project, onBack, actions }: { title: string;
         {title}
       </Text>
       {project ? (
-        <View style={{ paddingLeft: metrics.pageHeader.projectPadLeft, flexShrink: 1 }}>
-          <ProjectLine project={project} />
-        </View>
+        onProjectPress ? (
+          <Pressable
+            onPress={onProjectPress}
+            hitSlop={metrics.hitSlop}
+            accessibilityRole="button"
+            accessibilityLabel={`Project: ${project.name}. Change project`}
+            style={{ paddingLeft: metrics.pageHeader.projectPadLeft, flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.toggleGap }}
+          >
+            <ProjectLine project={project} />
+            <ChevronDown size={size.icon.caret} color={c.muted} strokeWidth={metrics.iconStrokeActive} />
+          </Pressable>
+        ) : (
+          <View style={{ paddingLeft: metrics.pageHeader.projectPadLeft, flexShrink: 1 }}>
+            <ProjectLine project={project} />
+          </View>
+        )
       ) : null}
       <View style={{ flex: 1 }} />
       <Actions actions={actions} iconSize={size.icon.header} />
+      {right ? <View style={{ marginLeft: actions?.length ? metrics.pageHeader.actionGap : 0 }}>{right}</View> : null}
     </View>
   );
 }
