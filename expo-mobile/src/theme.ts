@@ -630,5 +630,12 @@ export const metrics = {
     formGap: 16,
     fieldGap: 8,
   },
+  diary: {
+    propLabel: 104,
+    metaTop: 2,
+    blockGap: 18,
+    labelGap: 5,
+    photoGap: 8,
+  },
   composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18 },
 } as const;

@@ -1,3 +1,6 @@
+import { Camera } from 'lucide-react-native';
+import { metrics, radii } from '../../theme';
+import { SmartImage } from '../kit';
 import { useState } from 'react';
 import {
   Image,
@@ -28,6 +31,24 @@ import { useLayout } from '../../lib/useLayout';
  * the viewer's open/index state lives in the screen, not here.
  */
 const GRID_GAP = 8;
+
+/** A strip photo that shows the grey camera tile if it can't load (revamp v1). */
+function StripThumb({ uri, style }: { uri: string; style: StyleProp<ImageStyle> }) {
+  const flat = (StyleSheet.flatten(style) ?? {}) as ImageStyle;
+  const w = typeof flat.width === 'number' ? flat.width : metrics.thumb.diary;
+  const h = typeof flat.height === 'number' ? flat.height : metrics.thumb.diary;
+  const r = typeof flat.borderRadius === 'number' ? flat.borderRadius : radii.lg;
+  return (
+    <SmartImage
+      source={{ uri }}
+      width={w}
+      height={h}
+      radius={r}
+      fallbackIcon={Camera}
+      style={{ marginRight: flat.marginRight as number | undefined, marginLeft: flat.marginLeft as number | undefined }}
+    />
+  );
+}
 
 export function DiaryPhotoGallery({
   uris,
@@ -63,7 +84,7 @@ export function DiaryPhotoGallery({
             accessibilityRole="imagebutton"
             accessibilityLabel={`Open photo ${idx + 1} of ${uris.length}`}
           >
-            <Image source={{ uri: getUrl(uri) }} style={thumbStyle} />
+            <StripThumb uri={getUrl(uri)} style={thumbStyle} />
           </TouchableOpacity>
         ))}
       </ScrollView>
