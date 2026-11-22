@@ -100,6 +100,7 @@ export function SectionCardHeader({
   open,
   onToggle,
   onOpen,
+  inline,
 }: {
   title: string;
   count?: string | number | null;
@@ -107,11 +108,13 @@ export function SectionCardHeader({
   open: boolean;
   onToggle?: () => void;
   onOpen?: () => void;
+  /** Workspace section cards: the card's own padding frames it; no divider. */
+  inline?: boolean;
 }) {
   const c = useColors();
   return (
     <View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.gap, paddingVertical: metrics.groupHeader.sectionCardPad }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.gap, paddingVertical: inline ? 0 : metrics.groupHeader.sectionCardPad }}>
         <Pressable
           onPress={onToggle}
           disabled={!onToggle}
@@ -126,14 +129,14 @@ export function SectionCardHeader({
           </Text>
           {onToggle ? <Caret open={open} /> : null}
         </Pressable>
-        {count != null && count !== '' ? <Text style={[type.meta, tabular, { color: c.muted }]}>{count}</Text> : null}
+        {count != null && count !== '' ? <Text style={[inline ? type.metaMedium : type.meta, tabular, { color: c.muted }]}>{count}</Text> : null}
         {onOpen ? (
           <Pressable onPress={onOpen} hitSlop={metrics.hitSlop} accessibilityLabel={`Open ${title}`} style={{ marginLeft: 'auto' }}>
             <ChevronRight size={size.icon.row} color={c.muted} strokeWidth={metrics.iconStroke} />
           </Pressable>
         ) : null}
       </View>
-      {open ? <Divider /> : null}
+      {open && !inline ? <Divider /> : null}
     </View>
   );
 }
