@@ -53,6 +53,8 @@ interface TwoPaneProps {
   /** Shown on the right when wide and nothing is selected. */
   emptyTitle?: string;
   emptyIcon?: keyof typeof Ionicons.glyphMap;
+  /** Replaces the default empty state (e.g. a kit EmptyState). */
+  empty?: ReactNode;
   /** Override the list width (defaults to LIST_PANE_WIDTH). */
   listWidth?: number;
   /** From useTwoPaneSelection: folded with an item open — show it full width. */
@@ -77,6 +79,7 @@ export function TwoPane({
   detail,
   emptyTitle = 'Select an item',
   emptyIcon = 'albums-outline',
+  empty,
   listWidth,
   narrowDetail = false,
   onCloseDetail,
@@ -150,7 +153,7 @@ export function TwoPane({
       {showDetail ? (
         <View key="detail" style={[styles.detail, { backgroundColor: c.bg }]}>
           <DetailContext.Provider value={{ heldOnFold: narrowDetail }}>
-            {detail ?? (
+            {detail ?? empty ?? (
             <View style={styles.empty}>
               <View style={[styles.emptyCircle, { backgroundColor: c.greyFill }]}>
                 <Ionicons name={emptyIcon} size={metrics.emptyState.icon} color={c.muted} />

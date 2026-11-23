@@ -655,6 +655,14 @@ export const metrics = {
     fieldGap: 8,
   },
   diary: {
+    // D06 Duo entry pane
+    duoPadX: 24,
+    duoGap: 18,
+    duoColGap: 20,
+    duoSide: 236,
+    duoPropLabel: 72,
+    duoEditIcon: 18,
+    duoMoreIcon: 20,
     addPhotoIcon: 24,
     propLabel: 104,
     metaTop: 2,

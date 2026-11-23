@@ -17,7 +17,7 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BookOpen, Camera, Check, ChevronDown, Cloud, CloudLightning, CloudOff, CloudRain, CloudSun, Ellipsis, Search, Snowflake, Sun, Wind, X, type LucideIcon } from 'lucide-react-native';
+import { BookOpen, Camera, Check, ChevronDown, Cloud, CloudLightning, CloudOff, CloudRain, CloudSun, Ellipsis, Pencil, Search, Snowflake, Sun, Wind, X, type LucideIcon } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
@@ -1116,74 +1116,110 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
     const weather = selectedEntry.weather;
     const W = weatherIcon(weather?.condition);
     const hasWeather = !!weather && (!!weather.condition || weather.temp != null);
+    // D06: on the Duo unfolded the entry gets its own header row (date, Edit,
+    // More) and two columns — the content blocks, and a side column with the
+    // property card and the photo grid. The phone layout is unchanged.
+    const duo = isWide;
+    const pendingBadge = selectedEntry.id.startsWith('_offline_') ? (
+      <View style={dd.pending}>
+        <CloudOff size={size.icon.meta} color={k.status.pendingText} strokeWidth={metrics.iconStroke} />
+        <Text style={[type.caption, { color: k.status.pendingText }]}>Waiting to sync</Text>
+      </View>
+    ) : null;
+    const titleBlock = (
+      <View style={[dd.titleBlock, duo && dd.flex]}>
+        <Text style={[type.title, { color: k.text }]}>{dayLabel(d)}</Text>
+        <View style={dd.subLine}>
+          <Text style={[type.meta, { color: k.muted, flexShrink: 1 }]} numberOfLines={1}>
+            {[timeLabel(d), tplName].filter(Boolean).join(' · ')}
+            {projectName ? ' · ' : ''}
+          </Text>
+          {projectName ? (
+            <View style={dd.project}>
+              <ProjectSquare color={projectColor ?? null} fallbackKey={projectId} size="header" />
+              <Text style={[type.meta, { color: k.muted }]} numberOfLines={1}>{projectName}</Text>
+            </View>
+          ) : null}
+        </View>
+        {/* Hide the auto title ("Project - Template - dd/mm"): it repeats the line above. */}
+        {!!selectedEntry.title && selectedEntry.title !== tplName && !isAutoTitle(selectedEntry.title, tplName) && (
+          <Text style={[type.body, { color: k.textPreview }]}>{selectedEntry.title}</Text>
+        )}
+      </View>
+    );
+    const propLabel = duo ? DY.duoPropLabel : DY.propLabel;
+    const propsCard = (hasWeather || !!selectedEntry.createdByName) ? (
+      <Card variant="list">
+        {hasWeather ? (
+          <PropertyRow key="weather" label="Weather" labelWidth={propLabel}>
+            <W size={metrics.propertyRow.valueIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
+            <Text style={[type.body, { color: k.text }]}>
+              {[weather?.condition, weather?.temp != null ? `${weather?.temp}°` : null].filter(Boolean).join(', ')}
+            </Text>
+          </PropertyRow>
+        ) : null}
+        {selectedEntry.createdByName ? (
+          <PropertyRow key="by" label="Logged by" labelWidth={propLabel} value={selectedEntry.createdByName} />
+        ) : null}
+      </Card>
+    ) : null;
+    const blocks = detailTemplate && detailTemplate.fields.length > 0 ? (
+      <View style={dd.blocks}>
+        {[...detailTemplate.fields]
+          .sort((a, b) => a.order - b.order)
+          .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
+      </View>
+    ) : null;
+    const photos = selectedEntry.overallPhotos && selectedEntry.overallPhotos.length > 0 ? (
+      <View style={dd.block}>
+        <Text style={[type.caption, { color: k.muted }]}>{`Photos · ${selectedEntry.overallPhotos.length}`}</Text>
+        <DiaryPhotoGallery
+          uris={selectedEntry.overallPhotos}
+          getUrl={getPhotoUrl}
+          onOpen={index => setViewer({ uris: selectedEntry.overallPhotos || [], index })}
+          thumbStyle={dd.photo}
+        />
+      </View>
+    ) : null;
+
+    if (duo) {
+      const entry = selectedEntry;
+      return (
+        <ScrollView contentContainerStyle={[dd.contentDuo, { paddingTop: insets.top + metrics.schedule.top, paddingBottom: FAB_CLEARANCE + space.screenBottom }]}>
+          <View style={dd.duoHeader}>
+            {titleBlock}
+            <Pressable onPress={() => openEditModal(entry)} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Edit entry">
+              <Pencil size={DY.duoEditIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+            <Pressable onPress={entryActions} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Entry actions">
+              <Ellipsis size={DY.duoMoreIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+          </View>
+          {pendingBadge}
+          <View style={dd.duoCols}>
+            <View style={dd.flex}>{blocks}</View>
+            {propsCard || photos ? (
+              <View style={dd.duoSide}>
+                {propsCard}
+                {photos}
+              </View>
+            ) : null}
+          </View>
+        </ScrollView>
+      );
+    }
+
     return (
       <ScrollView contentContainerStyle={[dd.content, readableFrame, { paddingBottom: space.screenBottom + insets.bottom }]}>
         <DetailHeader
           onBack={closeDetail}
           actions={[{ icon: Ellipsis, label: 'Entry actions', onPress: entryActions }]}
         />
-        {selectedEntry.id.startsWith('_offline_') && (
-          <View style={dd.pending}>
-            <CloudOff size={size.icon.meta} color={k.status.pendingText} strokeWidth={metrics.iconStroke} />
-            <Text style={[type.caption, { color: k.status.pendingText }]}>Waiting to sync</Text>
-          </View>
-        )}
-
-        <View style={dd.titleBlock}>
-          <Text style={[type.title, { color: k.text }]}>{dayLabel(d)}</Text>
-          <View style={dd.subLine}>
-            <Text style={[type.meta, { color: k.muted, flexShrink: 1 }]} numberOfLines={1}>
-              {[timeLabel(d), tplName].filter(Boolean).join(' · ')}
-              {projectName ? ' · ' : ''}
-            </Text>
-            {projectName ? (
-              <View style={dd.project}>
-                <ProjectSquare color={projectColor ?? null} fallbackKey={projectId} size="header" />
-                <Text style={[type.meta, { color: k.muted }]} numberOfLines={1}>{projectName}</Text>
-              </View>
-            ) : null}
-          </View>
-          {/* Hide the auto title ("Project - Template - dd/mm"): it repeats the line above. */}
-          {!!selectedEntry.title && selectedEntry.title !== tplName && !isAutoTitle(selectedEntry.title, tplName) && (
-            <Text style={[type.body, { color: k.textPreview }]}>{selectedEntry.title}</Text>
-          )}
-        </View>
-
-        {(hasWeather || !!selectedEntry.createdByName) && (
-          <Card variant="list">
-            {hasWeather ? (
-              <PropertyRow key="weather" label="Weather" labelWidth={metrics.diary.propLabel}>
-                <W size={metrics.propertyRow.valueIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
-                <Text style={[type.body, { color: k.text }]}>
-                  {[weather?.condition, weather?.temp != null ? `${weather?.temp}°` : null].filter(Boolean).join(', ')}
-                </Text>
-              </PropertyRow>
-            ) : null}
-            {selectedEntry.createdByName ? (
-              <PropertyRow key="by" label="Logged by" labelWidth={metrics.diary.propLabel} value={selectedEntry.createdByName} />
-            ) : null}
-          </Card>
-        )}
-
-        {detailTemplate && detailTemplate.fields.length > 0 && (
-          <View style={dd.blocks}>
-            {[...detailTemplate.fields]
-              .sort((a, b) => a.order - b.order)
-              .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
-          </View>
-        )}
-
-        {selectedEntry.overallPhotos && selectedEntry.overallPhotos.length > 0 && (
-          <View style={dd.block}>
-            <Text style={[type.caption, { color: k.muted }]}>{`Photos · ${selectedEntry.overallPhotos.length}`}</Text>
-            <DiaryPhotoGallery
-              uris={selectedEntry.overallPhotos}
-              getUrl={getPhotoUrl}
-              onOpen={index => setViewer({ uris: selectedEntry.overallPhotos || [], index })}
-              thumbStyle={dd.photo}
-            />
-          </View>
-        )}
+        {pendingBadge}
+        {titleBlock}
+        {propsCard}
+        {blocks}
+        {photos}
       </ScrollView>
     );
   };
@@ -1347,8 +1383,8 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
       {/* Entries on the left, the open entry on the right when wide. The list
           stays the first child at every size, so folding never remounts it. */}
       <TwoPane
-        emptyTitle="Select an entry"
-        emptyIcon="book-outline"
+        listWidth={size.listPane.diary}
+        empty={<EmptyState icon={BookOpen} title="Select an entry" />}
         detail={showDetailModal && selectedEntry ? (
           <View style={[styles.modalContainer, { backgroundColor: k.bg }]}>
             {renderDetailBody()}
@@ -1385,11 +1421,12 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
           })
         )}
       </ScrollView>
-
-      <FAB onPress={() => openCreateModal()} label="New diary entry" />
       </>
         }
       />
+
+      {/* Outside TwoPane so it sits bottom-right of the whole screen when wide. */}
+      <FAB onPress={() => openCreateModal()} label="New diary entry" />
 
       <Sheet ref={typeSheetRef} title="Entry type">
         <View style={dd.sheetBody}>
@@ -1584,6 +1621,12 @@ const dd = StyleSheet.create({
   project: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
   blocks: { gap: DY.blockGap },
   block: { gap: DY.labelGap },
+  flex: { flex: 1 },
+  // D06 Duo entry pane
+  contentDuo: { paddingHorizontal: DY.duoPadX, gap: DY.duoGap },
+  duoHeader: { flexDirection: 'row', alignItems: 'center', gap: metrics.pageHeader.actionGap },
+  duoCols: { flexDirection: 'row', alignItems: 'flex-start', gap: DY.duoColGap },
+  duoSide: { width: DY.duoSide, gap: DY.duoGap },
   photo: { width: metrics.thumb.diary, height: metrics.thumb.diary, borderRadius: radii.lg, marginRight: DY.photoGap },
 });
 
