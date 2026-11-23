@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
+  Pressable,
   Text,
   StyleSheet,
   ScrollView,
@@ -12,7 +13,6 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
@@ -23,12 +23,12 @@ import { haptic } from '../lib/haptics';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, fontSize, fontWeight, radius, MAX_FONT_SCALE } from '../theme';
+import { useTheme, useColors, fontSize, fontWeight, radius, MAX_FONT_SCALE, metrics, size, space, type } from '../theme';
+import { ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react-native';
+import { FAB, Segmented } from '../components/kit';
 import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
 import { useToast } from '../components/ui/Toast';
 import { Skeleton } from '../components/ui/Skeleton';
-import { PressableScale } from '../components/ui/PressableScale';
-import BackButton from '../components/ui/BackButton';
 import { isInStack } from '../navigation/back';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -44,7 +44,7 @@ import {
 import { FeedView } from '../components/calendar/FeedView';
 import { WeekView, useWeekColWidth, useWeekVisibleDays, HOUR_HEIGHT, WEEK_TOTAL_DAYS, WEEK_VISIBLE_DAYS_WIDE } from '../components/calendar/WeekView';
 import { MonthView, type MonthCell } from '../components/calendar/MonthView';
-import { FilterSheet, EVENT_TYPE_OPTIONS } from '../components/calendar/FilterSheet';
+import { FilterSheet } from '../components/calendar/FilterSheet';
 import { EventPeekSheet } from '../components/calendar/EventPeekSheet';
 import type { ScrollViewInstance } from 'react-native';
 
@@ -137,6 +137,7 @@ export default function CalendarScreen({ navigation }: Props) {
   // Same component as the Calendar TAB (no back) and More > My Calendar (a
   // stack screen, usually its only route — needs its own back control).
   const showBack = isInStack(navigation as any);
+  const k = useColors();
 
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [loading, setLoading] = useState(true);
@@ -492,7 +493,8 @@ export default function CalendarScreen({ navigation }: Props) {
   // FeedView/MonthView are memoized and don't receive nowMinutes, so the tick
   // re-renders the week grid only.
   useEffect(() => {
-    if (viewMode !== 'week') return;
+    // Week grid and List both draw the now line.
+    if (viewMode === 'month') return;
     const tick = () => {
       const n = new Date();
       setNowMinutes(n.getHours() * 60 + n.getMinutes());
@@ -1016,92 +1018,54 @@ export default function CalendarScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <Animated.View entering={FadeInDown.duration(300)}>
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          {showBack && <BackButton color={theme.textPrimary} />}
-          <View style={styles.headerLeft}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerTitle, { color: theme.textPrimary }]}>My Calendar</Text>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerMonthLabel, { color: theme.textSecondary }]}>{headerMonth}</Text>
-          </View>
-          <PressableScale hitSlop={{ top: 6, bottom: 6 }}
-            style={[styles.viewsBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
-            onPress={() => { haptic.select(); viewsSheetRef.current?.present(); }}
-          >
-            <Ionicons name="layers-outline" size={15} color={theme.primary} />
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewsBtnText, { color: theme.textPrimary }]} numberOfLines={1}>
-              {currentView?.name || 'Views'}
-            </Text>
-            <Ionicons name="chevron-down" size={13} color={theme.textSecondary} />
-          </PressableScale>
-        </View>
-
-        <View style={styles.toolbar}>
-          <View style={[styles.segmented, { borderColor: theme.border, backgroundColor: theme.card }]}>
-            {VIEW_MODES.map(m => {
-              const active = viewMode === m.key;
-              return (
-                <TouchableOpacity hitSlop={{ top: 8, bottom: 8 }}
-                  key={m.key}
-                  style={[styles.segment, active && { backgroundColor: theme.primary }]}
-                  onPress={() => handleViewModeChange(m.key)}
-                  activeOpacity={0.7}
-                >
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
-                    styles.segmentText,
-                    { color: active ? '#FFFFFF' : theme.textSecondary },
-                    active && { fontWeight: fontWeight.semibold },
-                  ]}>
-                    {m.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <View style={styles.toolbarRight}>
-            {viewMode !== 'list' && (
-              <>
-                <TouchableOpacity
-                  style={styles.navArrowBtn}
-                  onPress={() => navigatePeriod(-1)}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                >
-                  <Ionicons name="chevron-back" size={20} color={theme.textSecondary} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.navArrowBtn}
-                  onPress={() => navigatePeriod(1)}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                >
-                  <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
-                </TouchableOpacity>
-              </>
-            )}
-            <PressableScale hitSlop={{ top: 6, bottom: 6, left: 3, right: 3 }}
-              style={[styles.addBtn, { backgroundColor: theme.primary }]}
-              onPress={handleHeaderCreate}
+    <View style={[styles.container, { backgroundColor: k.bg }]}>
+      <View style={[cx.top, { paddingTop: insets.top + metrics.calendar.top }]}>
+        {/* Month · ‹ › · Today · filter */}
+        <View style={cx.headRow}>
+          {showBack ? (
+            <Pressable onPress={() => navigation.goBack()} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
+              <ChevronLeft size={metrics.pageHeader.back} color={k.accent} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+          ) : null}
+          <Text style={[type.heading, cx.shrink, { color: k.text }]} numberOfLines={1} accessibilityRole="header">
+            {headerMonth}
+          </Text>
+          {viewMode !== 'list' ? (
+            <View style={cx.arrows}>
+              <Pressable onPress={() => navigatePeriod(-1)} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel={viewMode === 'month' ? 'Previous month' : 'Previous days'}>
+                <ChevronLeft size={metrics.calendar.arrow} color={k.muted} strokeWidth={metrics.iconStroke} />
+              </Pressable>
+              <Pressable onPress={() => navigatePeriod(1)} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel={viewMode === 'month' ? 'Next month' : 'Next days'}>
+                <ChevronRight size={metrics.calendar.arrow} color={k.muted} strokeWidth={metrics.iconStroke} />
+              </Pressable>
+            </View>
+          ) : null}
+          <View style={cx.spacer} />
+          <View style={cx.actions}>
+            <Pressable onPress={goToToday} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Go to today">
+              <Text style={[type.body, { color: k.accent }]}>Today</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => { haptic.select(); filterSheetRef.current?.present(); }}
+              hitSlop={metrics.hitSlop}
+              accessibilityRole="button"
+              accessibilityLabel={activeFilterCount > 0 ? `Filters, ${activeFilterCount} on` : 'Filters and views'}
             >
-              <Ionicons name="add" size={22} color="#FFFFFF" />
-            </PressableScale>
-            <TouchableOpacity hitSlop={{ top: 6, bottom: 6, left: 3, right: 3 }}
-              onPress={goToToday}
-              style={[styles.todayBadge, { borderColor: theme.primary }]}
-              activeOpacity={0.7}
-            >
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.todayBadgeText, { color: theme.primary }]}>{todayDate.getDate()}</Text>
-            </TouchableOpacity>
+              <SlidersHorizontal size={size.icon.header + 1} color={activeFilterCount > 0 ? k.accent : k.icon} strokeWidth={metrics.iconStroke} />
+              {activeFilterCount > 0 ? <View style={[cx.filterDot, { backgroundColor: k.accent, borderColor: k.bg }]} /> : null}
+            </Pressable>
           </View>
         </View>
-      </Animated.View>
+        <Segmented options={VIEW_MODES} value={viewMode} onChange={handleViewModeChange} />
+      </View>
 
-      <Animated.View entering={FadeInDown.duration(300).delay(60)} style={{ flex: 1 }}>
+      <View style={cx.body}>
         {loading ? renderSkeleton() : (
           <>
             {viewMode === 'list' && (
               <FeedView
-                theme={theme}
                 eventsByDay={eventsByDay}
+                nowMinutes={nowMinutes}
                 refreshing={refreshing}
                 onRefresh={onRefresh}
                 onEventPress={handleEventTap}
@@ -1110,12 +1074,12 @@ export default function CalendarScreen({ navigation }: Props) {
             )}
             {viewMode === 'week' && (
               <WeekView
-                theme={theme}
                 weekDays={weekDays}
                 eventsByDay={eventsByDay}
                 nowMinutes={nowMinutes}
                 anyAllDayEvents={anyAllDayEvents}
                 allDayExpanded={allDayExpanded}
+                onToggleAllDay={() => { haptic.select(); setAllDayExpanded(v => !v); }}
                 initialOffset={weekInitialOffset}
                 snapOffsets={weekSnapOffsets}
                 weekScrollRef={weekScrollRef}
@@ -1145,92 +1109,9 @@ export default function CalendarScreen({ navigation }: Props) {
             )}
           </>
         )}
-      </Animated.View>
+      </View>
 
-      <Animated.View
-        entering={FadeInDown.duration(300).delay(120)}
-        style={[styles.chipBar, { backgroundColor: theme.background, borderTopColor: theme.border }]}
-      >
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRow}
-        >
-          {viewMode === 'week' && (
-            <PressableScale hitSlop={{ top: 6, bottom: 6 }}
-              style={[
-                styles.chip,
-                { backgroundColor: allDayExpanded ? theme.primary : theme.subtle },
-              ]}
-              onPress={() => { haptic.select(); setAllDayExpanded(v => !v); }}
-            >
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
-                styles.chipLabel,
-                {
-                  color: allDayExpanded ? '#FFFFFF' : theme.textSecondary,
-                  fontWeight: allDayExpanded ? fontWeight.semibold : fontWeight.regular,
-                },
-              ]}>
-                All Day
-              </Text>
-            </PressableScale>
-          )}
-
-          {EVENT_TYPE_OPTIONS.filter(opt => opt.value !== 'google_cal' || googleConnected).map(opt => {
-            const isSelected = activeFilters.eventTypes?.includes(opt.value) ?? false;
-            return (
-              <PressableScale hitSlop={{ top: 6, bottom: 6 }}
-                key={opt.value}
-                style={[
-                  styles.chip,
-                  { backgroundColor: isSelected ? theme.primary : theme.subtle },
-                ]}
-                onPress={() => {
-                  haptic.select();
-                  const current = activeFilters.eventTypes || [];
-                  const updated = isSelected
-                    ? current.filter(t => t !== opt.value)
-                    : [...current, opt.value];
-                  setActiveFilters({ ...activeFilters, eventTypes: updated.length > 0 ? updated : undefined });
-                }}
-              >
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
-                  styles.chipLabel,
-                  {
-                    color: isSelected ? '#FFFFFF' : theme.textSecondary,
-                    fontWeight: isSelected ? fontWeight.semibold : fontWeight.regular,
-                  },
-                ]}>
-                  {opt.label}
-                </Text>
-              </PressableScale>
-            );
-          })}
-
-          <PressableScale hitSlop={{ top: 6, bottom: 6 }}
-            style={[
-              styles.chip,
-              { backgroundColor: activeFilterCount > 0 ? theme.primary : theme.subtle },
-            ]}
-            onPress={() => { haptic.select(); filterSheetRef.current?.present(); }}
-          >
-            <Ionicons
-              name="options-outline"
-              size={14}
-              color={activeFilterCount > 0 ? '#FFFFFF' : theme.textSecondary}
-            />
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
-              styles.chipLabel,
-              {
-                color: activeFilterCount > 0 ? '#FFFFFF' : theme.textSecondary,
-                fontWeight: activeFilterCount > 0 ? fontWeight.semibold : fontWeight.regular,
-              },
-            ]}>
-              Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
-            </Text>
-          </PressableScale>
-        </ScrollView>
-      </Animated.View>
+      <FAB onPress={handleHeaderCreate} label="New task" />
 
       {/* ── Views sheet ──────────────────────────────────────────────────── */}
       <Sheet ref={viewsSheetRef} title="Views" scrollable>
@@ -1328,6 +1209,11 @@ export default function CalendarScreen({ navigation }: Props) {
         onToggleStatusChips={() => setShowStatusChips(v => !v)}
         canSaveFilters={!!canSaveFilters}
         onSaveFiltersToView={handleSaveFiltersToView}
+        viewName={currentView?.name ?? null}
+        onOpenViews={() => {
+          filterSheetRef.current?.dismiss();
+          setTimeout(() => viewsSheetRef.current?.present(), metrics.sheetSwapMs);
+        }}
       />
 
       {/* ── Event peek sheet ─────────────────────────────────────────────── */}
@@ -1522,111 +1408,6 @@ export default function CalendarScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    gap: 10,
-  },
-  headerLeft: { flex: 1 },
-  headerTitle: {
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
-  },
-  headerMonthLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.regular,
-    marginTop: 1,
-  },
-  viewsBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    maxWidth: 180,
-  },
-  viewsBtnText: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-    flexShrink: 1,
-  },
-  toolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    gap: 8,
-  },
-  segmented: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderRadius: radius.lg + 1,
-    overflow: 'hidden',
-  },
-  segment: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: radius.lg,
-  },
-  segmentText: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
-  },
-  toolbarRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  navArrowBtn: { padding: 4 },
-  addBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.lg + 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.lg + 2,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayBadgeText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
-  },
-
-  chipBar: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 8,
-  },
-  chipRow: {
-    paddingHorizontal: 16,
-    gap: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: radius.full,
-  },
-  chipLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.regular,
-  },
-
   // Sheets
   sheetBody: {
     paddingHorizontal: 20,
@@ -1759,4 +1540,15 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.medium,
     flex: 1,
   },
+});
+
+const cx = StyleSheet.create({
+  top: { paddingHorizontal: metrics.calendar.padX, gap: metrics.calendar.gap, paddingBottom: metrics.calendar.gap },
+  headRow: { flexDirection: 'row', alignItems: 'center', gap: metrics.calendar.headerArrowGap, minHeight: metrics.pageHeader.height },
+  shrink: { flexShrink: 1 },
+  arrows: { flexDirection: 'row', alignItems: 'center', gap: metrics.calendar.headerArrowGap, marginLeft: metrics.calendar.headerArrowGap },
+  spacer: { flex: 1 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: metrics.calendar.headerActionGap },
+  filterDot: { position: 'absolute', top: -2, right: -2, width: space.inline + 2, height: space.inline + 2, borderRadius: space.inline, borderWidth: size.border },
+  body: { flex: 1 },
 });

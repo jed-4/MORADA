@@ -314,3 +314,22 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
 });
+
+/** "9:30", "10:00", "2:00": 12-hour clock without AM/PM (revamp calendar). */
+export function formatClock(timeStr: string | null | undefined): string {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':').map(Number);
+  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${displayH}:${(m || 0).toString().padStart(2, '0')}`;
+}
+
+/** "9:30 – 10:30", or just the start when there is no end. */
+export function formatClockRange(start?: string | null, end?: string | null): string {
+  if (!start) return '';
+  return end ? `${formatClock(start)} – ${formatClock(end)}` : formatClock(start);
+}
+
+/** Only project-linked events carry colour; everything else is internal grey. */
+export function eventBlockColor(event: CalendarEvent): string | null {
+  return event.projectId ? event.color : null;
+}

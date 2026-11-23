@@ -46,6 +46,9 @@ interface FilterSheetProps {
   onToggleStatusChips: () => void;
   canSaveFilters: boolean;
   onSaveFiltersToView: () => void;
+  /** Saved views moved here from the old header button. */
+  viewName?: string | null;
+  onOpenViews?: () => void;
 }
 
 export function FilterSheet({
@@ -60,10 +63,26 @@ export function FilterSheet({
   onToggleStatusChips,
   canSaveFilters,
   onSaveFiltersToView,
+  viewName,
+  onOpenViews,
 }: FilterSheetProps) {
   return (
     <Sheet ref={sheetRef} title="Filter Events" scrollable snapPoints={['85%']}>
       <View style={styles.sheetBody}>
+        {onOpenViews ? (
+          <TouchableOpacity
+            style={[styles.filterRow, { borderColor: theme.border, marginBottom: 12 }]}
+            onPress={() => { haptic.select(); onOpenViews(); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="layers-outline" size={18} color={theme.textSecondary} />
+            <Text style={[styles.filterRowText, { color: theme.textPrimary }]}>Saved view</Text>
+            <Text style={[styles.filterRowText, { color: theme.textSecondary, marginLeft: 'auto' }]} numberOfLines={1}>
+              {viewName || 'None'}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+          </TouchableOpacity>
+        ) : null}
         <Text style={[styles.sheetSubtitle, { color: theme.textSecondary }]}>
           Select types to show. Leave all off to show everything.
         </Text>
