@@ -22,6 +22,11 @@ import { CSS } from "@dnd-kit/utilities";
 import type { TakeoffMeasurement, TakeoffCategory, TakeoffPlan } from "@shared/schema";
 import TakeoffColorPicker from "./TakeoffColorPicker";
 import { SaveTemplateModal, LoadTemplateModal } from "./TakeoffTemplatesModal";
+import { unitForType } from "./useTakeoffGeometry";
+
+/** The unit a row shows: its own if it fits what the item measures, else the honest one. */
+const shownUnit = (m: TakeoffMeasurement) =>
+  unitForType(m.measurementType, m.unit, (m as { heightMm?: number | null }).heightMm ?? null);
 
 interface Props {
   projectId: string;
@@ -98,7 +103,9 @@ export default function TakeoffMeasurementsTab({ projectId }: Props) {
   const totalsForGroup = (rows: TakeoffMeasurement[]) => {
     const byUnit = new Map<string, number>();
     for (const r of rows) {
-      const u = r.unit || "";
+      // Grouped by what each row really measures: a mislabelled area used
+      // to be added into the "lm" total.
+      const u = shownUnit(r);
       byUnit.set(u, (byUnit.get(u) ?? 0) + (r.quantity ?? 0));
     }
     return Array.from(byUnit.entries()).filter(([, v]) => v > 0);
@@ -308,7 +315,7 @@ function SortableTabRow({
         <span className="text-[10px] text-muted-foreground">% waste</span>
       </div>
       <div className="text-sm tabular-nums w-28 text-right">
-        {Math.round((m.quantity ?? 0) * 100) / 100} {m.unit}
+        {Math.round((m.quantity ?? 0) * 100) / 100} {shownUnit(m)}
       </div>
       <Button size="icon" variant="ghost" onClick={onDelete} data-testid={`button-delete-${m.id}`}>
         <Trash2 className="h-4 w-4 text-muted-foreground" />

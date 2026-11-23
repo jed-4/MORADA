@@ -30,6 +30,7 @@ import {
   computeQuantity, defaultUnitForType, pixelsToFractions,
   pointInPolygon, distanceToPolyline,
   normalizeEntries, entriesForPage, totalQuantity, unitForLinear,
+  unitForType, polygonSelfIntersects,
   type Point, type Shape,
 } from "./useTakeoffGeometry";
 
@@ -509,6 +510,12 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
          on being an area and drawing as a filled polygon. Which is the shape
          of the complaint: lineal metres rendering as an infilled square. */
       const nextType = data.measurementType ?? editingMeasurement.measurementType;
+      /* Switching between Area and Linear is allowed after drawing (the form
+         says so and warns first), but the marks were measured as the OLD type
+         and can't be re-read as the new one — a polygon's area is not a
+         length. They are cleared, and the item is redrawn. */
+      const typeChanged = nextType !== editingMeasurement.measurementType;
+      const keptEntries = typeChanged ? [] : entries;
       await updateMeasurement.mutateAsync({
         id: editingMeasurement.id,
         data: {
@@ -516,11 +523,12 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
           categoryId: data.categoryId,
           color: data.color,
           measurementType: nextType,
+          ...(typeChanged && entries.length > 0 ? { geometry: [] as any } : {}),
           multiplier: data.multiplier,
           wastePercent: data.wastePercent,
           heightMm: data.heightMm,
           quantity: totalQuantity(
-            entries,
+            keptEntries,
             nextType,
             data.heightMm,
           ),
@@ -529,10 +537,15 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
              it into an area, and the quantity above is recomputed as m². The
              edit path kept whatever the form held — normally "lm" — so adding
              a height through Edit left the figure in m² labelled lm. */
-          unit:
+          // Always a unit that fits the type, so a type change can never
+          // again leave an area labelled "lm" (or the reverse).
+          unit: unitForType(
+            nextType,
             nextType === "linear"
               ? unitForLinear(data.heightMm, data.unit === "__blank__" ? "" : data.unit)
               : data.unit === "__blank__" ? "" : data.unit,
+            data.heightMm,
+          ),
           fillPattern: data.fillPattern,
           lineType: data.lineType,
           lineSize: data.lineSize,
@@ -540,7 +553,11 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
       });
       setEditingMeasurement(null);
       setCreateOpen(false);
-      setStatusMessage(`Updated ${data.name}`);
+      setStatusMessage(
+        typeChanged && entries.length > 0
+          ? `${data.name} is now ${nextType} — its old marks were cleared, so draw it again`
+          : `Updated ${data.name}`,
+      );
       return;
     }
 
@@ -555,7 +572,7 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
       planId: plan.id, pageId: page.id, categoryId: data.categoryId,
       name: data.name, measurementType: data.measurementType, color: data.color,
       geometry: [] as any, quantity: 0, heightMm: data.heightMm,
-      unit: unitToSave,
+      unit: unitForType(data.measurementType, unitToSave, data.heightMm),
       multiplier: data.multiplier, wastePercent: data.wastePercent,
       fillPattern: data.fillPattern,
       lineType: data.lineType,
@@ -656,8 +673,8 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
    */
   const unitFor = (m: TakeoffMeasurement, type: MeasurementType): string => {
     const heightMm = (m as { heightMm?: number | null }).heightMm ?? null;
-    if (type === "linear") return unitForLinear(heightMm, m.unit || "lm");
-    return m.unit || defaultUnitForType(type);
+    if (type === "linear") return unitForType(type, unitForLinear(heightMm, m.unit || "lm"), heightMm);
+    return unitForType(type, m.unit || defaultUnitForType(type), heightMm);
   };
 
   const finishGeometry = async (geometryPx: Point[], type: MeasurementType) => {
@@ -701,6 +718,18 @@ export default function TakeoffPlanViewer({ plan, initialPage, projectId, onClos
     if (type === "count") {
       // Stay in count mode for more clicks.
       return;
+    }
+    // An area outline that crosses itself measures close to nothing — its
+    // halves cancel — and is nearly always a line clicked on an Area item.
+    // Say so now, rather than let "0.04" go into a quote.
+    if (type === "area" && polygonSelfIntersects(geometryPx)) {
+      toast({
+        title: "That outline crosses itself",
+        description: `So its area is wrong (it came to ${
+          nextEntries[nextEntries.length - 1]?.qty ?? 0
+        } m²). Click AROUND the area, not along it. If ${target.name} is a length, edit it and set Type to Linear.`,
+        variant: "destructive",
+      });
     }
     // For area/linear: keep the row active so the user can immediately add another sub-shape.
     setStatusMessage(

@@ -44,7 +44,11 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { TakeoffMeasurement, TakeoffCategory, TakeoffPlan } from "@shared/schema";
 import TakeoffColorPicker from "./TakeoffColorPicker";
-import { normalizeEntries } from "./useTakeoffGeometry";
+import { normalizeEntries, unitForType } from "./useTakeoffGeometry";
+
+/** The unit a row shows: its own if it fits what the item measures, else the honest one. */
+const shownUnit = (m: TakeoffMeasurement) =>
+  unitForType(m.measurementType, m.unit, (m as { heightMm?: number | null }).heightMm ?? null);
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -952,7 +956,7 @@ function SortableRow({
           data-testid={`qty-${m.id}`}
         >
           {Math.round((m.quantity ?? 0) * 100) / 100}
-          <span className="text-xs text-muted-foreground ml-1">{m.unit}</span>
+          <span className="text-xs text-muted-foreground ml-1">{shownUnit(m)}</span>
         </div>
       )}
       <Button
@@ -1012,7 +1016,7 @@ function SortableRow({
             m.measurementType === "count"
               ? `${mark.points.length} marker${mark.points.length === 1 ? "" : "s"}`
               : `${Math.round((mark.qty ?? 0) * 100) / 100} ${
-                  m.measurementType === "linear" && heightMm ? "lm" : m.unit
+                  m.measurementType === "linear" && heightMm ? "lm" : shownUnit(m)
                 }`;
           return (
             <div
@@ -1051,7 +1055,7 @@ function SortableRow({
             {heightMm ? ` × ${heightMm / 1000} m high` : ""}
           </span>
           <span className="tabular-nums font-medium">
-            {Math.round((m.quantity ?? 0) * 100) / 100} {m.unit}
+            {Math.round((m.quantity ?? 0) * 100) / 100} {shownUnit(m)}
           </span>
         </div>
       </div>
