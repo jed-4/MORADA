@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet } from 'react-native';
 import { Plus, type LucideIcon } from 'lucide-react-native';
 import { metrics, radii, shadow, size, useColors } from '../../theme';
+import { useLayout } from '../../lib/useLayout';
 
 /**
  * 52dp accent circle, bottom-right. Sits above the tab bar (screens inside the
@@ -10,6 +11,8 @@ import { metrics, radii, shadow, size, useColors } from '../../theme';
 export function FAB({ onPress, label, icon: Glyph = Plus }: { onPress: () => void; label: string; icon?: LucideIcon }) {
   const c = useColors();
   const iconSize = Glyph === Plus ? size.fabIcon : metrics.fab.cameraIcon;
+  // Duo (§5): 24 from the right, 20 above the tab bar.
+  const { isWide } = useLayout();
   return (
     <Pressable
       onPress={onPress}
@@ -17,6 +20,7 @@ export function FAB({ onPress, label, icon: Glyph = Plus }: { onPress: () => voi
       accessibilityLabel={label}
       style={({ pressed }) => [
         styles.fab,
+        isWide && { right: metrics.fab.duoRight, bottom: metrics.fab.duoBottom },
         shadow.fab,
         { backgroundColor: c.accent, opacity: pressed ? metrics.solidPressedOpacity : 1 },
       ]}

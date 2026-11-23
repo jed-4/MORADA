@@ -2,7 +2,8 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Briefcase, Calendar, CalendarDays, House, LayoutGrid, MessageSquare, Palette, Wallet, type LucideIcon } from 'lucide-react-native';
-import { metrics, size, type, useColors } from '../../theme';
+import { metrics, radii, size, type, useColors } from '../../theme';
+import { useLayout } from '../../lib/useLayout';
 import { UnreadBadge } from './UnreadBadge';
 
 const ICONS: Record<string, LucideIcon> = {
@@ -29,12 +30,17 @@ export function TabBar({ state, descriptors, navigation, activeOverride }: Botto
   const c = useColors();
   const insets = useSafeAreaInsets();
   const focusedName = activeOverride ?? state.routes[state.index]?.name;
+  // Duo / wide (§5): items centred, icon beside label, active = tint pill.
+  const { isWide } = useLayout();
+  const D = metrics.tabBar.duo;
 
   return (
     <View
       accessibilityRole="tabbar"
       style={{
         flexDirection: 'row',
+        justifyContent: isWide ? 'center' : undefined,
+        gap: isWide ? D.gap : undefined,
         backgroundColor: c.surface,
         borderTopWidth: size.border,
         borderTopColor: c.border,
@@ -67,7 +73,19 @@ export function TabBar({ state, descriptors, navigation, activeOverride }: Botto
             accessibilityState={{ selected: focused }}
             accessibilityLabel={badge > 0 ? `${label}, ${badge} unread` : label}
             testID={options.tabBarButtonTestID}
-            style={{ flex: 1, alignItems: 'center', gap: metrics.tabBar.gap }}
+            style={
+              isWide
+                ? {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: D.innerGap,
+                    minHeight: D.itemHeight,
+                    paddingHorizontal: D.padX,
+                    borderRadius: radii.lg,
+                    backgroundColor: focused ? c.tint : 'transparent',
+                  }
+                : { flex: 1, alignItems: 'center', gap: metrics.tabBar.gap }
+            }
           >
             <View>
               <Glyph
@@ -81,7 +99,7 @@ export function TabBar({ state, descriptors, navigation, activeOverride }: Botto
                 </View>
               ) : null}
             </View>
-            <Text numberOfLines={1} style={[type.micro, { color: focused ? c.link : c.faint }]}>
+            <Text numberOfLines={1} style={[isWide ? type.body : type.micro, { color: focused ? c.link : isWide ? c.muted : c.faint }]}>
               {label}
             </Text>
           </Pressable>

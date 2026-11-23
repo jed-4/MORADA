@@ -231,8 +231,8 @@ export default function DashboardScreen({ navigation }: Props) {
   // same order with the same keys — only styles change, so a fold never
   // remounts a widget (horizontal list positions, expanded state survive).
   const { isWide } = useLayout();
-  const fullW = isWide && styles.sectionFull;
-  const halfW = isWide && styles.sectionHalf;
+  // Wide: sections fill their column; the columns set the widths.
+  const colW = null;
 
   const [projects, setProjects] = useState<Project[]>(() => getCached<Project[]>('projects') || []);
   const [costCodes, setCostCodes] = useState<CostCode[]>(() => getCached<CostCode[]>('costCodes') || []);
@@ -595,7 +595,7 @@ export default function DashboardScreen({ navigation }: Props) {
         <Text style={[type.metaMedium, { color: c.mutedStrong }]} numberOfLines={1}>
           {contextLine}
         </Text>
-        <Text style={[type.display, { color: c.text }]} numberOfLines={1}>
+        <Text style={[isWide ? type.displayDuo : type.display, { color: c.text }]} numberOfLines={1}>
           {firstName || fullDisplayName}
         </Text>
       </View>
@@ -619,10 +619,243 @@ export default function DashboardScreen({ navigation }: Props) {
           accessibilityRole="button"
           accessibilityLabel="Account menu"
         >
-          <Avatar name={fullDisplayName} />
+          <Avatar name={fullDisplayName} size={isWide ? 'duo' : 'row'} />
         </Pressable>
       </View>
     </View>
+  );
+
+  // Workspace sections, laid out as one column on a phone or two on the Duo (D01).
+  const sec_clock = (
+    <>
+          {/* Live clocked-in card */}
+          {activeTimesheet && (
+            <Animated.View entering={FadeInDown.duration(300)} style={[styles.section, colW]}>
+              <Card variant="padded">
+                <View style={styles.clockRow}>
+                  <View style={styles.clockBody}>
+                    <View style={styles.clockLabelRow}>
+                      <PulsingDot />
+                      <Text style={[type.metaMedium, { color: c.accent }]}>Clocked in</Text>
+                    </View>
+                    <Text style={[type.heading, tabular, { color: c.text }]}>{formatTimeSince(activeTimesheet.clockInTime)}</Text>
+                    <Text style={[type.meta, { color: c.mutedStrong }]} numberOfLines={1}>
+                      {[activeTimesheet.projectName || getProjectName(activeTimesheet.projectId), activeCostCode ? `${activeCostCode.code} · ${activeCostCode.title}` : null]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={openClockOutSheet}
+                    disabled={clockingOut}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [styles.clockOutBtn, { backgroundColor: c.tint, opacity: pressed ? metrics.pressedOpacity : 1 }]}
+                  >
+                    <Text style={[type.metaSemi, { color: c.link }]}>Clock out</Text>
+                  </Pressable>
+                </View>
+              </Card>
+            </Animated.View>
+          )}
+    </>
+  );
+  const sec_capture = (
+    <>
+          {/* Quick capture: photo to diary, receipt, defect, clock in */}
+          <Animated.View entering={FadeInDown.duration(300).delay(30)} style={[styles.section, colW]}>
+            <QuickCaptureRow
+              projects={sortedProjects}
+              navigation={navigation}
+              isClockedIn={!!activeTimesheet}
+            />
+          </Animated.View>
+    </>
+  );
+  const sec_mentions = (
+    <>
+          {/* Unread mentions (not in the design; shown only when there are some) */}
+          {mentions.length > 0 && (
+            <Animated.View entering={FadeInDown.duration(300).delay(45)} style={[styles.section, colW]}>
+              <Card variant="list">
+                <ListRow
+                  onPress={openMentions}
+                  lead={<AtSign size={size.icon.row} color={c.accent} strokeWidth={metrics.iconStroke} />}
+                  title={mentions[0].title.replace(/#/g, '')}
+                  titleLines={1}
+                  trailing={mentions.length > 1 ? `+${mentions.length - 1}` : undefined}
+                  chevron
+                />
+              </Card>
+            </Animated.View>
+          )}
+    </>
+  );
+  const sec_today = (
+    <>
+          {/* Today: tasks due today + schedule today/tomorrow */}
+          <Animated.View entering={FadeInDown.duration(300).delay(60)} style={[styles.section, colW]} layout={LinearTransition.duration(200)}>
+            <WorkspaceSection
+              id="today"
+              icon={CircleCheck}
+              title="Today"
+              count={incompleteTasks.length + upcomingSchedule.length}
+              onOpen={() => tabNav.navigate('Calendar')}
+            >
+              <SubLabel>{incompleteTasks.length > 0 ? `Tasks · ${incompleteTasks.length}` : 'Tasks'}</SubLabel>
+              {todayTasks.length === 0 ? (
+                <EmptyLine>Nothing due today</EmptyLine>
+              ) : (
+                <Rows>
+                  {incompleteTasks.map(renderTaskRow)}
+                  {completedTasks.length > 0 ? (
+                    <Pressable
+                      key="__completed"
+                      onPress={() => { haptic.select(); setCompletedExpanded(!completedExpanded); }}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: completedExpanded }}
+                      style={styles.completedToggle}
+                    >
+                      <Text style={[type.metaMedium, tabular, { color: c.muted }]}>{`Completed · ${completedTasks.length}`}</Text>
+                      {completedExpanded
+                        ? <ChevronDown size={size.icon.caret} color={c.muted} strokeWidth={metrics.iconStrokeActive} />
+                        : <ChevronRight size={size.icon.caret} color={c.muted} strokeWidth={metrics.iconStrokeActive} />}
+                    </Pressable>
+                  ) : null}
+                  {completedExpanded ? completedTasks.map(renderTaskRow) : null}
+                </Rows>
+              )}
+              <Divider />
+              <SubLabel>{upcomingSchedule.length > 0 ? `Schedule · ${upcomingSchedule.length}` : 'Schedule'}</SubLabel>
+              {upcomingSchedule.length === 0 ? (
+                <EmptyLine>Nothing scheduled</EmptyLine>
+              ) : (
+                <Rows>
+                  {upcomingSchedule.map(({ item, isTomorrow }) => (
+                    <AgendaRow
+                      key={item.id}
+                      color={getProjectColor(item.projectId)}
+                      title={item.name}
+                      meta={item.projectName || null}
+                      right={`${isTomorrow ? 'Tomorrow' : 'Today'}${item.startTime ? ` · ${item.startTime.slice(0, 5)}` : ''}`}
+                      onPress={() => openScheduleSheet(item)}
+                    />
+                  ))}
+                </Rows>
+              )}
+            </WorkspaceSection>
+          </Animated.View>
+    </>
+  );
+  const sec_projects = (
+    <>
+          {/* Projects: pinned first, capped at 5 */}
+          {(
+            <Animated.View entering={FadeInDown.duration(300).delay(120)} style={[styles.section, colW]}>
+              <WorkspaceSection
+                id="projects"
+                icon={Folder}
+                title="Projects"
+                count={workspaceProjects.length}
+                onOpen={() => tabNav.navigate('Projects')}
+              >
+                {workspaceProjects.length === 0 ? (
+                  <EmptyLine>No projects yet</EmptyLine>
+                ) : (
+                <Rows>
+                  {workspaceProjects.slice(0, ws.maxProjects).map(p => (
+                    <ProjectLineRow
+                      key={p.id}
+                      id={p.id}
+                      name={p.name}
+                      color={p.color || getProjectColor(p.id)}
+                      pinned={p.isFavourite}
+                      stage={projectStage(p)}
+                      onPress={() => tabNav.navigate('Projects', {
+                        screen: 'ProjectDetail',
+                        params: { projectId: p.id, projectName: p.name },
+                      })}
+                    />
+                  ))}
+                  {workspaceProjects.length > ws.maxProjects ? (
+                    <MoreRow key="__more" count={workspaceProjects.length - ws.maxProjects} onPress={() => tabNav.navigate('Projects')} />
+                  ) : null}
+                </Rows>
+                )}
+              </WorkspaceSection>
+            </Animated.View>
+          )}
+    </>
+  );
+  const sec_timesheets = (
+    <>
+          {/* Timesheets */}
+          <Animated.View entering={FadeInDown.duration(300).delay(180)} style={[styles.section, colW]}>
+            <WorkspaceSection
+              id="timesheets"
+              icon={Clock}
+              title="Timesheets"
+              count={recentTimesheets.length}
+              onOpen={() => navigation.navigate('More', { screen: 'Timesheets' })}
+            >
+              {recentTimesheets.length === 0 ? (
+                <EmptyLine>No recent timesheets</EmptyLine>
+              ) : (
+                <Rows>
+                  {recentTimesheets.slice(0, ws.maxTimesheets).map(ts => {
+                    const ccId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
+                    const hours = parseFloat(ts.duration);
+                    return (
+                      <AgendaRow
+                        key={ts.id}
+                        color={getProjectColor(ts.projectId)}
+                        title={getProjectName(ts.projectId, ts.projectName)}
+                        meta={[ccId ? getCostCodeLabel(ccId) : null, formatDateLabel(ts.date)].filter(Boolean).join(' · ')}
+                        right={Number.isFinite(hours) ? `${hours.toFixed(1)}h` : null}
+                        rightStrong
+                        onPress={() => openTimesheetSheet(ts)}
+                      />
+                    );
+                  })}
+                  {recentTimesheets.length > ws.maxTimesheets ? (
+                    <MoreRow
+                      key="__more"
+                      count={recentTimesheets.length - ws.maxTimesheets}
+                      onPress={() => navigation.navigate('More', { screen: 'Timesheets' })}
+                    />
+                  ) : null}
+                </Rows>
+              )}
+            </WorkspaceSection>
+          </Animated.View>
+    </>
+  );
+  const sec_activity = (
+    <>
+          {/* Recent activity */}
+          <Animated.View entering={FadeInDown.duration(300).delay(240)} style={[styles.section, colW]}>
+            <WorkspaceSection id="activity" icon={Activity} title="Recent activity" count={recentActivities.length}>
+              {recentActivities.length === 0 ? (
+                <EmptyLine>No recent activity</EmptyLine>
+              ) : (
+                <Rows>
+                  {recentActivities.map(activity => {
+                    const userName = activity.userName || 'System';
+                    return (
+                      <View key={activity.id} style={styles.activityRow}>
+                        <Avatar size="activity" name={userName} color={activity.projectId ? getProjectColor(activity.projectId) : null} />
+                        <Text style={[type.body, { color: c.text, flex: 1 }]} numberOfLines={2}>
+                          <Text style={{ fontFamily: fonts.semibold }}>{userName}</Text>
+                          {` ${activity.description}`}
+                        </Text>
+                        <Text style={[type.meta, tabular, { color: c.mutedStrong }]}>{compactAgo(activity.createdAt)}</Text>
+                      </View>
+                    );
+                  })}
+                </Rows>
+              )}
+            </WorkspaceSection>
+          </Animated.View>
+    </>
   );
 
   return (
@@ -686,216 +919,32 @@ export default function DashboardScreen({ navigation }: Props) {
           contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top }, isWide && styles.scrollContentWide]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
         >
-          <View style={[styles.headerWrap, fullW]}>{greetingHeader}</View>
-          {/* Live clocked-in card */}
-          {activeTimesheet && (
-            <Animated.View entering={FadeInDown.duration(300)} style={[styles.section, fullW]}>
-              <Card variant="padded">
-                <View style={styles.clockRow}>
-                  <View style={styles.clockBody}>
-                    <View style={styles.clockLabelRow}>
-                      <PulsingDot />
-                      <Text style={[type.metaMedium, { color: c.accent }]}>Clocked in</Text>
-                    </View>
-                    <Text style={[type.heading, tabular, { color: c.text }]}>{formatTimeSince(activeTimesheet.clockInTime)}</Text>
-                    <Text style={[type.meta, { color: c.mutedStrong }]} numberOfLines={1}>
-                      {[activeTimesheet.projectName || getProjectName(activeTimesheet.projectId), activeCostCode ? `${activeCostCode.code} · ${activeCostCode.title}` : null]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </Text>
-                  </View>
-                  <Pressable
-                    onPress={openClockOutSheet}
-                    disabled={clockingOut}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [styles.clockOutBtn, { backgroundColor: c.tint, opacity: pressed ? metrics.pressedOpacity : 1 }]}
-                  >
-                    <Text style={[type.metaSemi, { color: c.link }]}>Clock out</Text>
-                  </Pressable>
-                </View>
-              </Card>
-            </Animated.View>
+          <View style={styles.headerWrap}>{greetingHeader}</View>
+          {isWide ? (
+            <View style={styles.duoCols}>
+              <View style={styles.duoLeft}>
+                {sec_clock}
+                {sec_capture}
+                {sec_mentions}
+                {sec_today}
+                {sec_timesheets}
+              </View>
+              <View style={styles.duoRight}>
+                {sec_projects}
+                {sec_activity}
+              </View>
+            </View>
+          ) : (
+            <>
+              {sec_clock}
+              {sec_capture}
+              {sec_mentions}
+              {sec_today}
+              {sec_projects}
+              {sec_timesheets}
+              {sec_activity}
+            </>
           )}
-
-          {/* Quick capture: photo to diary, receipt, defect, clock in */}
-          <Animated.View entering={FadeInDown.duration(300).delay(30)} style={[styles.section, fullW]}>
-            <QuickCaptureRow
-              projects={sortedProjects}
-              navigation={navigation}
-              isClockedIn={!!activeTimesheet}
-            />
-          </Animated.View>
-
-          {/* Unread mentions (not in the design; shown only when there are some) */}
-          {mentions.length > 0 && (
-            <Animated.View entering={FadeInDown.duration(300).delay(45)} style={[styles.section, fullW]}>
-              <Card variant="list">
-                <ListRow
-                  onPress={openMentions}
-                  lead={<AtSign size={size.icon.row} color={c.accent} strokeWidth={metrics.iconStroke} />}
-                  title={mentions[0].title.replace(/#/g, '')}
-                  titleLines={1}
-                  trailing={mentions.length > 1 ? `+${mentions.length - 1}` : undefined}
-                  chevron
-                />
-              </Card>
-            </Animated.View>
-          )}
-
-          {/* Today: tasks due today + schedule today/tomorrow */}
-          <Animated.View entering={FadeInDown.duration(300).delay(60)} style={[styles.section, halfW]} layout={LinearTransition.duration(200)}>
-            <WorkspaceSection
-              id="today"
-              icon={CircleCheck}
-              title="Today"
-              count={incompleteTasks.length + upcomingSchedule.length}
-              onOpen={() => tabNav.navigate('Calendar')}
-            >
-              <SubLabel>{incompleteTasks.length > 0 ? `Tasks · ${incompleteTasks.length}` : 'Tasks'}</SubLabel>
-              {todayTasks.length === 0 ? (
-                <EmptyLine>Nothing due today</EmptyLine>
-              ) : (
-                <Rows>
-                  {incompleteTasks.map(renderTaskRow)}
-                  {completedTasks.length > 0 ? (
-                    <Pressable
-                      key="__completed"
-                      onPress={() => { haptic.select(); setCompletedExpanded(!completedExpanded); }}
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: completedExpanded }}
-                      style={styles.completedToggle}
-                    >
-                      <Text style={[type.metaMedium, tabular, { color: c.muted }]}>{`Completed · ${completedTasks.length}`}</Text>
-                      {completedExpanded
-                        ? <ChevronDown size={size.icon.caret} color={c.muted} strokeWidth={metrics.iconStrokeActive} />
-                        : <ChevronRight size={size.icon.caret} color={c.muted} strokeWidth={metrics.iconStrokeActive} />}
-                    </Pressable>
-                  ) : null}
-                  {completedExpanded ? completedTasks.map(renderTaskRow) : null}
-                </Rows>
-              )}
-              <Divider />
-              <SubLabel>{upcomingSchedule.length > 0 ? `Schedule · ${upcomingSchedule.length}` : 'Schedule'}</SubLabel>
-              {upcomingSchedule.length === 0 ? (
-                <EmptyLine>Nothing scheduled</EmptyLine>
-              ) : (
-                <Rows>
-                  {upcomingSchedule.map(({ item, isTomorrow }) => (
-                    <AgendaRow
-                      key={item.id}
-                      color={getProjectColor(item.projectId)}
-                      title={item.name}
-                      meta={item.projectName || null}
-                      right={`${isTomorrow ? 'Tomorrow' : 'Today'}${item.startTime ? ` · ${item.startTime.slice(0, 5)}` : ''}`}
-                      onPress={() => openScheduleSheet(item)}
-                    />
-                  ))}
-                </Rows>
-              )}
-            </WorkspaceSection>
-          </Animated.View>
-
-          {/* Projects: pinned first, capped at 5 */}
-          {(
-            <Animated.View entering={FadeInDown.duration(300).delay(120)} style={[styles.section, halfW]}>
-              <WorkspaceSection
-                id="projects"
-                icon={Folder}
-                title="Projects"
-                count={workspaceProjects.length}
-                onOpen={() => tabNav.navigate('Projects')}
-              >
-                {workspaceProjects.length === 0 ? (
-                  <EmptyLine>No projects yet</EmptyLine>
-                ) : (
-                <Rows>
-                  {workspaceProjects.slice(0, ws.maxProjects).map(p => (
-                    <ProjectLineRow
-                      key={p.id}
-                      id={p.id}
-                      name={p.name}
-                      color={p.color || getProjectColor(p.id)}
-                      pinned={p.isFavourite}
-                      stage={projectStage(p)}
-                      onPress={() => tabNav.navigate('Projects', {
-                        screen: 'ProjectDetail',
-                        params: { projectId: p.id, projectName: p.name },
-                      })}
-                    />
-                  ))}
-                  {workspaceProjects.length > ws.maxProjects ? (
-                    <MoreRow key="__more" count={workspaceProjects.length - ws.maxProjects} onPress={() => tabNav.navigate('Projects')} />
-                  ) : null}
-                </Rows>
-                )}
-              </WorkspaceSection>
-            </Animated.View>
-          )}
-
-          {/* Timesheets */}
-          <Animated.View entering={FadeInDown.duration(300).delay(180)} style={[styles.section, halfW]}>
-            <WorkspaceSection
-              id="timesheets"
-              icon={Clock}
-              title="Timesheets"
-              count={recentTimesheets.length}
-              onOpen={() => navigation.navigate('More', { screen: 'Timesheets' })}
-            >
-              {recentTimesheets.length === 0 ? (
-                <EmptyLine>No recent timesheets</EmptyLine>
-              ) : (
-                <Rows>
-                  {recentTimesheets.slice(0, ws.maxTimesheets).map(ts => {
-                    const ccId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
-                    const hours = parseFloat(ts.duration);
-                    return (
-                      <AgendaRow
-                        key={ts.id}
-                        color={getProjectColor(ts.projectId)}
-                        title={getProjectName(ts.projectId, ts.projectName)}
-                        meta={[ccId ? getCostCodeLabel(ccId) : null, formatDateLabel(ts.date)].filter(Boolean).join(' · ')}
-                        right={Number.isFinite(hours) ? `${hours.toFixed(1)}h` : null}
-                        rightStrong
-                        onPress={() => openTimesheetSheet(ts)}
-                      />
-                    );
-                  })}
-                  {recentTimesheets.length > ws.maxTimesheets ? (
-                    <MoreRow
-                      key="__more"
-                      count={recentTimesheets.length - ws.maxTimesheets}
-                      onPress={() => navigation.navigate('More', { screen: 'Timesheets' })}
-                    />
-                  ) : null}
-                </Rows>
-              )}
-            </WorkspaceSection>
-          </Animated.View>
-
-          {/* Recent activity */}
-          <Animated.View entering={FadeInDown.duration(300).delay(240)} style={[styles.section, halfW]}>
-            <WorkspaceSection id="activity" icon={Activity} title="Recent activity" count={recentActivities.length}>
-              {recentActivities.length === 0 ? (
-                <EmptyLine>No recent activity</EmptyLine>
-              ) : (
-                <Rows>
-                  {recentActivities.map(activity => {
-                    const userName = activity.userName || 'System';
-                    return (
-                      <View key={activity.id} style={styles.activityRow}>
-                        <Avatar size="activity" name={userName} color={activity.projectId ? getProjectColor(activity.projectId) : null} />
-                        <Text style={[type.body, { color: c.text, flex: 1 }]} numberOfLines={2}>
-                          <Text style={{ fontFamily: fonts.semibold }}>{userName}</Text>
-                          {` ${activity.description}`}
-                        </Text>
-                        <Text style={[type.meta, tabular, { color: c.mutedStrong }]}>{compactAgo(activity.createdAt)}</Text>
-                      </View>
-                    );
-                  })}
-                </Rows>
-              )}
-            </WorkspaceSection>
-          </Animated.View>
         </ScrollView>
       )}
 
@@ -1147,10 +1196,11 @@ const styles = StyleSheet.create({
     paddingBottom: space.screenBottom,
   },
   section: { marginBottom: metrics.workspace.sectionGap },
-  // Wide-only: row-wrap container; every child needs an explicit width.
-  scrollContentWide: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', paddingHorizontal: space.screenX - space.inline },
-  sectionFull: { width: '100%', paddingHorizontal: space.inline },
-  sectionHalf: { width: '50%', paddingHorizontal: space.inline },
+  // Duo (D01): padding 10/28, two columns (left 420, right fills), gap 28.
+  scrollContentWide: { paddingHorizontal: metrics.workspace.duoPadX, paddingTop: metrics.workspace.duoPadTop },
+  duoCols: { flexDirection: 'row', alignItems: 'flex-start', gap: metrics.workspace.duoColGap },
+  duoLeft: { width: metrics.workspace.duoLeft },
+  duoRight: { flex: 1, minWidth: 0 },
   clockRow: { flexDirection: 'row', alignItems: 'center', gap: metrics.workspace.clockGap },
   clockBody: { flex: 1, gap: metrics.listRow.bodyGap },
   clockLabelRow: { flexDirection: 'row', alignItems: 'center', gap: space.inline },

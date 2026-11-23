@@ -482,8 +482,8 @@ export const metrics = {
   statusDot: { gap: 5 },
   checkbox: { borderWidth: 1.5, check: 12 },
   progress: { labelGap: 6, inlineLabelWidth: 56, inlineGap: 10 },
-  fab: { cameraIcon: 22 },
-  tabBar: { padTop: 8, padX: 8, minPadBottom: 8, icon: 22, gap: 3, badgeOffsetX: 10, badgeOffsetY: -4 },
+  fab: { cameraIcon: 22, duoRight: 24, duoBottom: 20 },
+  tabBar: { padTop: 8, padX: 8, minPadBottom: 8, icon: 22, gap: 3, badgeOffsetX: 10, badgeOffsetY: -4, duo: { gap: 24, innerGap: 8, itemHeight: 40, padX: 14 } },
   filterChip: { gap: 2, padY: 5, padX: 10, innerGap: 5 },
   captureChip: {
     workspace: { width: 85, height: 40, icon: 16, gap: 4 },
@@ -536,6 +536,10 @@ export const metrics = {
     menuTop: 64,
     menuIcon: 18,
     clockGap: 12,
+    duoPadX: 28,
+    duoPadTop: 10,
+    duoColGap: 28,
+    duoLeft: 420,
   },
   projects: {
     contentTop: 8,

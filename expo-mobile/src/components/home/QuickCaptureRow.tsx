@@ -7,6 +7,7 @@ import { useRoute } from '@react-navigation/native';
 import { metrics, radii, size, space, type, useColors } from '../../theme';
 import { Sheet, type SheetRef } from '../ui/Sheet';
 import { CaptureChip, Card, ListRow, ProjectSquare } from '../kit';
+import { useLayout } from '../../lib/useLayout';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { usePermission } from '../../lib/usePermission';
 import { haptic } from '../../lib/haptics';
@@ -157,6 +158,7 @@ export function QuickCaptureRow({
   ];
 
   const w = metrics.workspace;
+  const { isWide } = useLayout();
   return (
     <View style={[{ gap: w.captureGap }, style]}>
       <View style={styles.labelRow}>
@@ -184,6 +186,8 @@ export function QuickCaptureRow({
             icon={b.icon}
             label={b.label}
             onPress={b.onPress}
+            // Duo (D01): taller bordered tiles, icon over label.
+            variant={isWide ? 'duo' : 'workspace'}
             style={styles.chip}
             accessibilityLabel={b.key === 'clock' ? b.a11y : `${b.a11y}${project ? ` for ${project.name}` : ''}`}
           />
