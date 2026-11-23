@@ -3,7 +3,7 @@ import { RefreshControl, SectionList, StyleSheet, Text, View } from 'react-nativ
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../../services/api';
 import { useClientProject } from '../../contexts/ClientProjectContext';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, size } from '../../theme';
 import {
   formatDateRange,
   groupSchedule,
@@ -114,7 +114,7 @@ export default function ClientScheduleScreen() {
                   { backgroundColor: theme.card, borderColor: theme.border },
                   first && styles.rowFirst,
                   last && styles.rowLast,
-                  !last && { borderBottomWidth: StyleSheet.hairlineWidth },
+                  !last && { borderBottomWidth: size.border },
                   item.parentItemId ? styles.rowChild : null,
                 ]}
               >
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { paddingHorizontal: 16, paddingBottom: 32 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 18, marginBottom: 8 },
-  sectionTitle: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, letterSpacing: 0.6 },
+  sectionTitle: { fontSize: fontSize.xs, fontFamily: fonts.semibold, letterSpacing: 0.6 },
   sectionMeta: { fontSize: fontSize.xs },
   row: {
     flexDirection: 'row',
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
   marker: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
   rowBody: { flex: 1, gap: 3 },
   rowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  rowTitle: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.medium, flexShrink: 1 },
+  rowTitle: { fontSize: fontSize.bodyLg, fontFamily: fonts.medium, flexShrink: 1 },
   rowMeta: { fontSize: fontSize.bodySm },
   progressLine: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   progressTrack: { flex: 1, maxWidth: 160, height: 4, borderRadius: 2, overflow: 'hidden' },

@@ -12,7 +12,8 @@ import { apiFetch } from '../services/api';
 import { setAppBadgeCount } from '../services/pushNotifications';
 import { navigateClientFromPush } from './navigationRef';
 import { PORTAL_KEYS } from '../lib/clientPortal';
-import { useTheme, fontSize, fontWeight } from '../theme';
+import { useTheme, fontSize, fontWeight, fonts } from '../theme';
+import { TabBar } from '../components/kit';
 import { ClientProjectProvider, useClientProject } from '../contexts/ClientProjectContext';
 import { ClientEmpty, ClientHeader, ClientLoading } from '../components/client/ClientUI';
 import ClientHomeScreen from '../screens/client/ClientHomeScreen';
@@ -69,28 +70,9 @@ function ClientTabs() {
   return (
     <Tab.Navigator
       screenListeners={{ tabPress: () => haptic.select() }}
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarIcon: ({ focused, color }) => {
-          const [on, off] = TAB_ICONS[route.name] ?? ['ellipse', 'ellipse-outline'];
-          return (
-            <View style={[styles.tabIcon, { backgroundColor: focused ? theme.primaryLight : 'transparent' }]}>
-              <Ionicons name={focused ? on : off} size={22} color={color} />
-            </View>
-          );
-        },
-        tabBarActiveTintColor: theme.primary,
-        tabBarInactiveTintColor: theme.textMuted,
-        tabBarStyle: {
-          backgroundColor: theme.card,
-          borderTopColor: theme.border,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          height: 74,
-          paddingTop: 8,
-          paddingBottom: 14,
-        },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 3 },
-      })}
+      // Same tab bar as the team app (revamp): white, 1dp rule, accent active.
+      tabBar={(props) => <TabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="ClientHome" component={ClientHomeScreen} options={{ title: 'Home' }} />
       {canSchedule && <Tab.Screen name="ClientSchedule" component={ClientScheduleScreen} options={{ title: 'Schedule' }} />}
@@ -206,5 +188,5 @@ const styles = StyleSheet.create({
   center: { justifyContent: 'center' },
   tabIcon: { width: 52, height: 28, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   retry: { alignSelf: 'center', padding: 12 },
-  retryText: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
+  retryText: { fontSize: fontSize.base, fontFamily: fonts.semibold },
 });

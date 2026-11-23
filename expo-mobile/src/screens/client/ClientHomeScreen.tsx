@@ -7,7 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useClientProject } from '../../contexts/ClientProjectContext';
 import { usePermission } from '../../lib/usePermission';
 import { haptic } from '../../lib/haptics';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts } from '../../theme';
 import { ProgressRing } from '../../components/ui/ProgressRing';
 import { PressableScale } from '../../components/ui/PressableScale';
 import {
@@ -293,24 +293,24 @@ const styles = StyleSheet.create({
   avatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   switcher: { gap: 8, paddingBottom: 4 },
   chip: { borderWidth: 1, borderRadius: radius.full, paddingHorizontal: 12, paddingVertical: 6, maxWidth: 220 },
-  chipText: { fontSize: fontSize.bodySm, fontWeight: fontWeight.medium },
-  sectionTitle: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, letterSpacing: 0.6, marginTop: 20, marginBottom: 8 },
+  chipText: { fontSize: fontSize.bodySm, fontFamily: fonts.medium },
+  sectionTitle: { fontSize: fontSize.xs, fontFamily: fonts.semibold, letterSpacing: 0.6, marginTop: 20, marginBottom: 8 },
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  seeAll: { fontSize: fontSize.bodySm, fontWeight: fontWeight.semibold },
+  seeAll: { fontSize: fontSize.bodySm, fontFamily: fonts.semibold },
   stack: { gap: 8 },
   caughtUp: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   caughtUpText: { flex: 1, fontSize: fontSize.sm },
   attentionRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   attentionIcon: { width: 36, height: 36, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
   attentionBody: { flex: 1, gap: 2 },
-  attentionTitle: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.medium },
+  attentionTitle: { fontSize: fontSize.bodyLg, fontFamily: fonts.medium },
   attentionDetail: { fontSize: fontSize.bodySm },
   muted: { fontSize: fontSize.bodySm },
   progressHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  progressPercent: { fontSize: fontSize.lg, fontWeight: fontWeight.semibold },
+  progressPercent: { fontSize: fontSize.lg, fontFamily: fonts.semibold },
   progressList: { marginTop: 14, gap: 3 },
-  progressLabel: { fontSize: 11, fontWeight: fontWeight.semibold, letterSpacing: 0.5 },
-  progressItem: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
+  progressLabel: { fontSize: 11, fontFamily: fonts.semibold, letterSpacing: 0.5 },
+  progressItem: { fontSize: fontSize.sm, fontFamily: fonts.medium },
   latest: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   latestPhoto: { width: 56, height: 56, borderRadius: radius.lg },
 });

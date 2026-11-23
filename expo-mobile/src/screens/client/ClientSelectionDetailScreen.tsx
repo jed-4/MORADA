@@ -20,7 +20,7 @@ import { apiFetch, apiRequest } from '../../services/api';
 import { usePermission } from '../../lib/usePermission';
 import { haptic } from '../../lib/haptics';
 import { timeAgo } from '../../lib/format';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, size } from '../../theme';
 import { firstImage, formatMoney, type SelectionOption } from '../../lib/selections';
 import { PORTAL_KEYS, canClientChoose, formatDay, selectionStatus } from '../../lib/clientPortal';
 import CroppedImage from '../../components/selections/CroppedImage';
@@ -213,7 +213,7 @@ export default function ClientSelectionDetailScreen() {
             >
               <Ionicons name="bulb-outline" size={18} color={theme.primary} />
               <Text style={[styles.suggestText, { color: theme.textSecondary }]}>
-                Seen something you'd prefer? <Text style={{ color: theme.primary, fontWeight: fontWeight.semibold }}>Suggest an option</Text>
+                Seen something you'd prefer? <Text style={{ color: theme.primary, fontFamily: fonts.semibold }}>Suggest an option</Text>
               </Text>
             </Pressable>
           )}
@@ -346,29 +346,29 @@ function Fact({ label, value, strong }: { label: string; value: string; strong?:
 const styles = StyleSheet.create({
   container: { flex: 1 },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
-  barTitle: { flex: 1, fontSize: fontSize.lg, fontWeight: fontWeight.semibold, textAlign: 'center' },
+  barTitle: { flex: 1, fontSize: fontSize.lg, fontFamily: fonts.semibold, textAlign: 'center' },
   content: { paddingHorizontal: 16, gap: 4 },
   summary: { gap: 12 },
   facts: { flexDirection: 'row', flexWrap: 'wrap', gap: 20 },
   fact: { gap: 2 },
-  factLabel: { fontSize: 11, fontWeight: fontWeight.semibold, letterSpacing: 0.5 },
-  factValue: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
+  factLabel: { fontSize: 11, fontFamily: fonts.semibold, letterSpacing: 0.5 },
+  factValue: { fontSize: fontSize.sm, fontFamily: fonts.medium },
   description: { fontSize: fontSize.sm, lineHeight: 20 },
-  money: { flexDirection: 'row', gap: 24, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10 },
+  money: { flexDirection: 'row', gap: 24, borderTopWidth: size.border, paddingTop: 10 },
   hint: { fontSize: fontSize.sm, marginTop: 12 },
   hintSmall: { fontSize: fontSize.bodySm },
   suggest: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderStyle: 'dashed', borderRadius: radius.xl, padding: 12, marginTop: 12 },
   suggestText: { flex: 1, fontSize: fontSize.sm },
-  sectionTitle: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, letterSpacing: 0.6, marginTop: 20, marginBottom: 8 },
+  sectionTitle: { fontSize: fontSize.xs, fontFamily: fonts.semibold, letterSpacing: 0.6, marginTop: 20, marginBottom: 8 },
   stack: { gap: 8 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 },
   optionThumb: { width: 72, height: 72, borderRadius: radius.lg, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   optionThumbWide: { width: 104, height: 104 },
   optionBody: { flex: 1, gap: 3 },
-  optionName: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.medium },
+  optionName: { fontSize: fontSize.bodyLg, fontFamily: fonts.medium },
   optionMeta: { fontSize: fontSize.bodySm },
   optionTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
-  optionPrice: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  optionPrice: { fontSize: fontSize.sm, fontFamily: fonts.semibold },
   comments: { gap: 10 },
   comment: { borderRadius: radius.lg, padding: 10, gap: 4 },
   commentMeta: { fontSize: fontSize.xs },

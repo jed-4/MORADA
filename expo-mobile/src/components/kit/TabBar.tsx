@@ -1,7 +1,7 @@
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { Briefcase, Calendar, House, LayoutGrid, MessageSquare, type LucideIcon } from 'lucide-react-native';
+import { Briefcase, Calendar, CalendarDays, House, LayoutGrid, MessageSquare, Palette, Wallet, type LucideIcon } from 'lucide-react-native';
 import { metrics, size, type, useColors } from '../../theme';
 import { UnreadBadge } from './UnreadBadge';
 
@@ -11,6 +11,12 @@ const ICONS: Record<string, LucideIcon> = {
   Messages: MessageSquare,
   Calendar: Calendar,
   More: LayoutGrid,
+  // Client portal tabs (ClientNavigator)
+  ClientHome: House,
+  ClientSchedule: CalendarDays,
+  ClientSelections: Palette,
+  ClientMoney: Wallet,
+  ClientMessages: MessageSquare,
 };
 
 /**

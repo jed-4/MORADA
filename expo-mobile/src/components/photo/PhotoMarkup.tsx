@@ -22,7 +22,7 @@ import { cacheDirectory, copyAsync, makeDirectoryAsync } from 'expo-file-system/
 import { useLayout } from '../../lib/useLayout';
 import { haptic } from '../../lib/haptics';
 import { isPhotoMarkupAvailable } from '../../lib/photos';
-import { useTheme } from '../../theme';
+import { useTheme, fonts } from '../../theme';
 
 // Full-screen photo markup: freehand pen, arrows and circles in a few colours,
 // with undo. Save flattens the drawing onto the photo and writes a NEW JPEG
@@ -402,9 +402,9 @@ const styles = StyleSheet.create({
   },
   topBtn: { paddingVertical: 8, paddingHorizontal: 6 },
   undoBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  topBtnText: { color: '#fff', fontSize: 16, fontWeight: '500' },
+  topBtnText: { color: '#fff', fontSize: 16, fontFamily: fonts.medium },
   saveBtn: { borderRadius: 18, paddingHorizontal: 18, paddingVertical: 8, minWidth: 72, alignItems: 'center' },
-  saveText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  saveText: { color: '#fff', fontSize: 16, fontFamily: fonts.bold },
   disabled: { opacity: 0.4 },
   stage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   message: { color: '#fff', fontSize: 14 },

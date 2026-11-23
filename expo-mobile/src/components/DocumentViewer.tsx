@@ -5,7 +5,7 @@ import { WebView } from 'react-native-webview';
 import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { downloadToCache, FileNotFoundError } from '../services/api';
-import { useTheme, fontSize, fontWeight, radius } from '../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, size } from '../theme';
 import { useLayout } from '../lib/useLayout';
 
 /**
@@ -183,11 +183,11 @@ export default function DocumentViewer({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   panel: { zIndex: 10 },
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
-  title: { flex: 1, fontSize: fontSize.base, fontWeight: fontWeight.semibold, textAlign: 'center' },
-  action: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
+  bar: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: size.border },
+  title: { flex: 1, fontSize: fontSize.base, fontFamily: fonts.semibold, textAlign: 'center' },
+  action: { fontSize: fontSize.base, fontFamily: fonts.semibold },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
   message: { fontSize: fontSize.sm, textAlign: 'center', lineHeight: 20 },
   retry: { borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: 16, paddingVertical: 10 },
-  retryText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  retryText: { fontSize: fontSize.sm, fontFamily: fonts.semibold },
 });

@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { API_BASE_URL } from '../../services/api';
 import { buildLabel } from '../../lib/sentry';
-import { useTheme, fontSize, fontWeight } from '../../theme';
+import { useTheme, fontSize, fontWeight, fonts, size } from '../../theme';
 import { ClientCard } from '../../components/client/ClientUI';
 import { readableFrame } from '../../components/ui/ReadableColumn';
 
@@ -99,15 +99,15 @@ export default function ClientAccountScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingBottom: 8 },
-  barTitle: { fontSize: fontSize.lg, fontWeight: fontWeight.semibold },
+  barTitle: { fontSize: fontSize.lg, fontFamily: fonts.semibold },
   content: { padding: 16, gap: 12 },
   who: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  name: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
+  name: { fontSize: fontSize.base, fontFamily: fonts.semibold },
   email: { fontSize: fontSize.bodySm, marginTop: 2 },
   group: { paddingVertical: 2, paddingHorizontal: 0 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14 },
   rowText: { flex: 1, fontSize: fontSize.bodyLg },
-  divider: { height: StyleSheet.hairlineWidth, marginLeft: 46 },
+  divider: { height: size.border, marginLeft: 46 },
   build: { fontSize: fontSize.xs, textAlign: 'center', marginTop: 12 },
 });

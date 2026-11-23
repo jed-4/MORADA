@@ -4,7 +4,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch } from '../../services/api';
 import { formatMoney } from '../../lib/selections';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, size } from '../../theme';
 import { formatDay, invoiceStatus, type ClientInvoice } from '../../lib/clientPortal';
 import { ClientCard, ClientEmpty, ClientHeader, ClientLoading, ClientStatusPill } from '../../components/client/ClientUI';
 import { readableFrame } from '../../components/ui/ReadableColumn';
@@ -117,7 +117,7 @@ export default function ClientInvoiceDetailScreen() {
               <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>THIS CLAIM</Text>
               <ClientCard style={{ paddingVertical: 4 }}>
                 {lines.map((line, i) => (
-                  <View key={line.key} style={[styles.line, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border }]}>
+                  <View key={line.key} style={[styles.line, i > 0 && { borderTopWidth: size.border, borderTopColor: theme.border }]}>
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={[styles.lineTitle, { color: theme.textPrimary }]}>{line.label}</Text>
                       {!!line.sub && <Text style={[styles.lineSub, { color: theme.textSecondary }]}>{line.sub}</Text>}
@@ -143,7 +143,7 @@ export default function ClientInvoiceDetailScreen() {
               <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>PAYMENTS RECEIVED</Text>
               <ClientCard style={{ paddingVertical: 4 }}>
                 {data!.payments.map((p, i) => (
-                  <View key={p.id} style={[styles.line, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border }]}>
+                  <View key={p.id} style={[styles.line, i > 0 && { borderTopWidth: size.border, borderTopColor: theme.border }]}>
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={[styles.lineTitle, { color: theme.textPrimary }]}>{formatDay(p.paymentDate)}</Text>
                       {!!(p.paymentMethod || p.reference) && (
@@ -195,27 +195,27 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { paddingHorizontal: 16, gap: 4 },
   hero: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: radius.xl, padding: 16 },
-  heroCompany: { color: '#FFFFFF', fontSize: fontSize.lg, fontWeight: fontWeight.bold },
+  heroCompany: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fonts.bold },
   heroSmall: { color: 'rgba(255,255,255,0.8)', fontSize: fontSize.xs },
-  heroTotal: { color: '#FFFFFF', fontSize: fontSize.xxl, fontWeight: fontWeight.bold },
-  title: { fontSize: fontSize.xl, fontWeight: fontWeight.bold, marginTop: 16, marginBottom: 8 },
+  heroTotal: { color: '#FFFFFF', fontSize: fontSize.xxl, fontFamily: fonts.bold },
+  title: { fontSize: fontSize.xl, fontFamily: fonts.bold, marginTop: 16, marginBottom: 8 },
   facts: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   fact: { gap: 2, minWidth: '40%' },
-  factLabel: { fontSize: 11, fontWeight: fontWeight.semibold, letterSpacing: 0.5 },
-  factValue: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
+  factLabel: { fontSize: 11, fontFamily: fonts.semibold, letterSpacing: 0.5 },
+  factValue: { fontSize: fontSize.sm, fontFamily: fonts.medium },
   body: { fontSize: fontSize.sm, lineHeight: 21, marginTop: 12 },
-  sectionTitle: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, letterSpacing: 0.6, marginTop: 20, marginBottom: 8 },
+  sectionTitle: { fontSize: fontSize.xs, fontFamily: fonts.semibold, letterSpacing: 0.6, marginTop: 20, marginBottom: 8 },
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 10 },
-  lineTitle: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
+  lineTitle: { fontSize: fontSize.sm, fontFamily: fonts.medium },
   lineSub: { fontSize: fontSize.bodySm },
-  lineAmount: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  lineAmount: { fontSize: fontSize.sm, fontFamily: fonts.semibold },
   totals: { marginTop: 8, gap: 6 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalLabel: { fontSize: fontSize.sm },
-  totalValue: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
-  totalBold: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  totalStrong: { fontSize: fontSize.base, fontWeight: fontWeight.bold },
-  totalStrongValue: { fontSize: fontSize.xl, fontWeight: fontWeight.bold },
-  divider: { height: StyleSheet.hairlineWidth, marginVertical: 4 },
+  totalValue: { fontSize: fontSize.sm, fontFamily: fonts.medium },
+  totalBold: { fontSize: fontSize.sm, fontFamily: fonts.semibold },
+  totalStrong: { fontSize: fontSize.base, fontFamily: fonts.bold },
+  totalStrongValue: { fontSize: fontSize.xl, fontFamily: fonts.bold },
+  divider: { height: size.border, marginVertical: 4 },
   terms: { fontSize: fontSize.xs, lineHeight: 18 },
 });
