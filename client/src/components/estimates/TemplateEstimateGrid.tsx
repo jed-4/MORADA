@@ -291,6 +291,31 @@ export function TemplateEstimateGrid({
     0,
     { reorderable: true },
   );
+  /**
+   * The newest copy of the lines, including edits not yet drawn.
+   *
+   * Every write here rewrites the whole list, and `items` only catches up on
+   * the next render. Two edits close together (Enter on one quantity, then
+   * straight into the next) used to build the second from the list as it was
+   * BEFORE the first, so the second save quietly put the first one back.
+   * Writes start from this instead; it only takes `items` when the page
+   * hands over a genuinely new list.
+   */
+  const latestItems = useRef(items);
+  const seenItems = useRef(items);
+  if (seenItems.current !== items) {
+    seenItems.current = items;
+    latestItems.current = items;
+  }
+  const commit = useCallback(
+    (build: (current: TemplateItem[]) => TemplateItem[]) => {
+      const next = build(latestItems.current);
+      latestItems.current = next;
+      onSave(next);
+    },
+    [onSave],
+  );
+
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [activeCell, setActiveCell] = useState<{ itemId: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState("");
@@ -473,8 +498,8 @@ export function TemplateEstimateGrid({
       const movesGroup = "groupId" in data;
       const groupName = data.groupId === UNGROUPED || data.groupId === "none" ? undefined : data.groupId;
       if (Object.keys(patch).length === 0 && !movesGroup) return;
-      onSave(
-        items.map((i) =>
+      commit((current) =>
+        current.map((i) =>
           ids.has(i.id) && !i.isGroup
             ? {
                 ...i,
@@ -487,7 +512,7 @@ export function TemplateEstimateGrid({
         ),
       );
     },
-    [items, onSave, costCodes],
+    [commit, costCodes],
   );
 
   /**
@@ -516,17 +541,19 @@ export function TemplateEstimateGrid({
   const deleteSelected = useCallback(() => {
     const ids = selectedItems;
     if (ids.size === 0) return;
-    onSave(items.filter((i) => !ids.has(i.id) || i.isGroup));
+    commit((current) => current.filter((i) => !ids.has(i.id) || i.isGroup));
     setSelectedItems(new Set());
-  }, [items, onSave, selectedItems]);
+  }, [commit, selectedItems]);
 
   const patchItem = useCallback(
     (itemId: string, data: Record<string, any>) => {
       const patch = toTemplatePatch(data, costCodes);
       if (Object.keys(patch).length === 0) return;
-      onSave(items.map((i) => (i.id === itemId ? { ...i, ...patch, ...unlinkIfRepriced(i, patch, data) } : i)));
+      commit((current) =>
+        current.map((i) => (i.id === itemId ? { ...i, ...patch, ...unlinkIfRepriced(i, patch, data) } : i)),
+      );
     },
-    [items, onSave, costCodes],
+    [commit, costCodes],
   );
 
   /**
@@ -591,14 +618,15 @@ export function TemplateEstimateGrid({
 
   const setGroupCollapsed = useCallback(
     (groupName: string, collapsed: boolean) => {
+      const items = latestItems.current;
       const existing = items.find((i) => i.isGroup && (i.name || UNGROUPED) === groupName);
       if (existing) {
-        onSave(items.map((i) => (i.id === existing.id ? { ...i, isCollapsed: collapsed } : i)));
+        commit(() => items.map((i) => (i.id === existing.id ? { ...i, isCollapsed: collapsed } : i)));
         return;
       }
       // First time this group is touched it becomes a real record. Lines are
       // untouched — they still link by name.
-      onSave([
+      commit(() => [
         ...items,
         {
           id: crypto.randomUUID(),
@@ -622,6 +650,7 @@ export function TemplateEstimateGrid({
    */
   const updateGroup = useCallback(
     (groupName: string, next: { name: string; description: string; costCodeId?: string }) => {
+      const items = latestItems.current;
       const newName = next.name.trim() || groupName;
       const cc = costCodes.find((c) => c.id === next.costCodeId);
       const groupFields = {
@@ -642,7 +671,7 @@ export function TemplateEstimateGrid({
         }
         return i;
       });
-      onSave(
+      commit(() =>
         found
           ? updated
           : [...updated, { id: crypto.randomUUID(), isGroup: true, sortOrder: items.length, ...groupFields } as TemplateItem],
@@ -696,6 +725,31 @@ export function TemplateEstimateGrid({
     setEditingGroup(null);
   };
 
+  // ── Description dialog ─────────────────────────────────────────────────────
+  // The shared Description cell only sets editingCell; the estimate page owns
+  // the dialog that then opens. This grid never had one, so clicking a
+  // template line's description did nothing and the column could never be
+  // filled in.
+  const editingDescriptionItem =
+    editingCell?.field === "description" ? items.find((i) => i.id === editingCell.itemId) : undefined;
+
+  const saveDescription = () => {
+    if (!editingDescriptionItem) return;
+    patchItem(editingDescriptionItem.id, { description: editingValue });
+    setEditingCell(null);
+    setEditingValue("");
+  };
+
+  const descriptionDialogDismiss = useCommitOnDismiss({
+    isDirty: () =>
+      !!editingDescriptionItem && (editingValue ?? "") !== (editingDescriptionItem.description ?? ""),
+    commit: saveDescription,
+    discard: () => {
+      setEditingCell(null);
+      setEditingValue("");
+    },
+  });
+
   const groupEditorDismiss = useCommitOnDismiss({
     isDirty: groupEditorIsDirty,
     commit: saveGroupEditor,
@@ -704,9 +758,10 @@ export function TemplateEstimateGrid({
 
   const addItemToGroup = useCallback(
     (groupName: string) => {
+      const items = latestItems.current;
       // New lines start on the group's default cost code, as on an estimate.
       const groupRow = items.find((i) => i.isGroup && (i.name || UNGROUPED) === groupName);
-      onSave([
+      commit(() => [
         ...items,
         {
           id: crypto.randomUUID(),
@@ -732,7 +787,8 @@ export function TemplateEstimateGrid({
 
   const deleteGroup = useCallback(
     (groupName: string) => {
-      onSave(
+      const items = latestItems.current;
+      commit(() =>
         items.filter(
           (i) => !(i.isGroup && (i.name || UNGROUPED) === groupName) && (i.groupName || UNGROUPED) !== groupName,
         ),
@@ -744,6 +800,7 @@ export function TemplateEstimateGrid({
   const handleDragEnd = useCallback(
     (e: DragEndEvent) => {
       setActiveId(null);
+      const items = latestItems.current;
       const { active, over } = e;
       if (!over || active.id === over.id) return;
       const ordered = items.filter((i) => !i.isGroup).slice().sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
@@ -752,7 +809,7 @@ export function TemplateEstimateGrid({
       if (from < 0 || to < 0) return;
       const moved = arrayMove(ordered, from, to).map((i, idx) => ({ ...i, sortOrder: idx }));
       const byId = new Map(moved.map((i) => [i.id, i]));
-      onSave(items.map((i) => byId.get(i.id) ?? i));
+      commit(() => items.map((i) => byId.get(i.id) ?? i));
     },
     [items, onSave],
   );
@@ -811,9 +868,10 @@ export function TemplateEstimateGrid({
     updateItemMutation,
     createSelectionFromItemMutation: noopMutation,
     handleDuplicateItem: (id: string) => {
-      const src = items.find((i) => i.id === id);
-      if (!src) return;
-      onSave([...items, { ...src, id: crypto.randomUUID(), sortOrder: items.length }]);
+      commit((current) => {
+        const src = current.find((i) => i.id === id);
+        return src ? [...current, { ...src, id: crypto.randomUUID(), sortOrder: current.length }] : current;
+      });
     },
     handleCopyItem: () => {},
     form: { reset: () => {} },
@@ -1009,6 +1067,35 @@ export function TemplateEstimateGrid({
           </SortableContext>
         </DndContext>
       </div>
+
+      {/* Edit Description — the same dialog the estimate page opens. */}
+      <Dialog open={!!editingDescriptionItem} onOpenChange={descriptionDialogDismiss.onOpenChange}>
+        <DialogContent className="max-w-2xl rounded-xl" {...descriptionDialogDismiss.contentProps}>
+          <DialogHeader>
+            <DialogTitle>Edit Description</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <RichTextEditor
+              content={editingValue}
+              onChange={(html) => setEditingValue(html)}
+              placeholder="Enter description..."
+              data-testid="richtext-template-item-description"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setEditingCell(null); setEditingValue(""); }}
+              data-testid="button-cancel-template-description"
+            >
+              Cancel
+            </Button>
+            <Button onClick={saveDescription} data-testid="button-save-template-description">
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Group — clicking away keeps the edit, as on the estimate. */}
       <Dialog open={!!editingGroup} onOpenChange={groupEditorDismiss.onOpenChange}>

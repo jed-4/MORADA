@@ -189,7 +189,11 @@ export default function EstimateTemplateDetail() {
     mutationFn: async (data: Partial<EstimateTemplate>) =>
       apiRequest(`/api/estimate-templates/${params.templateId}`, "PATCH", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates", params.templateId] });
+      // Not while line edits are still going out: the refetch would bring back
+      // the server's copy from before them.
+      if (!saveLoop.current) {
+        queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates", params.templateId] });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates"] });
     },
     onError: () => toast({ title: "Failed to save changes", variant: "destructive" }),
@@ -233,8 +237,56 @@ export default function EstimateTemplateDetail() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const saveItems = (newItems: TemplateItem[]) => {
-    updateMutation.mutate({ templateData: newItems });
+  /**
+   * Save the template's lines: shown at once, sent one at a time.
+   *
+   * A template saves by rewriting its whole `templateData` blob. This used to
+   * PATCH and then wait for a refetch before the screen changed, so:
+   *  - a click (the proposal eye, a quantity) did nothing visible for a second
+   *    or more, then caught up later;
+   *  - every edit in that window was built from the OLD blob, so the next save
+   *    put back what the previous one changed. Toggling three eyes in a row,
+   *    or taking several quantities from 1 to 0, lost all but the last, and
+   *    the refetches landing in any order made rows flick on and off.
+   *
+   * Now the cache is updated first (so the next edit builds on this one), and
+   * writes go out in order with only the latest pending blob kept: each blob
+   * is the complete state, so skipping the stale ones between loses nothing.
+   */
+  const templateKey = ["/api/estimate-templates", params.templateId];
+  const pendingBlob = useRef<TemplateItem[] | null>(null);
+  const saveLoop = useRef<Promise<void> | null>(null);
+
+  const saveItems = (newItems: TemplateItem[]): Promise<void> => {
+    // A refetch in flight would land the server's older copy over this edit.
+    queryClient.cancelQueries({ queryKey: templateKey, exact: true });
+    queryClient.setQueryData<EstimateTemplate>(templateKey, (old) =>
+      old ? { ...old, templateData: newItems as any } : old,
+    );
+    pendingBlob.current = newItems;
+    if (!saveLoop.current) {
+      saveLoop.current = (async () => {
+        let failed = false;
+        while (pendingBlob.current) {
+          const blob = pendingBlob.current;
+          pendingBlob.current = null;
+          try {
+            await apiRequest(`/api/estimate-templates/${params.templateId}`, "PATCH", { templateData: blob });
+          } catch {
+            failed = true;
+            pendingBlob.current = null;
+            toast({ title: "Failed to save changes", variant: "destructive" });
+          }
+        }
+        saveLoop.current = null;
+        // The list page shows line counts and totals.
+        queryClient.invalidateQueries({ queryKey: ["/api/estimate-templates"], exact: true });
+        // Only resync this template from the server when a write failed, so the
+        // screen stops showing an edit that was never stored.
+        if (failed) queryClient.invalidateQueries({ queryKey: templateKey, exact: true });
+      })();
+    }
+    return saveLoop.current;
   };
 
   const patchItem = (itemId: string, patch: Partial<TemplateItem>) => {
@@ -376,7 +428,7 @@ export default function EstimateTemplateDetail() {
       };
     });
 
-    await updateMutation.mutateAsync({ templateData: [...base, ...mapped] });
+    await saveItems([...base, ...mapped]);
 
     // Imported groups should land open, not collapsed out of sight.
     setExpandedGroups((prev) => {

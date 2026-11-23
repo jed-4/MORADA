@@ -645,21 +645,24 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
       
       case 'description':
         return (
-          <div 
-            className={cellBase}
+          <div
+            className={`${cellBase} ${!isLocked ? 'cursor-pointer' : ''}`}
             role="gridcell"
             data-testid={`cell-description-${item.id}`}
+            // On the CELL, not the text inside it. The text div collapses to
+            // 1px tall when there is no description yet, so a line without
+            // one had nothing you could actually click to start one.
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isLocked) {
+                handleCellEdit(item, 'description');
+              }
+            }}
           >
             <HoverCard openDelay={200}>
               <HoverCardTrigger asChild>
-                <div 
-                  className={`truncate w-full min-w-0 ${!isLocked ? 'cursor-pointer border-b border-transparent hover:border-primary/30 transition-colors' : ''}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!isLocked) {
-                      handleCellEdit(item, 'description');
-                    }
-                  }}
+                <div
+                  className={`truncate w-full min-w-0 ${!isLocked ? 'border-b border-transparent hover:border-primary/30 transition-colors' : ''}`}
                   dangerouslySetInnerHTML={{ 
                     __html: item.description || '' 
                   }}
