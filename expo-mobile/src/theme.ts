@@ -501,7 +501,7 @@ export const metrics = {
   badge: { height: 18, padX: 6 },
   emptyState: { gap: 10, padBottom: 80, circle: 56, icon: 26, maxWidth: 250, areaMinHeight: 336 },
   sheet: { grabberWidth: 36, grabberHeight: 5, grabberTop: 8, padX: 16, padBottom: 34, gap: 14, titlePadTop: 4, titlePadBottom: 12, footerSpace: 84 },
-  tasksPane: { heldPadLeft: 60, heldPadTop: 14 },
+  tasksPane: { heldPadLeft: 60, heldPadTop: 14, padX: 24, padTop: 12, propLabel: 110, editIcon: 18 },
   form: { inputHeight: 44, inputPadX: 14, inputPadY: 11, multilineHeight: 110, labelGap: 6, dateInputWidth: 120, pctInputWidth: 52 },
   actionBar: { padY: 10, padX: 16, buttonHeight: 39, primaryWidth: 140, primaryHeight: 40, icon: 16, gap: 12, savePadLeft: 20 },
   thumb: { fallbackIcon: 18, diary: 80 },

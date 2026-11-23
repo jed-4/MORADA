@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ellipsis, Pencil } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TaskComments from '../TaskComments';
 import { useTwoPaneDetail } from '../ui/TwoPane';
 import { readableFrame } from '../ui/ReadableColumn';
 import { currentTheme, metrics, radii, size, space, tabular, type, useColors } from '../../theme';
-import { Avatar, Card, Checkbox, FieldLabel, PropertyRow } from '../kit';
+import { Avatar, Card, Checkbox, FieldLabel, ProjectSquare, PropertyRow } from '../kit';
 
 /**
  * One task's read-only view: title, status/priority, due date, project,
@@ -95,6 +96,11 @@ interface TaskDetailProps {
   inSheet?: boolean;
   /** Extra content after the comments (e.g. a delete button). */
   footer?: ReactNode;
+  /** Project square colour for the Project row. */
+  projectColor?: string | null;
+  projectId?: string | null;
+  /** Duo pane (D03): status + priority live in the properties card, not under the title. */
+  pane?: boolean;
 }
 
 export function TaskDetail({
@@ -109,6 +115,9 @@ export function TaskDetail({
   currentUserId,
   inSheet,
   footer,
+  projectColor,
+  projectId,
+  pane,
 }: TaskDetailProps) {
   const c = useColors();
   const description = stripHtml(task.contentText || task.content);
@@ -124,18 +133,36 @@ export function TaskDetail({
       <View style={dx.titleBlock}>
         <Text style={[type.headingSemi, { color: c.text }]}>{task.title}</Text>
         {/* Status as dot + word; priority as a plain word (no coloured pills). */}
-        <View style={dx.statusLine}>
+        {pane ? null : <View style={dx.statusLine}>
           <View style={[dx.dot, { backgroundColor: statusColor || c.status.upcoming }]} />
           <Text style={[type.meta, { color: c.text }]}>{statusLabel}</Text>
           <Text style={[type.meta, { color: c.muted }]}>{`· ${PRIORITY_LABELS[task.priority || 'low'] || 'Low'} priority`}</Text>
-        </View>
+        </View>}
       </View>
 
       <Card variant="list">
-        <PropertyRow key="due" label="Due date" value={due} placeholder="No due date" />
-        {projectName ? <PropertyRow key="project" label="Project" value={projectName} /> : null}
+        {pane ? (
+          <PropertyRow key="status" label="Status" labelWidth={metrics.tasksPane.propLabel}>
+            <View style={dx.statusLine}>
+              <View style={[dx.dot, { backgroundColor: statusColor || c.status.upcoming }]} />
+              <Text style={[type.body, { color: c.text }]}>{statusLabel}</Text>
+            </View>
+          </PropertyRow>
+        ) : null}
+        {pane ? (
+          <PropertyRow key="priority" label="Priority" labelWidth={metrics.tasksPane.propLabel} value={PRIORITY_LABELS[task.priority || 'low'] || 'Low'} />
+        ) : null}
+        <PropertyRow key="due" label="Due date" labelWidth={pane ? metrics.tasksPane.propLabel : undefined} value={due} placeholder="No due date" />
+        {projectName ? (
+          <PropertyRow key="project" label="Project" labelWidth={pane ? metrics.tasksPane.propLabel : undefined}>
+            <View style={dx.person}>
+              <ProjectSquare color={projectColor ?? null} fallbackKey={projectId ?? projectName} />
+              <Text style={[type.body, { color: c.text }]} numberOfLines={1}>{projectName}</Text>
+            </View>
+          </PropertyRow>
+        ) : null}
         {assignees.length > 0 ? (
-          <PropertyRow key="assignees" label={assignees.length > 1 ? 'Assignees' : 'Assignee'}>
+          <PropertyRow key="assignees" label={assignees.length > 1 ? 'Assignees' : 'Assignee'} labelWidth={pane ? metrics.tasksPane.propLabel : undefined}>
             <View style={dx.people}>
               {assignees.map((name, idx) => (
                 <View key={idx} style={dx.person}>
@@ -218,8 +245,12 @@ export function TaskDetail({
   );
 }
 
-interface TaskDetailPaneProps extends Omit<TaskDetailProps, 'inSheet'> {
+interface TaskDetailPaneProps extends Omit<TaskDetailProps, 'inSheet' | 'pane'> {
   onEdit: () => void;
+  /** Offered in the More menu (red), never as a button in the page. */
+  onDelete?: () => void;
+  /** Muted line top-left, e.g. "Capture · created by Jed Smith, 18 Nov". */
+  metaLine?: string;
 }
 
 /**
@@ -228,37 +259,48 @@ interface TaskDetailPaneProps extends Omit<TaskDetailProps, 'inSheet'> {
  * When the phone folds with this open, TwoPane keeps it mounted full width
  * with a floating back button top-left — the header leaves room for it.
  */
-export function TaskDetailPane({ onEdit, ...detail }: TaskDetailPaneProps) {
+export function TaskDetailPane({ onEdit, onDelete, metaLine, ...detail }: TaskDetailPaneProps) {
   const { heldOnFold } = useTwoPaneDetail();
   const insets = useSafeAreaInsets();
   const k = useColors();
+  const more = () =>
+    Alert.alert(detail.task.title, undefined, [
+      { text: 'Edit', onPress: onEdit },
+      ...(onDelete ? [{ text: 'Delete task', style: 'destructive' as const, onPress: onDelete }] : []),
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
   return (
     <View style={styles.pane}>
+      {/* D03: muted context line · Edit · More (Delete lives in More). */}
       <View
         style={[
           styles.paneHeader,
-          { borderBottomColor: k.border, backgroundColor: k.bg },
           // Room for TwoPane's floating back button when held after a fold:
           // it sits at left 12, top insets.top + 6 (36pt), so line the
           // header row up beside it rather than under it.
           heldOnFold && { paddingLeft: metrics.tasksPane.heldPadLeft, paddingTop: insets.top + metrics.tasksPane.heldPadTop },
         ]}
       >
-        <Text style={[type.sheetTitle, { color: k.text }]}>Task</Text>
+        <Text style={[type.meta, styles.flex, { color: k.muted }]} numberOfLines={1}>
+          {metaLine ?? detail.statusLabel}
+        </Text>
         <Pressable onPress={onEdit} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Edit task">
-          <Text style={[type.rowTitleMedium, { color: k.accent }]}>Edit</Text>
+          <Pencil size={metrics.tasksPane.editIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
+        </Pressable>
+        <Pressable onPress={more} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="More task actions">
+          <Ellipsis size={size.icon.header} color={k.icon} strokeWidth={metrics.iconStroke} />
         </Pressable>
       </View>
       <ScrollView
         style={styles.pane}
-        contentContainerStyle={[styles.paneContent, readableFrame]}
+        contentContainerStyle={styles.paneContent}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         automaticallyAdjustKeyboardInsets
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
       >
-        <TaskDetail {...detail} />
+        <TaskDetail {...detail} pane />
       </ScrollView>
     </View>
   );
@@ -266,15 +308,17 @@ export function TaskDetailPane({ onEdit, ...detail }: TaskDetailPaneProps) {
 
 const styles = StyleSheet.create({
   pane: { flex: 1 },
+  flex: { flex: 1 },
+  // D03 detail pane: padding 12/24/16/24.
   paneHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: space.screenX,
-    paddingVertical: metrics.listRow.padY,
-    borderBottomWidth: size.border,
+    gap: metrics.pageHeader.actionGap,
+    paddingHorizontal: metrics.tasksPane.padX,
+    paddingTop: metrics.tasksPane.padTop,
+    paddingBottom: space.inline,
   },
-  paneContent: { paddingHorizontal: space.screenX, paddingTop: space.screenX, paddingBottom: space.screenBottom },
+  paneContent: { paddingHorizontal: metrics.tasksPane.padX, paddingBottom: space.screenBottom },
 });
 
 const dx = StyleSheet.create({

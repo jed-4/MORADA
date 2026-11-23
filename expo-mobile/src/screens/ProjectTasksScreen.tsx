@@ -21,7 +21,7 @@ import { TwoPane } from '../components/ui/TwoPane';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme, useColors, currentTheme, metrics, space, tabular, type } from '../theme';
+import { useTheme, useColors, currentTheme, metrics, radii, space, tabular, type } from '../theme';
 import { ChevronDown, ChevronRight, Eye, EyeOff, LayoutGrid, List, SquareCheck, Trash2 } from 'lucide-react-native';
 import { usePersistedState } from '../lib/usePersistedState';
 import { Card, Checkbox, EmptyState, FAB, ModalSheet, FAB_CLEARANCE, GroupHeader, ListRow, PrimaryButton, SecondaryButton, TasksHeader, TextButton } from '../components/kit';
@@ -515,7 +515,11 @@ const colors = {
         }}
       >
         <ListRow
-          style={[{ backgroundColor: k.surface, alignItems: 'flex-start' }, isWide && paneTaskId === task.id && { backgroundColor: k.tint }]}
+          style={[
+            { backgroundColor: k.surface, alignItems: 'flex-start' },
+            // Duo (D03): the open task is a tint block (radius 8) set in from the card edge.
+            isWide && paneTaskId === task.id && [ks.rowSelected, { backgroundColor: k.tint }],
+          ]}
           onPress={() => openViewTask(task)}
           lead={
             <View style={ks.circle}>
@@ -654,7 +658,10 @@ const colors = {
               isDark={isDark}
               currentUserId={user?.id}
               onEdit={() => openPaneEdit(paneTask)}
-              footer={renderDeleteButton(paneTask)}
+              onDelete={() => handleDeleteTask(paneTask)}
+              projectName={projectName}
+              projectColor={projectColor ?? null}
+              projectId={projectId}
             />
           ) : null}
           list={
@@ -888,6 +895,11 @@ const ks = StyleSheet.create({
   empty: { minHeight: metrics.emptyState.areaMinHeight },
   board: { paddingHorizontal: space.screenX, paddingTop: pt.listTop, gap: space.rowGap },
   modalBody: { paddingHorizontal: space.screenX },
+  rowSelected: {
+    marginHorizontal: -(space.cardX - metrics.card.duoPad),
+    paddingHorizontal: space.cardX - metrics.card.duoPad,
+    borderRadius: radii.lg,
+  },
   modalContent: { paddingTop: space.inline, paddingBottom: space.screenBottom },
   boardColumn: { gap: 0 },
   boardHead: { flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.gap, minHeight: metrics.groupHeader.height, marginBottom: space.groupHeaderToCard },
