@@ -326,6 +326,9 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [showEarlierDone, setShowEarlierDone] = useState(false);
   // Gantt: month shown in the corner, and where the timeline is scrolled to.
   const [ganttMonth, setGanttMonth] = useState(MONTHS[new Date().getMonth()]);
+  // Left edge of the visible Gantt window (set when a scroll settles), for
+  // the "25 ›" markers on work that starts past the right edge.
+  const [ganttViewX, setGanttViewX] = useState(0);
   const ganttXRef = useRef(0);
   // Calendar: the week's days scroll sideways; the time grid fills the rest.
   const calScrollRef = useRef<ScrollViewInstance>(null);
@@ -851,7 +854,9 @@ const colors = {
   };
 
   // ── Gantt ──────────────────────────────────────────────────────────────────
-  const g = sc.gantt;
+  const g = isWide
+    ? { ...sc.gantt, rowHeight: sc.gantt.rowHeightWide, headerHeight: sc.gantt.headerHeightWide }
+    : sc.gantt;
   const nameColWidth = showNamesCol ? (isWide ? g.nameColWide : g.nameCol) : 0;
   const visibleDays = isWide ? g.visibleDaysWide : g.visibleDays;
   // Day columns size so a week (two on a big screen) fills the width.
@@ -884,6 +889,7 @@ const colors = {
     d.setDate(d.getDate() + Math.round(x / dayW));
     const label = MONTHS[d.getMonth()];
     setGanttMonth(prev => (prev === label ? prev : label));
+    setGanttViewX(prev => (prev === x ? prev : x));
   };
 
   const ganttTodayX = () => {
@@ -973,7 +979,7 @@ const colors = {
                 {sortedItems.map(item => (
                   <Pressable
                     key={item.id}
-                    style={[ss.ganttNameRow, { borderBottomColor: k.hairline }]}
+                    style={[ss.ganttNameRow, { height: g.rowHeight, borderBottomColor: k.hairline }]}
                     onPress={() => openDetail(item)}
                     accessibilityRole="button"
                   >
@@ -1038,11 +1044,31 @@ const colors = {
                     const ed = itemEnd.getDate();
                     return durationDays > 1 ? `${sd} – ${ed}` : `${sd}`;
                   })();
+                  // Starts past the right edge of what's on screen: "25 ›" there
+                  // ("3 Dec ›" when it's in another month).
+                  const viewRight = ganttViewX + visibleDays * dayW;
+                  const offRight = barLeft >= viewRight;
+                  const edgeDate = new Date(minDate);
+                  edgeDate.setDate(edgeDate.getDate() + Math.floor(viewRight / dayW) - 1);
+                  const offLabel = itemStart.getMonth() === edgeDate.getMonth()
+                    ? `${itemStart.getDate()} ›`
+                    : `${itemStart.getDate()} ${MONTHS[itemStart.getMonth()]} ›`;
                   return (
                     <View
                       key={item.id}
                       style={[ss.ganttBarRow, { top: idx * g.rowHeight, height: g.rowHeight, borderBottomColor: k.hairline }]}
                     >
+                      {offRight ? (
+                        <Pressable
+                          onPress={() => scrollGanttTo(barLeft - g.barInset - dayW)}
+                          hitSlop={metrics.hitSlop}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${item.name} starts ${formatDateRange(item.startDate, item.endDate)}. Scroll to it`}
+                          style={[ss.ganttStatus, { right: totalWidth - viewRight + sc.gantt.offRangeGap }]}
+                        >
+                          <Text style={[type.tiny, tabular, { color: k.muted }]}>{offLabel}</Text>
+                        </Pressable>
+                      ) : null}
                       {showBarStatus && barLeft > dayW ? (
                         <View style={[ss.ganttStatus, { right: totalWidth - barLeft + space.inline }]}>
                           <StatusDot status={dotFor(item.status)} label={status.name} small />
@@ -1759,7 +1785,7 @@ const ss = StyleSheet.create({
     justifyContent: 'center',
   },
   ganttContainer: { flexDirection: 'row', marginHorizontal: space.screenX },
-  ganttNameRow: { height: S.gantt.rowHeight, justifyContent: 'center', borderBottomWidth: size.border, paddingRight: space.inline },
+  ganttNameRow: { justifyContent: 'center', borderBottomWidth: size.border, paddingRight: space.inline },
   ganttGridLine: { position: 'absolute', top: 0, width: size.border },
   ganttBarRow: { position: 'absolute', left: 0, right: 0, justifyContent: 'center', borderBottomWidth: size.border },
   ganttStatus: { position: 'absolute' },

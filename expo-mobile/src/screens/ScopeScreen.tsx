@@ -412,7 +412,8 @@ export default function ScopeScreen({ navigation, route }: Props) {
     );
   };
 
-  // Render in stage order; runs of collapsed stages become plain divider rows.
+  // Open stages in stage order; every collapsed stage moves to the foot as
+  // plain divider rows (spec §8).
   const blocks: JSX.Element[] = [];
   let collapsedRun: CollapsedGroup[] = [];
   const flushCollapsed = () => {
@@ -434,7 +435,6 @@ export default function ScopeScreen({ navigation, route }: Props) {
       collapsedRun.push({ key: sct.stage.id, title: sct.stage.name, meta, onPress: () => toggleStage(sct.stage.id) });
       return;
     }
-    flushCollapsed();
     blocks.push(
       <View key={sct.stage.id} style={sx.group}>
         <GroupHeader

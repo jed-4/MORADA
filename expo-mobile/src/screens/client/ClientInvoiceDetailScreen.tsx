@@ -4,7 +4,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch } from '../../services/api';
 import { formatMoney } from '../../lib/selections';
-import { useTheme, fontSize, fontWeight, radius, fonts, size } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, size, colors as palette } from '../../theme';
 import { formatDay, invoiceStatus, type ClientInvoice } from '../../lib/clientPortal';
 import { ClientCard, ClientEmpty, ClientHeader, ClientLoading, ClientStatusPill } from '../../components/client/ClientUI';
 import { readableFrame } from '../../components/ui/ReadableColumn';
@@ -195,9 +195,9 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { paddingHorizontal: 16, gap: 4 },
   hero: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: radius.xl, padding: 16 },
-  heroCompany: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fonts.bold },
-  heroSmall: { color: 'rgba(255,255,255,0.8)', fontSize: fontSize.xs },
-  heroTotal: { color: '#FFFFFF', fontSize: fontSize.xxl, fontFamily: fonts.bold },
+  heroCompany: { color: palette.onAccent, fontSize: fontSize.lg, fontFamily: fonts.bold },
+  heroSmall: { color: palette.onAccentSoft, fontSize: fontSize.xs },
+  heroTotal: { color: palette.onAccent, fontSize: fontSize.xxl, fontFamily: fonts.bold },
   title: { fontSize: fontSize.xl, fontFamily: fonts.bold, marginTop: 16, marginBottom: 8 },
   facts: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   fact: { gap: 2, minWidth: '40%' },

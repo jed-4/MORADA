@@ -3,7 +3,7 @@ import DocumentViewer, { type ViewableDocument } from '../DocumentViewer';
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, fontSize, fontWeight, radius, fonts, size } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, size, colors as palette } from '../../theme';
 import { formatMoney, prettifySpecKey, type SelectionOption } from '../../lib/selections';
 import { selectionPhotoSource } from '../../services/selectionsOffline';
 import { ClientStatusPill } from './ClientUI';
@@ -188,7 +188,7 @@ export default function ClientOptionSheet({
                   disabled={choosing}
                   style={({ pressed }) => [styles.choose, { backgroundColor: theme.primary, opacity: pressed || choosing ? 0.8 : 1 }]}
                 >
-                  {choosing ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.chooseText}>Select this option</Text>}
+                  {choosing ? <ActivityIndicator color={palette.onAccent} /> : <Text style={styles.chooseText}>Select this option</Text>}
                 </Pressable>
               )}
             </View>
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
   docName: { fontSize: fontSize.sm, flex: 1 },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: size.border },
   choose: { borderRadius: radius.lg, paddingVertical: 15, alignItems: 'center' },
-  chooseText: { color: '#FFFFFF', fontSize: fontSize.base, fontFamily: fonts.semibold },
+  chooseText: { color: palette.onAccent, fontSize: fontSize.base, fontFamily: fonts.semibold },
   chosenNote: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, justifyContent: 'center' },
   chosenText: { fontSize: fontSize.sm },
 });

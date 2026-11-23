@@ -235,6 +235,9 @@ const designLight = {
   accentLine: 'rgba(126,108,152,0.35)',
   ganttToday: 'rgba(126,108,152,0.60)',
   onAccent: '#FFFFFF',
+  onAccentSoft: 'rgba(255,255,255,0.8)', // secondary text on an accent hero
+  photoBadge: 'rgba(0,0,0,0.55)',       // count badge over a photo
+  viewerBg: 'rgba(0,0,0,0.92)',         // full-screen photo viewer
 
   // Calendar internal (non-project) events
   internalFill: '#F2F0EC',
@@ -597,6 +600,11 @@ export const metrics = {
       nameColWide: 230,
       rowHeight: 38,
       headerHeight: 48,
+      // D04 Duo: row pitch 36, header 42.
+      rowHeightWide: 36,
+      headerHeightWide: 42,
+      // "25 ›" marker for work starting past the right edge.
+      offRangeGap: 6,
       todayCircle: 22,
       todayLine: 2,
       barInset: 2,

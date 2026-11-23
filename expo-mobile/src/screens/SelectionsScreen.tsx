@@ -193,8 +193,8 @@ export default function SelectionsScreen({ navigation, route }: Props) {
 
   const sl = metrics.selections;
 
-  // Group blocks: open groups as card lists (first 7 rows, then "Show N more"),
-  // runs of collapsed groups as plain divider rows.
+  // Group blocks: open groups as card lists (first 7 rows, then "Show N more");
+  // every collapsed group moves to the foot as plain divider rows (spec §8).
   const blocks: JSX.Element[] = [];
   let run: CollapsedGroup[] = [];
   const flush = () => {
@@ -209,7 +209,6 @@ export default function SelectionsScreen({ navigation, route }: Props) {
       run.push({ key: g.title, title: g.title, meta, onPress: () => toggleGroup(g.title) });
       return;
     }
-    flush();
     const showAll = searching || expandedGroups.has(g.title);
     const rows = showAll ? g.data : g.data.slice(0, sl.groupLimit);
     const hidden = g.data.length - rows.length;

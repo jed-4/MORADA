@@ -21,7 +21,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { usePermission } from '../../lib/usePermission';
 import { haptic } from '../../lib/haptics';
 import { formatMoney } from '../../lib/selections';
-import { useTheme, fontSize, fontWeight, radius, fonts, size } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, size, colors as palette } from '../../theme';
 import { PORTAL_KEYS, formatDay, formatDaysChanged, variationStatus } from '../../lib/clientPortal';
 import { ClientCard, ClientEmpty, ClientLoading, ClientStatusPill } from '../../components/client/ClientUI';
 import DocumentViewer, { type ViewableDocument } from '../../components/DocumentViewer';
@@ -379,9 +379,9 @@ export default function ClientVariationDetailScreen() {
             disabled={signing}
             style={({ pressed }) => [styles.approve, { backgroundColor: theme.statusSuccessSolid, opacity: pressed || signing ? 0.85 : 1 }]}
           >
-            {signing ? <ActivityIndicator color="#FFFFFF" /> : (
+            {signing ? <ActivityIndicator color={palette.onAccent} /> : (
               <>
-                <Ionicons name="create-outline" size={18} color="#FFFFFF" />
+                <Ionicons name="create-outline" size={18} color={palette.onAccent} />
                 <Text style={styles.approveText}>Approve & sign</Text>
               </>
             )}
@@ -417,7 +417,7 @@ export default function ClientVariationDetailScreen() {
               disabled={signing}
               style={[styles.confirmDecline, { backgroundColor: theme.statusDangerSolid, opacity: signing ? 0.85 : 1 }]}
             >
-              {signing ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.approveText}>Decline variation</Text>}
+              {signing ? <ActivityIndicator color={palette.onAccent} /> : <Text style={styles.approveText}>Decline variation</Text>}
             </Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -471,9 +471,9 @@ const styles = StyleSheet.create({
   barTitle: { flex: 1, fontSize: fontSize.lg, fontFamily: fonts.semibold, textAlign: 'center' },
   content: { paddingHorizontal: 16, gap: 4 },
   hero: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: radius.xl, padding: 16 },
-  heroCompany: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fonts.bold },
-  heroSmall: { color: 'rgba(255,255,255,0.8)', fontSize: fontSize.xs },
-  heroTotal: { color: '#FFFFFF', fontSize: fontSize.xxl, fontFamily: fonts.bold },
+  heroCompany: { color: palette.onAccent, fontSize: fontSize.lg, fontFamily: fonts.bold },
+  heroSmall: { color: palette.onAccentSoft, fontSize: fontSize.xs },
+  heroTotal: { color: palette.onAccent, fontSize: fontSize.xxl, fontFamily: fonts.bold },
   title: { fontSize: fontSize.xl, fontFamily: fonts.bold, marginTop: 16, marginBottom: 8 },
   facts: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   fact: { gap: 2, minWidth: '40%' },
@@ -504,7 +504,7 @@ const styles = StyleSheet.create({
   decline: { borderWidth: 1.5, borderRadius: radius.lg, paddingVertical: 14, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center' },
   declineText: { fontSize: fontSize.base, fontFamily: fonts.semibold },
   approve: { flex: 1, flexDirection: 'row', gap: 8, borderRadius: radius.lg, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
-  approveText: { color: '#FFFFFF', fontSize: fontSize.base, fontFamily: fonts.semibold },
+  approveText: { color: palette.onAccent, fontSize: fontSize.base, fontFamily: fonts.semibold },
   sheetBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: size.border },
   sheetTitle: { fontSize: fontSize.base, fontFamily: fonts.semibold },
   sheetAction: { fontSize: fontSize.base },

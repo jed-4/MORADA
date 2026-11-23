@@ -32,6 +32,7 @@ import LoginScreen from '../screens/LoginScreen';
 import ClientNavigator from './ClientNavigator';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import DashboardScreen from '../screens/DashboardScreen';
+import ActivityScreen from '../screens/ActivityScreen';
 import BusinessDashboardScreen from '../screens/BusinessDashboardScreen';
 import ProjectsScreen from '../screens/ProjectsScreen';
 import ProjectDetailScreen from '../screens/ProjectDetailScreen';
@@ -132,6 +133,7 @@ function WorkspaceStack() {
       screenOptions={stackScreenOptions(theme, false)}
     >
       <Stack.Screen name="WorkspaceHome" component={DashboardScreen} />
+      <Stack.Screen name="Activity" component={ActivityScreen} />
       <Stack.Screen name="BusinessDashboard" component={BusinessDashboardScreen} />
       <Stack.Screen
         name="Notifications"

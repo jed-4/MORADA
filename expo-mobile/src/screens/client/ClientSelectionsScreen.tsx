@@ -5,7 +5,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { apiFetch } from '../../services/api';
 import { useClientProject } from '../../contexts/ClientProjectContext';
 import { haptic } from '../../lib/haptics';
-import { useTheme, fontSize, fontWeight, radius, fonts } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, colors as palette } from '../../theme';
 import { firstImage, getChosenOption, type Selection } from '../../lib/selections';
 import {
   buildSelectionGallery,
@@ -227,8 +227,8 @@ const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: radius.xl, overflow: 'hidden' },
   photo: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   pillOver: { position: 'absolute', top: 8, left: 8 },
-  countOver: { position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2 },
-  countText: { color: '#FFFFFF', fontSize: 10, fontFamily: fonts.semibold },
+  countOver: { position: 'absolute', bottom: 8, right: 8, backgroundColor: palette.photoBadge, borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2 },
+  countText: { color: palette.onAccent, fontSize: 10, fontFamily: fonts.semibold },
   cardBody: { padding: 10, gap: 4 },
   cardTitle: { fontSize: fontSize.sm, fontFamily: fonts.semibold },
   cardMeta: { fontSize: fontSize.xs },

@@ -44,6 +44,7 @@ interface Project {
   endDate?: string;
   proposedStartDate?: string;
   proposedEndDate?: string;
+  ownerId?: string | null;
 }
 
 type Props = {
@@ -62,8 +63,12 @@ const GROUPS = [
 ] as const;
 type GroupKey = (typeof GROUPS)[number]['key'];
 
-const CHIPS: { key: 'all' | GroupKey; label: string }[] = [
+type ChipKey = 'all' | 'mine' | GroupKey;
+
+const CHIPS: { key: ChipKey; label: string }[] = [
   { key: 'all', label: 'All' },
+  // "Mine" = the web's My Projects rule: owned by me, or granted to me.
+  { key: 'mine', label: 'Mine' },
   { key: 'lead', label: 'Lead' },
   { key: 'pre_construction', label: 'Pre-con' },
   { key: 'construction', label: 'Construction' },
@@ -94,10 +99,11 @@ export default function ProjectsScreen({ navigation, route }: Props) {
   const [search, setSearch] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
   // Remembered between launches, so search opens on the stage you last used.
-  const [activePhase, setActivePhase] = usePersistedState<'all' | GroupKey>('projects.phase', 'all');
+  const [activePhase, setActivePhase] = usePersistedState<ChipKey>('projects.phase', 'all');
   // Post-construction starts collapsed (design); every toggle is remembered.
   const [collapsed, setCollapsed] = usePersistedState<Record<string, boolean>>('projects.collapsed', { post_construction: true });
   const [refreshing, setRefreshing] = useState(false);
+  const [grantedIds, setGrantedIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const insets = useSafeAreaInsets();
@@ -122,6 +128,12 @@ export default function ProjectsScreen({ navigation, route }: Props) {
       // and business projects regardless of what the server version returns.
       const active = (data || []).filter((p: any) => !p.isArchived && !p.isBusiness);
       setProjects(active);
+      // Projects granted to me, for the Mine chip. Non-critical.
+      if (user?.id) {
+        apiFetch<{ projectId: string }[]>(`/api/users/${user.id}/project-access`)
+          .then(rows => setGrantedIds(new Set((rows || []).map(r => r.projectId))))
+          .catch(() => {});
+      }
       setError(false);
     } catch (e) {
       console.error('Failed to fetch projects:', e);
@@ -129,7 +141,7 @@ export default function ProjectsScreen({ navigation, route }: Props) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     fetchProjects();
@@ -145,7 +157,13 @@ export default function ProjectsScreen({ navigation, route }: Props) {
   const searching = searchVisible && (search.trim() !== '' || activePhase !== 'all');
 
   const filteredProjects = useMemo(() => {
-    let filtered = searchVisible && activePhase !== 'all' ? projects.filter(p => groupOf(p) === activePhase) : projects;
+    const isMine = (p: Project) => grantedIds.has(p.id) || (!!user?.id && p.ownerId === user.id);
+    let filtered =
+      !searchVisible || activePhase === 'all'
+        ? projects
+        : activePhase === 'mine'
+          ? projects.filter(isMine)
+          : projects.filter(p => groupOf(p) === activePhase);
     if (searchVisible && search.trim()) {
       const q = search.toLowerCase();
       filtered = filtered.filter(
@@ -158,7 +176,7 @@ export default function ProjectsScreen({ navigation, route }: Props) {
       );
     }
     return [...filtered].sort(compareProjects);
-  }, [projects, search, searchVisible, activePhase]);
+  }, [projects, search, searchVisible, activePhase, grantedIds, user?.id]);
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];

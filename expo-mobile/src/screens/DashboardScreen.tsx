@@ -833,7 +833,7 @@ export default function DashboardScreen({ navigation }: Props) {
     <>
           {/* Recent activity */}
           <Animated.View entering={FadeInDown.duration(300).delay(240)} style={[styles.section, colW]}>
-            <WorkspaceSection id="activity" icon={Activity} title="Recent activity" count={recentActivities.length}>
+            <WorkspaceSection id="activity" icon={Activity} title="Recent activity" count={recentActivities.length} onOpen={() => navigation.navigate('Activity')}>
               {recentActivities.length === 0 ? (
                 <EmptyLine>No recent activity</EmptyLine>
               ) : (

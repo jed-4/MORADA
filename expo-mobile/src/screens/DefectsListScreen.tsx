@@ -21,9 +21,10 @@ import { addSyncListener } from '../services/offlineQueue';
 import { metrics, radii, size, space, tabular, type, useColors } from '../theme';
 import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import {
-  Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, FilterChips, GroupHeader, ListRow, PageHeader, PropertyRow, SmartImage,
+  Card, Checkbox, CollapsedGroupList, EmptyState, FAB, FAB_CLEARANCE, FilterChips, GroupHeader, ListRow, PageHeader, PropertyRow, SmartImage,
   StatusDot, type DotStatus,
 } from '../components/kit';
+import type { CollapsedGroup } from '../components/kit';
 import { haptic } from '../lib/haptics';
 import { usePermission } from '../lib/usePermission';
 import { usePersistedState } from '../lib/usePersistedState';
@@ -354,7 +355,14 @@ export default function DefectsListScreen({ navigation, route }: Props) {
     );
   };
 
-  const sections = groups.map((g) => ({ title: g.title, count: g.data.length, data: [g.data] }));
+  // Open groups as sections; collapsed ones move to the foot as plain divider
+  // rows (spec §8).
+  const sections = groups
+    .filter((g) => !collapsedGroups.includes(g.title))
+    .map((g) => ({ title: g.title, count: g.data.length, data: [g.data] }));
+  const foldedGroups: CollapsedGroup[] = groups
+    .filter((g) => collapsedGroups.includes(g.title))
+    .map((g) => ({ key: g.title, title: g.title, meta: String(g.data.length), onPress: () => toggleGroup(g.title) }));
 
   const list = (
     <View style={[dl.screen, { backgroundColor: c.bg }]}>
@@ -369,15 +377,13 @@ export default function DefectsListScreen({ navigation, route }: Props) {
           keyExtractor={(_rows, i) => String(i)}
           ListHeaderComponent={header}
           keyboardShouldPersistTaps="handled"
-          renderItem={({ item: rows, section }) =>
-            collapsedGroups.includes(section.title) ? null : <Card variant="list">{rows.map(renderRow)}</Card>
-          }
+          renderItem={({ item: rows }) => <Card variant="list">{rows.map(renderRow)}</Card>}
           renderSectionHeader={({ section }) => (
             <View style={dl.groupHeader}>
               <GroupHeader
                 title={section.title}
                 meta={section.count}
-                open={!collapsedGroups.includes(section.title)}
+                open
                 onToggle={() => toggleGroup(section.title)}
               />
             </View>
@@ -389,8 +395,16 @@ export default function DefectsListScreen({ navigation, route }: Props) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
           onEndReached={onEndReached}
           onEndReachedThreshold={0.4}
-          ListFooterComponent={loadingMore ? <ActivityIndicator style={dl.more} color={c.accent} /> : undefined}
+          ListFooterComponent={
+            foldedGroups.length || loadingMore ? (
+              <>
+                {foldedGroups.length ? <View style={sections.length ? dl.foldedTop : undefined}><CollapsedGroupList groups={foldedGroups} /></View> : null}
+                {loadingMore ? <ActivityIndicator style={dl.more} color={c.accent} /> : null}
+              </>
+            ) : undefined
+          }
           ListEmptyComponent={
+            foldedGroups.length ? undefined : (
             <View style={dl.empty}>
               <EmptyState
                 icon={error ? CloudOff : CheckCheck}
@@ -406,6 +420,7 @@ export default function DefectsListScreen({ navigation, route }: Props) {
                 }
               />
             </View>
+            )
           }
         />
       )}
@@ -529,6 +544,7 @@ const dl = StyleSheet.create({
   listContent: { paddingHorizontal: space.screenX },
   groupHeader: {},
   sectionGap: { height: metrics.defects.groupGap / 2 },
+  foldedTop: { paddingTop: metrics.defects.groupGap },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, paddingVertical: metrics.defects.rowPadY },
   rowText: { flex: 1, minWidth: 0, gap: metrics.defects.rowGap },
   meta: { flexDirection: 'row', alignItems: 'center', gap: space.inline },

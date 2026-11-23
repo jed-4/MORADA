@@ -20,7 +20,7 @@ import { apiFetch, apiRequest } from '../../services/api';
 import { usePermission } from '../../lib/usePermission';
 import { haptic } from '../../lib/haptics';
 import { timeAgo } from '../../lib/format';
-import { useTheme, fontSize, fontWeight, radius, fonts, size } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, size, colors as palette } from '../../theme';
 import { firstImage, formatMoney, type SelectionOption } from '../../lib/selections';
 import { PORTAL_KEYS, canClientChoose, formatDay, selectionStatus } from '../../lib/clientPortal';
 import CroppedImage from '../../components/selections/CroppedImage';
@@ -303,7 +303,7 @@ export default function ClientSelectionDetailScreen() {
                     accessibilityLabel="Send comment"
                     style={[styles.send, { backgroundColor: draft.trim() ? theme.primary : theme.border }]}
                   >
-                    {posting ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="arrow-up" size={18} color="#FFFFFF" />}
+                    {posting ? <ActivityIndicator size="small" color={palette.onAccent} /> : <Ionicons name="arrow-up" size={18} color={palette.onAccent} />}
                   </Pressable>
                 </View>
               </ClientCard>
