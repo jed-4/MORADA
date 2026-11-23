@@ -12,7 +12,7 @@
  *
  * Kept free of React so it can be tested with plain `npx tsx`.
  */
-import { formatGroupPath } from "@shared/import";
+import { formatGroupPath, parseGroupPath } from "@shared/import";
 
 /** The bucket for lines with no group. Shown as "General"; never nested. */
 export const UNGROUPED = "ungrouped";
@@ -122,7 +122,10 @@ export function layoutTemplateGroups<T extends TemplateRowLike>(
     if (!rowByName.has(groupKey(g))) rowByName.set(groupKey(g), g);
   });
 
-  const groupRows = sequence.map((name, idx) => {
+  // General (no group) is where ungrouped lines show; it is not a group of
+  // its own, so it never gets a row made for it. One already there is kept.
+  const named = sequence.filter((name) => name !== UNGROUPED || rowByName.has(name));
+  const groupRows = named.map((name, idx) => {
     const parent = parentOf.get(name) ?? null;
     const existing = rowByName.get(name);
     const base = existing ?? ({ id: newId(), name, isGroup: true, isCollapsed: false } as unknown as T);
@@ -206,4 +209,61 @@ export function linesForApply<T extends TemplateRowLike>(items: T[]): Array<{ li
       return so !== 0 ? so : a.arrayIndex - b.arrayIndex;
     })
     .map(({ line }) => ({ line, groupPath: pathOf(line.groupName || UNGROUPED) }));
+}
+
+/**
+ * Bring imported Group values into a template's group tree.
+ *
+ * Each value is a PATH ("Kitchen > Joinery"): the line goes in the last
+ * segment, and every segment the template doesn't have yet becomes a group
+ * under the one before it. Groups the template already has keep their place.
+ * Existing groups first, then new ones in the order the sheet mentions them.
+ *
+ * Returns the template with its group rows laid out (lines untouched) and each
+ * raw value's leaf group name (undefined = ungrouped).
+ */
+export function placeImportedGroups<T extends TemplateRowLike>(
+  base: T[],
+  rawGroups: Array<string | undefined>,
+  newId: () => string = () => crypto.randomUUID(),
+): { items: T[]; leafOf: Map<string, string | undefined> } {
+  const existing = new Set(templateGroupOrder(base));
+  const t0 = currentTree(base);
+  const laidOut = layoutTemplateGroups(base, t0.parentOf, t0.orderOf, newId);
+
+  const newGroups: string[] = [];
+  const sheetParent = new Map<string, string | null>();
+  const leafOf = new Map<string, string | undefined>();
+  for (const raw of rawGroups) {
+    const key = raw ?? "";
+    if (leafOf.has(key)) continue;
+    const segments = parseGroupPath(raw).filter((s) => s.toLowerCase() !== UNGROUPED);
+    segments.forEach((seg, i) => {
+      if (existing.has(seg) || sheetParent.has(seg)) return;
+      sheetParent.set(seg, i > 0 ? segments[i - 1] : null);
+      newGroups.push(seg);
+    });
+    leafOf.set(key, segments.length ? segments[segments.length - 1] : undefined);
+  }
+
+  const groupRows = laidOut.filter((i) => i.isGroup);
+  const lines = laidOut.filter((i) => !i.isGroup);
+  const withNew = [
+    ...groupRows,
+    ...newGroups.map((name, i) => {
+      const parent = sheetParent.get(name);
+      return {
+        id: newId(),
+        name,
+        isGroup: true,
+        isCollapsed: false,
+        sortOrder: groupRows.length + i,
+        ...(parent ? { parentGroupName: parent } : {}),
+      } as unknown as T;
+    }),
+    ...lines,
+  ];
+  const tree = currentTree(withNew);
+  newGroups.forEach((name) => tree.parentOf.set(name, sheetParent.get(name) ?? null));
+  return { items: layoutTemplateGroups(withNew, tree.parentOf, tree.orderOf, newId), leafOf };
 }

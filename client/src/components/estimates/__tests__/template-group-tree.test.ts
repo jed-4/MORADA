@@ -7,6 +7,7 @@ import {
   currentTree,
   layoutTemplateGroups,
   linesForApply,
+  placeImportedGroups,
   templateDescendants,
   templateGroupOrder,
   templateGroupParents,
@@ -127,6 +128,35 @@ test("apply sends full paths, in the template's display order", () => {
     ["vanity", "Bathroom"],
     ["loose", ""],
   ]);
+});
+
+test("import: a path creates the subgroup inside its parent", () => {
+  const { items, leafOf } = placeImportedGroups([], ["Kitchen > Joinery", "Kitchen", "Bathroom", undefined], id);
+  assert.deepEqual(templateGroupOrder(items), ["Kitchen", "Joinery", "Bathroom"]);
+  assert.equal(templateGroupParents(items).get("Joinery"), "Kitchen");
+  assert.equal(leafOf.get("Kitchen > Joinery"), "Joinery");
+  assert.equal(leafOf.get(""), undefined);
+});
+
+test("import: existing groups keep their place; new ones follow", () => {
+  const base = [group("Prelims"), group("Kitchen"), line("a", "Kitchen", 0)];
+  const { items } = placeImportedGroups(base, ["Kitchen > Stone", "Bathroom > Tiling"], id);
+  assert.deepEqual(templateGroupOrder(items), ["Prelims", "Kitchen", "Stone", "Bathroom", "Tiling"]);
+  assert.equal(templateGroupParents(items).get("Stone"), "Kitchen");
+  assert.equal(templateGroupParents(items).get("Tiling"), "Bathroom");
+  assert.equal(items.filter((i) => !i.isGroup).length, 1);
+});
+
+test("export then import gives the same tree", () => {
+  const original = [
+    group("Kitchen"), group("Joinery", "Kitchen"), group("Bathroom"),
+    line("doors", "Joinery", 0), line("bench", "Kitchen", 1), line("vanity", "Bathroom", 2),
+  ];
+  const sheet = linesForApply(original).map((x) => x.groupPath);
+  const { items, leafOf } = placeImportedGroups([], sheet, id);
+  assert.deepEqual(templateGroupOrder(items), ["Kitchen", "Joinery", "Bathroom"]);
+  assert.equal(templateGroupParents(items).get("Joinery"), "Kitchen");
+  assert.deepEqual(sheet.map((g) => leafOf.get(g)), ["Kitchen", "Joinery", "Bathroom"]);
 });
 
 console.log(`template group tree: ${passed} passed, ${failed} failed`);

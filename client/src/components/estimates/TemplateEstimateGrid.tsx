@@ -664,11 +664,23 @@ export function TemplateEstimateGrid({
 
   const setGroupCollapsed = useCallback(
     (groupName: string, collapsed: boolean) => {
-      commit((current) =>
-        withGroupRows(current).map((i) =>
+      commit((current) => {
+        const rows = withGroupRows(current);
+        // General gets no row of its own until it has something to remember.
+        if (!rows.some((i) => i.isGroup && (i.name || UNGROUPED) === groupName)) {
+          // After the other group rows: a group with no row reads after all of
+          // them, so this keeps General exactly where it was on screen.
+          const groupRows = rows.filter((i) => i.isGroup);
+          return [
+            ...groupRows,
+            { id: crypto.randomUUID(), name: groupName, isGroup: true, isCollapsed: collapsed, sortOrder: groupRows.length } as TemplateItem,
+            ...rows.filter((i) => !i.isGroup),
+          ];
+        }
+        return rows.map((i) =>
           i.isGroup && (i.name || UNGROUPED) === groupName ? { ...i, isCollapsed: collapsed } : i,
-        ),
-      );
+        );
+      });
     },
     [commit],
   );
@@ -692,6 +704,17 @@ export function TemplateEstimateGrid({
         toast({
           title: "That name is taken",
           description: `This template already has a group called "${newName}". Group names need to be different, including subgroups.`,
+          variant: "destructive",
+        });
+        return false;
+      }
+      // ">" separates a group from its subgroup in the Excel sheet and when the
+      // template is applied ("Kitchen > Joinery"), so a name containing it
+      // would come apart into two groups.
+      if (newName !== groupName && newName.includes(">")) {
+        toast({
+          title: "Use a name without \">\"",
+          description: "\">\" separates a group from its subgroup (Kitchen > Joinery), so it can't be part of a name.",
           variant: "destructive",
         });
         return false;

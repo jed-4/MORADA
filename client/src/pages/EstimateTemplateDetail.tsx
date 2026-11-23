@@ -66,6 +66,16 @@ import {
 import type { EstimateTemplate } from "@shared/schema";
 import { TemplateEstimateGrid } from "@/components/estimates/TemplateEstimateGrid";
 import {
+  UNGROUPED,
+  currentTree,
+  layoutTemplateGroups,
+  linesForApply,
+  placeImportedGroups,
+  templateGroupOrder,
+  templateGroupParents,
+} from "@/components/estimates/templateGroupTree";
+import { formatGroupPath } from "@shared/import";
+import {
   ImportEstimateItemsDialog,
   type ImportMergeMode,
 } from "@/components/estimates/ImportEstimateItemsDialog";
@@ -159,6 +169,9 @@ export default function EstimateTemplateDetail() {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [addGroupDialogOpen, setAddGroupDialogOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  // Which group the new one goes inside; "none" = top level. A sentinel rather
+  // than "" because Radix Select treats "" as no value.
+  const [newGroupParent, setNewGroupParent] = useState("none");
   const [settingsName, setSettingsName] = useState("");
   const [settingsDesc, setSettingsDesc] = useState("");
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -313,19 +326,57 @@ export default function EstimateTemplateDetail() {
     }, 200);
   };
 
+  /**
+   * Add Group, at the top level or inside another group.
+   *
+   * It used to add an empty, unnamed LINE so the group had something to show;
+   * the group is a real row now and draws with nothing in it, so no stray
+   * blank line is left behind to delete. A group is found by its name, so a
+   * name already in the template is refused rather than silently reused.
+   */
+  const groupNames = useMemo(() => templateGroupOrder(items).filter((n) => n !== UNGROUPED), [items]);
+  const groupParents = useMemo(() => templateGroupParents(items), [items]);
+  /** "Kitchen > Joinery", for the parent picker. */
+  const groupLabel = (name: string) => {
+    const segments: string[] = [];
+    const seen = new Set<string>();
+    let cur: string | null = name;
+    while (cur && !seen.has(cur)) { seen.add(cur); segments.unshift(cur); cur = groupParents.get(cur) ?? null; }
+    return formatGroupPath(segments);
+  };
+
   const handleAddGroup = () => {
-    if (!newGroupName.trim()) return;
     const group = newGroupName.trim();
-    setExpandedGroups((prev) => new Set([...prev, group]));
-    // Add a placeholder item to keep the group visible
-    const placeholder = makeEmpty(group, items.length);
-    saveItems([...items, placeholder]);
+    if (!group) return;
+    if (templateGroupOrder(items).includes(group) || group.toLowerCase() === UNGROUPED) {
+      toast({
+        title: "That name is taken",
+        description: `This template already has a group called "${group}". Group names need to be different, including subgroups.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (group.includes(">")) {
+      toast({
+        title: "Use a name without \">\"",
+        description: "\">\" separates a group from its subgroup in Excel (Kitchen > Joinery), so it can't be part of a name.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const parent = newGroupParent !== "none" ? newGroupParent : null;
+    const { parentOf, orderOf } = currentTree(items);
+    const rows = layoutTemplateGroups(items, parentOf, orderOf);
+    const next = [
+      ...rows,
+      { id: crypto.randomUUID(), name: group, isGroup: true, isCollapsed: false, sortOrder: rows.length, ...(parent ? { parentGroupName: parent } : {}) } as TemplateItem,
+    ];
+    parentOf.set(group, parent);
+    orderOf.set(group, Number.MAX_SAFE_INTEGER); // last in its parent (or at the bottom)
+    saveItems(layoutTemplateGroups(next, parentOf, orderOf));
     setNewGroupName("");
+    setNewGroupParent("none");
     setAddGroupDialogOpen(false);
-    setTimeout(() => {
-      setEditingCell({ itemId: placeholder.id, field: "name" });
-      setEditingValue("");
-    }, 200);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -343,12 +394,14 @@ export default function EstimateTemplateDetail() {
   // rows are skipped: the Group column already carries the grouping.
 
   const buildExportRows = (): EstimateExportRow[] =>
-    items
-      .filter((i) => !i.isGroup)
-      .map((i) => {
+    // In the order the template shows, with each line's group as a PATH —
+    // "Kitchen > Joinery" — the same convention the estimate sheet uses (#317),
+    // so subgroups survive the round trip instead of being flattened.
+    linesForApply(items)
+      .map(({ line: i, groupPath }) => {
         const code = i.costCodeId ? costCodeMap.get(i.costCodeId) : undefined;
         return {
-          Group: i.groupName || "",
+          Group: groupPath,
           Item: i.name || "",
           Type: i.type || "",
           Description: i.description || "",
@@ -361,8 +414,8 @@ export default function EstimateTemplateDetail() {
           "Cost Code": code ? `${code.code} - ${code.title}` : i.costCodeTitle || "",
           Allowance: i.allowance || "None",
           Notes: "",
-          // Templates are one level deep — no subsections, no sub-items — so
-          // the column is written blank rather than omitted, keeping the sheet
+          // Templates have no sub-ITEMS (lines under lines), so the column is
+          // written blank rather than omitted, keeping the sheet
           // interchangeable with a job estimate's.
           "Sub-item": "",
         };
@@ -402,14 +455,19 @@ export default function EstimateTemplateDetail() {
     imported: ImportEstimateItem[],
     mode: ImportMergeMode,
   ): Promise<number> => {
-    const base = mode === "replace" ? [] : items;
+    // The Group column is a PATH: "Kitchen > Joinery" puts the line in
+    // Joinery, inside Kitchen, creating either if missing. A plain name is a
+    // top-level group, as it always was.
+    const placed = placeImportedGroups(mode === "replace" ? [] : items, imported.map((r) => r.group));
+    const base = placed.items;
+
     const mapped: TemplateItem[] = imported.map((row, idx) => {
       // parseImportRow resolves a matched cost code to its id; an unmatched
       // one stays as the raw text, which we keep as the display title.
       const matched = row.costCode ? costCodeMap.get(row.costCode) : undefined;
       return {
         id: crypto.randomUUID(),
-        groupName: row.group?.trim() || undefined,
+        groupName: placed.leafOf.get(row.group ?? ""),
         name: row.name,
         description: row.description || undefined,
         costCodeId: matched?.id,
@@ -573,7 +631,7 @@ export default function EstimateTemplateDetail() {
       </div>
 
       {/* ── Grid ── */}
-      {nonGroupItems.length === 0 && groups.length <= 1 ? (
+      {nonGroupItems.length === 0 && !items.some((i) => i.isGroup) ? (
         <div className="flex-1 text-center py-12">
           <Calculator className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
           <h3 className="text-sm font-medium mb-1">No items yet</h3>
@@ -696,7 +754,27 @@ export default function EstimateTemplateDetail() {
               onChange={(e) => setNewGroupName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleAddGroup(); }}
               autoFocus
+              data-testid="input-new-template-group-name"
             />
+            {groupNames.length > 0 && (
+              <>
+                <Label className="mt-4 block">Put it inside</Label>
+                <Select value={newGroupParent} onValueChange={setNewGroupParent}>
+                  <SelectTrigger className="mt-2" data-testid="select-new-template-group-parent">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nothing — a top-level group</SelectItem>
+                    {groupNames.map((n) => (
+                      <SelectItem key={n} value={n}>{groupLabel(n)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  You can also drag a group onto another group's name to put it inside, or to an edge to take it back out.
+                </p>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddGroupDialogOpen(false)}>Cancel</Button>
