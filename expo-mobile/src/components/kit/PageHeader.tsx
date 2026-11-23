@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View, ActivityIndicator } from 'react-native';
 import { ChevronDown, ChevronLeft, type LucideIcon } from 'lucide-react-native';
 import { metrics, size, tabular, type, useColors } from '../../theme';
 import { ProjectSquare } from './ProjectSquare';
@@ -180,6 +180,8 @@ export function SheetHeader({
   onDone,
   doneLabel = 'Done',
   doneDisabled,
+  doneLoading,
+  cancelLabel = 'Cancel',
   right,
 }: {
   title: string;
@@ -188,6 +190,10 @@ export function SheetHeader({
   onDone?: () => void;
   doneLabel?: string;
   doneDisabled?: boolean;
+  /** Shows a spinner in place of the Done label. */
+  doneLoading?: boolean;
+  /** "Close" for a read-only view; "Cancel" for a form. */
+  cancelLabel?: string;
   right?: ReactNode;
 }) {
   const c = useColors();
@@ -196,7 +202,7 @@ export function SheetHeader({
       <View style={{ width: metrics.sheetHeader.sideWidth }}>
         {onCancel ? (
           <Pressable onPress={onCancel} hitSlop={metrics.hitSlop} accessibilityRole="button">
-            <Text style={[type.rowTitle, { color: c.muted }]}>Cancel</Text>
+            <Text style={[type.rowTitle, { color: c.muted }]}>{cancelLabel}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -209,9 +215,13 @@ export function SheetHeader({
       <View style={{ width: metrics.sheetHeader.sideWidth, alignItems: 'flex-end' }}>
         {right ??
           (onDone ? (
-            <Pressable onPress={onDone} disabled={doneDisabled} hitSlop={metrics.hitSlop} accessibilityRole="button">
-              <Text style={[type.rowTitle, { color: doneDisabled ? c.accentDisabled : c.accent }]}>{doneLabel}</Text>
-            </Pressable>
+            doneLoading ? (
+              <ActivityIndicator size="small" color={c.accent} />
+            ) : (
+              <Pressable onPress={onDone} disabled={doneDisabled} hitSlop={metrics.hitSlop} accessibilityRole="button">
+                <Text style={[type.rowTitleMedium, { color: doneDisabled ? c.accentDisabled : c.accent }]}>{doneLabel}</Text>
+              </Pressable>
+            )
           ) : null)}
       </View>
     </View>

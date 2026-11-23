@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, type RefObject } fro
 import { useNavigation, useRoute } from '@react-navigation/native';
 import {
   View,
+  Pressable,
   Text,
   StyleSheet,
   ScrollView,
@@ -10,9 +11,6 @@ import {
   ActivityIndicator,
   useColorScheme,
   Alert,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
   Platform,
   FlatList,
   useWindowDimensions,
@@ -24,8 +22,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest, API_BASE_URL } from '../services/api';
 import { getCached, setCached } from '../services/cache';
 import { addToQueue, syncQueue, getQueueCount, isOnline, getQueue, clearFailedActions, getFailedActions, retryFailedActions, addSyncListener } from '../services/offlineQueue';
-import { useTheme, lightTheme, darkTheme, MAX_FONT_SCALE } from '../theme';
-import { sheetFrame } from '../components/ui/Sheet';
+import { useTheme, useColors, lightTheme, darkTheme, MAX_FONT_SCALE, metrics, size, space, tabular, type } from '../theme';
+import { Check, Pencil, Trash2 } from 'lucide-react-native';
+import {
+  ButtonRow, Card, FieldLabel, ModalSheet, PrimaryButton, PropertyRow, TextButton, TextField,
+} from '../components/kit';
 import { useDirtyGuard } from '../lib/useDirtyGuard';
 import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
 import { readableFrame } from '../components/ui/ReadableColumn';
@@ -664,6 +665,7 @@ const gridStyles = StyleSheet.create({
 });
 
 export default function TimesheetsScreen() {
+  const k = useColors();
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -1307,48 +1309,46 @@ export default function TimesheetsScreen() {
     onSelect: (id: string) => void,
     listRef?: RefObject<FlatList | null>,
   ) => (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={[styles.pickerOverlay]}>
-        <View style={[styles.pickerContainer, sheetFrame, { backgroundColor: colors.card }]}>
-          <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerTitle, { color: colors.text }]}>{title}</Text>
-            <TouchableOpacity hitSlop={10} onPress={onClose}>
-              <Ionicons name="close" size={24} color={colors.secondary} />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            ref={listRef}
-            data={items}
-            keyExtractor={item => item.id}
-            nestedScrollEnabled
-            getItemLayout={listRef ? (_data, index) => ({
-              length: PICKER_ITEM_HEIGHT,
-              offset: PICKER_ITEM_HEIGHT * index,
-              index,
-            }) : undefined}
-            renderItem={({ item }) => {
-              if (item.isHeader) {
-                return (
-                  <View style={[styles.pickerSectionHeader, { backgroundColor: theme.subtle }]}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
-                  </View>
-                );
-              }
-              return (
-                <TouchableOpacity
-                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
-                  onPress={() => { onSelect(item.id); onClose(); }}
-                >
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
-                  {selectedId === item.id && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-                </TouchableOpacity>
-              );
-            }}
-            ListEmptyComponent={<Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>No options available</Text>}
-          />
-        </View>
-      </View>
-    </Modal>
+    <ModalSheet visible={visible} onRequestClose={onClose} title={title} doneLabel="Done" onDone={onClose} fill={items.length > 8}>
+      <FlatList
+        ref={listRef}
+        data={items}
+        keyExtractor={item => item.id}
+        nestedScrollEnabled
+        style={tsx.pickList}
+        contentContainerStyle={tsx.pickContent}
+        getItemLayout={listRef ? (_data, index) => ({
+          length: PICKER_ITEM_HEIGHT,
+          offset: PICKER_ITEM_HEIGHT * index,
+          index,
+        }) : undefined}
+        renderItem={({ item }) => {
+          if (item.isHeader) {
+            return (
+              <View style={[tsx.pickHeader, { height: PICKER_ITEM_HEIGHT }]}>
+                <Text style={[type.meta, { color: k.muted }]}>{item.label}</Text>
+              </View>
+            );
+          }
+          const active = selectedId === item.id;
+          return (
+            <Pressable
+              style={({ pressed }) => [
+                tsx.pickRow,
+                { height: PICKER_ITEM_HEIGHT, borderBottomColor: k.border, backgroundColor: active ? k.tint : k.surface, opacity: pressed ? metrics.pressedOpacity : 1 },
+              ]}
+              onPress={() => { haptic.select(); onSelect(item.id); onClose(); }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[type.rowTitle, tabular, tsx.flex, { color: k.text }]} numberOfLines={1}>{item.label}</Text>
+              {active ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : null}
+            </Pressable>
+          );
+        }}
+        ListEmptyComponent={<Text style={[type.body, tsx.center, { color: k.muted }]}>No options available</Text>}
+      />
+    </ModalSheet>
   );
 
   return (
@@ -1551,272 +1551,152 @@ export default function TimesheetsScreen() {
         setClockInProjectId,
       )}
 
-      {/* Detail Modal */}
-      <Modal visible={showDetail} animationType="slide" transparent>
-        <View style={styles.pickerOverlay}>
-          <View style={[styles.detailContainer, sheetFrame, { backgroundColor: colors.card }]}>
-            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerTitle, { color: colors.text }]}>Timesheet Detail</Text>
-              <TouchableOpacity hitSlop={10} onPress={() => setShowDetail(false)}>
-                <Ionicons name="close" size={24} color={colors.secondary} />
-              </TouchableOpacity>
-            </View>
-            {selectedTimesheet && (
-              <ScrollView style={styles.detailScroll}>
-                <View style={styles.detailSection}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Date</Text>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>{formatDayDate(selectedTimesheet.date)}</Text>
+      {/* Timesheet detail */}
+      <ModalSheet visible={showDetail} onRequestClose={() => setShowDetail(false)} title="Timesheet" onCancel={() => setShowDetail(false)}>
+        {selectedTimesheet && (
+          <ScrollView style={tsx.body} contentContainerStyle={tsx.bodyContent}>
+            <Card variant="list">
+              <PropertyRow key="date" label="Date" value={formatDayDate(selectedTimesheet.date)} />
+              <PropertyRow key="project" label="Project" value={getProjectName(selectedTimesheet.projectId)} />
+              {selectedTimesheet.clockInTime ? (
+                <PropertyRow key="clock" label="Clocked in" value={formatTime12h(new Date(selectedTimesheet.clockInTime).toTimeString().slice(0, 5))} />
+              ) : null}
+              {selectedTimesheet.startTime && selectedTimesheet.endTime ? (
+                <PropertyRow key="times" label="Start – end" value={`${formatTime12h(selectedTimesheet.startTime)} – ${formatTime12h(selectedTimesheet.endTime)}`} />
+              ) : null}
+              <PropertyRow key="hours" label="Hours">
+                <Text style={[type.body, tabular, { color: k.text }]}>{`${parseFloat(selectedTimesheet.duration || '0').toFixed(1)}h`}</Text>
+              </PropertyRow>
+              {selectedTimesheet.breakDuration && parseFloat(selectedTimesheet.breakDuration) > 0 ? (
+                <PropertyRow
+                  key="break"
+                  label="Break"
+                  value={`${BREAK_OPTIONS.find(o => o.value === selectedTimesheet.breakDuration)?.label ?? `${selectedTimesheet.breakDuration} hrs`}${selectedTimesheet.breakStartTime ? ` from ${formatTime12h(selectedTimesheet.breakStartTime)}` : ''}`}
+                />
+              ) : null}
+              <PropertyRow key="status" label="Status">
+                <View style={tsx.status}>
+                  <View style={[tsx.dot, { backgroundColor: getStatusColor(selectedTimesheet.status).text }]} />
+                  <Text style={[type.body, { color: k.text }]}>
+                    {selectedTimesheet.status.charAt(0).toUpperCase() + selectedTimesheet.status.slice(1)}
+                  </Text>
                 </View>
-                <View style={styles.detailSection}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Project</Text>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>{getProjectName(selectedTimesheet.projectId)}</Text>
-                </View>
-                {selectedTimesheet.clockInTime && (
-                  <View style={styles.detailSection}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Clocked In</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>
-                      {formatTime12h(new Date(selectedTimesheet.clockInTime).toTimeString().slice(0, 5))}
-                    </Text>
-                  </View>
-                )}
-                {selectedTimesheet.startTime && selectedTimesheet.endTime && (
-                  <View style={styles.detailSection}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Start / End</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>
-                      {formatTime12h(selectedTimesheet.startTime)} – {formatTime12h(selectedTimesheet.endTime)}
-                    </Text>
-                  </View>
-                )}
-                <View style={styles.detailSection}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Duration</Text>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>{parseFloat(selectedTimesheet.duration || '0').toFixed(1)} hours</Text>
-                </View>
-                {selectedTimesheet.breakDuration && parseFloat(selectedTimesheet.breakDuration) > 0 && (
-                  <View style={styles.detailSection}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Break</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>
-                      {BREAK_OPTIONS.find(o => o.value === selectedTimesheet.breakDuration)?.label ?? `${selectedTimesheet.breakDuration} hrs`}
-                      {selectedTimesheet.breakStartTime ? ` from ${formatTime12h(selectedTimesheet.breakStartTime)}` : ''}
-                    </Text>
-                  </View>
-                )}
-                <View style={styles.detailSection}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Status</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(selectedTimesheet.status).bg, alignSelf: 'flex-start' }]}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.statusText, { color: getStatusColor(selectedTimesheet.status).text }]}>
-                      {selectedTimesheet.status.charAt(0).toUpperCase() + selectedTimesheet.status.slice(1)}
-                    </Text>
-                  </View>
-                </View>
-                {selectedTimesheet.description && (
-                  <View style={styles.detailSection}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailLabel, { color: colors.secondary }]}>Description</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailValue, { color: colors.text }]}>{selectedTimesheet.description}</Text>
-                  </View>
-                )}
+              </PropertyRow>
+            </Card>
+            {selectedTimesheet.description ? (
+              <Card variant="notes">
+                <Text style={[type.bodyRead, { color: k.textLong }]}>{selectedTimesheet.description}</Text>
+              </Card>
+            ) : null}
+            {(selectedTimesheet.status === 'draft' || selectedTimesheet.status === 'submitted') &&
+             selectedTimesheet.userId === user?.id ? (
+              <>
+                <ButtonRow>
+                  <PrimaryButton label="Edit" icon={Pencil} onPress={() => openEditSheet(selectedTimesheet)} />
+                </ButtonRow>
+                <TextButton label="Delete timesheet" icon={Trash2} tone="danger" center onPress={() => handleDeleteTimesheet(selectedTimesheet.id)} />
+              </>
+            ) : null}
+          </ScrollView>
+        )}
+      </ModalSheet>
 
-                <View style={styles.detailActions}>
-                  {(selectedTimesheet.status === 'draft' || selectedTimesheet.status === 'submitted') &&
-                   selectedTimesheet.userId === user?.id && (
-                    <>
-                      <TouchableOpacity
-                        style={[styles.detailButton, { backgroundColor: colors.accent }]}
-                        onPress={() => openEditSheet(selectedTimesheet)}
-                      >
-                        <Ionicons name="pencil" size={18} color="#fff" />
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.detailButtonText}>Edit</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.detailButton, { backgroundColor: colors.red }]}
-                        onPress={() => handleDeleteTimesheet(selectedTimesheet.id)}
-                      >
-                        <Ionicons name="trash" size={18} color="#fff" />
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.detailButtonText}>Delete</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Log Hours / Edit Modal */}
-      <Modal
+      {/* Log hours / Edit */}
+      <ModalSheet
         visible={showLogSheet}
-        animationType="slide"
-        transparent
         onRequestClose={() => logDirty.guard(() => { setShowLogSheet(false); resetForm(); })}
+        title={isEditMode ? 'Edit timesheet' : 'Log hours'}
+        cancelLabel="Cancel"
+        onCancel={() => logDirty.guard(() => { setShowLogSheet(false); resetForm(); })}
+        form
+        keyboardBehavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        // Primary action in a bottom bar: always in thumb reach, above the
+        // keyboard and the home indicator.
+        bottomBar={<PrimaryButton label={isEditMode ? 'Update' : 'Save timesheet'} onPress={handleSubmitTimesheet} loading={submitting} />}
       >
-        <KeyboardAvoidingView
-          style={styles.pickerOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <View style={[styles.logSheetContainer, sheetFrame, { backgroundColor: colors.card }]}>
-            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerTitle, { color: colors.text }]}>
-                {isEditMode ? 'Edit Timesheet' : 'Log Hours'}
-              </Text>
-              <TouchableOpacity
-                onPress={() => logDirty.guard(() => { setShowLogSheet(false); resetForm(); })}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel="Close"
-              >
-                <Ionicons name="close" size={24} color={colors.secondary} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView {...logKb.scrollProps} style={styles.formScroll} contentContainerStyle={styles.formContent}>
-              {/* Clock-in info banner (read-only, shown when editing a clocked-in timesheet) */}
+            <ScrollView {...logKb.scrollProps} style={tsx.body} contentContainerStyle={tsx.bodyContent}>
+              {/* Clock-in info (read-only, shown when editing a clocked-in timesheet) */}
               {isEditMode && (() => {
                 const editingTs = timesheets.find(ts => ts.id === editingId);
                 const hasClock = editingTs?.clockInTime || (editingTs?.startTime && editingTs?.endTime);
                 if (!hasClock) return null;
                 return (
-                  <View style={[styles.clockInfoBanner, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                    <Ionicons name="time-outline" size={16} color={colors.secondary} />
-                    <View style={{ flex: 1, marginLeft: 8 }}>
-                      {editingTs?.clockInTime && (
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clockInfoText, { color: colors.secondary }]}>
-                          Clocked in at {formatTime12h(new Date(editingTs.clockInTime).toTimeString().slice(0, 5))}
-                        </Text>
-                      )}
-                      {editingTs?.startTime && editingTs?.endTime && (
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clockInfoText, { color: colors.secondary }]}>
-                          Recorded: {formatTime12h(editingTs.startTime)} – {formatTime12h(editingTs.endTime)}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
+                  <Card variant="notes">
+                    {editingTs?.clockInTime ? (
+                      <Text style={[type.meta, { color: k.muted }]}>
+                        {`Clocked in at ${formatTime12h(new Date(editingTs.clockInTime).toTimeString().slice(0, 5))}`}
+                      </Text>
+                    ) : null}
+                    {editingTs?.startTime && editingTs?.endTime ? (
+                      <Text style={[type.meta, { color: k.muted }]}>
+                        {`Recorded ${formatTime12h(editingTs.startTime)} – ${formatTime12h(editingTs.endTime)}`}
+                      </Text>
+                    ) : null}
+                  </Card>
                 );
               })()}
 
-              {/* Project / Business */}
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Project / Business</Text>
-              <TouchableOpacity
-                style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                onPress={() => setShowFormProjectPicker(true)}
-              >
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: formProjectId ? colors.text : colors.secondary }]}>
-                  {formProjectId ? getProjectName(formProjectId) : 'Select project or Business...'}
-                </Text>
-                <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-              </TouchableOpacity>
-
-              {/* Date */}
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Date</Text>
-              <TouchableOpacity
-                style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                onPress={() => {
-                  const parts = formDate.split('-');
-                  const d = parts.length === 3
-                    ? new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))
-                    : new Date();
-                  setPickerDateObj(d);
-                  setShowDatePicker(true);
-                }}
-              >
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: colors.text }]}>{formatDisplayDate(formDate)}</Text>
-                <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-              </TouchableOpacity>
-
-              {/* Break Start + Break Duration row */}
-              <View style={styles.timeRow}>
-                <View style={styles.timeCol}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Break Start</Text>
-                  <TouchableOpacity
-                    style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                    onPress={() => setShowBreakStartPicker(true)}
-                  >
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: parseFloat(formBreakDuration) > 0 ? colors.text : colors.secondary }]}>
-                      {parseFloat(formBreakDuration) > 0 ? formatTime12h(formBreakStartTime) : '—'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.timeCol}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Break Duration</Text>
-                  <TouchableOpacity
-                    style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                    onPress={() => setShowBreakPicker(true)}
-                  >
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: colors.text }]}>
-                      {BREAK_OPTIONS.find(o => o.value === formBreakDuration)?.label ?? 'None'}
-                    </Text>
-                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Start / End time */}
-              <View style={styles.timeRow}>
-                <View style={styles.timeCol}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Start</Text>
-                  <TouchableOpacity
-                    style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                    onPress={() => setShowTimePicker('start')}
-                  >
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: colors.text }]}>{formatTime12h(formStartTime)}</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.timeCol}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>End</Text>
-                  <TouchableOpacity
-                    style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                    onPress={() => setShowTimePicker('end')}
-                  >
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: colors.text }]}>{formatTime12h(formEndTime)}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calcDuration, { color: colors.accent }]}>
-                Calculated: {calculateDuration(formStartTime, formEndTime, formBreakDuration)} hours
+              <Card variant="list">
+                <PropertyRow
+                  key="project"
+                  form
+                  label="Project"
+                  value={formProjectId ? getProjectName(formProjectId) : undefined}
+                  placeholder="Choose"
+                  onPress={() => setShowFormProjectPicker(true)}
+                />
+                <PropertyRow
+                  key="date"
+                  form
+                  label="Date"
+                  value={formatDisplayDate(formDate)}
+                  onPress={() => {
+                    const parts = formDate.split('-');
+                    const d = parts.length === 3
+                      ? new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))
+                      : new Date();
+                    setPickerDateObj(d);
+                    setShowDatePicker(true);
+                  }}
+                />
+                <PropertyRow key="start" form label="Start" value={formatTime12h(formStartTime)} onPress={() => setShowTimePicker('start')} />
+                <PropertyRow key="end" form label="End" value={formatTime12h(formEndTime)} onPress={() => setShowTimePicker('end')} />
+                <PropertyRow
+                  key="break"
+                  form
+                  label="Break"
+                  value={BREAK_OPTIONS.find(o => o.value === formBreakDuration)?.label ?? 'None'}
+                  onPress={() => setShowBreakPicker(true)}
+                />
+                {parseFloat(formBreakDuration) > 0 ? (
+                  <PropertyRow key="breakStart" form label="Break starts" value={formatTime12h(formBreakStartTime)} onPress={() => setShowBreakStartPicker(true)} />
+                ) : null}
+                <PropertyRow
+                  key="costCode"
+                  form
+                  label="Cost code"
+                  value={formCostCodeId ? getCostCodeName(formCostCodeId) || 'Selected' : undefined}
+                  placeholder="Choose"
+                  onPress={() => setShowCostCodePicker(true)}
+                />
+              </Card>
+              <Text style={[type.meta, tabular, { color: k.muted }]}>
+                {`${calculateDuration(formStartTime, formEndTime, formBreakDuration)} hours`}
               </Text>
 
-              {/* Cost Code */}
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Cost Code</Text>
-              <TouchableOpacity
-                style={[styles.formPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                onPress={() => setShowCostCodePicker(true)}
-              >
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formPickerText, { color: formCostCodeId ? colors.text : colors.secondary }]}>
-                  {formCostCodeId ? getCostCodeName(formCostCodeId) || 'Selected' : 'Select cost code...'}
-                </Text>
-                <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-              </TouchableOpacity>
-
-              {/* Description */}
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.formLabel, { color: colors.secondary }]}>Description</Text>
-              <TextInput
-                style={[styles.formTextarea, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                value={formDescription}
-                onChangeText={setFormDescription}
-                onFocus={logKb.onInputFocus}
-                multiline
-                numberOfLines={3}
-                placeholder="What did you work on?"
-                placeholderTextColor={colors.secondary}
-                textAlignVertical="top"
-                autoCapitalize="sentences"
-              />
+              <View style={tsx.group}>
+                <FieldLabel>Description</FieldLabel>
+                <TextField
+                  multilineBox
+                  value={formDescription}
+                  onChangeText={setFormDescription}
+                  onFocus={logKb.onInputFocus}
+                  placeholder="What did you work on?"
+                  autoCapitalize="sentences"
+                  accessibilityLabel="Description"
+                />
+              </View>
             </ScrollView>
-
-            {/* Primary action in a bottom bar: always in thumb reach, above the
-                keyboard (KeyboardAvoidingView) and the home indicator. */}
-            <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 12) }]}>
-              <TouchableOpacity
-                style={[styles.submitButton, { backgroundColor: colors.accent, opacity: submitting ? 0.7 : 1 }]}
-                onPress={handleSubmitTimesheet}
-                disabled={submitting}
-                accessibilityRole="button"
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.submitButtonText} maxFontSizeMultiplier={1.4}>{isEditMode ? 'Update' : 'Save Timesheet'}</Text>
-                )}
-              </TouchableOpacity>
-            </View>
 
             {/* Form picker modals — rendered inside the Log Hours modal so they stack
                 correctly on top of it. Sibling modals cannot present over an already-open
@@ -1867,35 +1747,27 @@ export default function TimesheetsScreen() {
             )}
             {showDatePicker ? (
               Platform.OS === 'ios' ? (
-                <Modal visible animationType="slide" transparent>
-                  <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-                    <View style={{ ...sheetFrame, backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 32 }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                        <TouchableOpacity hitSlop={10} onPress={() => setShowDatePicker(false)} style={{ padding: 4 }}>
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 16, color: colors.secondary }}>Cancel</Text>
-                        </TouchableOpacity>
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 17, fontWeight: '600', color: colors.text }}>Select Date</Text>
-                        <TouchableOpacity hitSlop={10}
-                          onPress={() => {
-                            setFormDate(toLocalDateStr(pickerDateObj));
-                            setShowDatePicker(false);
-                          }}
-                          style={{ padding: 4 }}
-                        >
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ fontSize: 16, color: colors.accent, fontWeight: '600' }}>Done</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <DateTimePicker
-                        value={pickerDateObj}
-                        mode="date"
-                        display="spinner"
-                        onChange={(_event, date) => { if (date) setPickerDateObj(date); }}
-                        themeVariant={isDark ? 'dark' : 'light'}
-                        style={{ alignSelf: 'center' }}
-                      />
-                    </View>
-                  </View>
-                </Modal>
+                <ModalSheet
+                  visible
+                  onRequestClose={() => setShowDatePicker(false)}
+                  title="Date"
+                  cancelLabel="Cancel"
+                  onCancel={() => setShowDatePicker(false)}
+                  doneLabel="Done"
+                  onDone={() => {
+                    setFormDate(toLocalDateStr(pickerDateObj));
+                    setShowDatePicker(false);
+                  }}
+                >
+                  <DateTimePicker
+                    value={pickerDateObj}
+                    mode="date"
+                    display="spinner"
+                    onChange={(_event, date) => { if (date) setPickerDateObj(date); }}
+                    themeVariant={isDark ? 'dark' : 'light'}
+                    style={tsx.spinner}
+                  />
+                </ModalSheet>
               ) : (
                 <DateTimePicker
                   value={pickerDateObj}
@@ -1908,9 +1780,7 @@ export default function TimesheetsScreen() {
                 />
               )
             ) : null}
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      </ModalSheet>
 
       {/* Clock-In Cost Code Picker — stays outside, unrelated to Log Hours form */}
       {renderPickerModal(
@@ -2057,125 +1927,25 @@ const styles = StyleSheet.create({
 
   emptyText: { fontSize: 14, textAlign: 'center', paddingVertical: 32 },
 
-  pickerOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  pickerContainer: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '70%',
-  },
-  pickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-  },
-  pickerTitle: { fontSize: 17, fontWeight: '600' },
-  pickerItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  pickerItemText: { fontSize: 15 },
-  pickerSectionHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  pickerSectionText: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
+});
 
-  detailContainer: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '80%',
-  },
-  detailScroll: { padding: 16 },
-  detailSection: { marginBottom: 16 },
-  detailLabel: { fontSize: 12, fontWeight: '500', marginBottom: 4 },
-  detailValue: { fontSize: 15 },
-  detailActions: { flexDirection: 'row', gap: 12, marginTop: 8, marginBottom: 24 },
-  detailButton: {
-    flex: 1,
-    height: 44,
-    borderRadius: 10,
+const tsx = StyleSheet.create({
+  flex: { flex: 1 },
+  center: { textAlign: 'center', paddingVertical: space.screenBottom },
+  body: { paddingHorizontal: space.screenX },
+  bodyContent: { gap: metrics.sheet.gap, paddingTop: space.inline, paddingBottom: space.screenBottom },
+  group: { gap: metrics.form.labelGap },
+  status: { flexDirection: 'row', alignItems: 'center', gap: metrics.statusDot.gap },
+  dot: { width: size.statusDot, height: size.statusDot, borderRadius: size.statusDot / 2 },
+  pickList: { marginHorizontal: space.screenX },
+  pickContent: { paddingBottom: space.screenBottom },
+  pickHeader: { justifyContent: 'flex-end', paddingBottom: space.inline, paddingHorizontal: space.inlineSm },
+  pickRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    gap: space.rowGap,
+    paddingHorizontal: space.cardX,
+    borderBottomWidth: size.border,
   },
-  detailButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-
-  clockInfoBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 4,
-    marginTop: 8,
-  },
-  clockInfoText: { fontSize: 13, lineHeight: 20 },
-
-  logSheetContainer: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '90%',
-    flex: 1,
-  },
-  formScroll: { flex: 1 },
-  formContent: { padding: 16, paddingBottom: 24 },
-  bottomBar: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  formLabel: { fontSize: 12, fontWeight: '500', marginBottom: 6, marginTop: 14 },
-  formInput: {
-    height: 44,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    fontSize: 15,
-  },
-  formTextarea: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
-    minHeight: 80,
-  },
-  formPicker: {
-    height: 44,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  formPickerText: { fontSize: 15 },
-  dateBreakRow: { flexDirection: 'row', gap: 12 },
-  dateCol: { flex: 3 },
-  breakCol: { flex: 2 },
-  timeRow: { flexDirection: 'row', gap: 12 },
-  timeCol: { flex: 1 },
-  calcDuration: { fontSize: 13, fontWeight: '500', marginTop: 8 },
-  submitButton: {
-    minHeight: 52,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  spinner: { alignSelf: 'center' },
 });

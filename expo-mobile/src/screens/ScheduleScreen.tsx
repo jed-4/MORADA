@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
   useColorScheme,
@@ -14,10 +13,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
-  Switch,
   Pressable,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
@@ -25,17 +22,18 @@ import { fromLocalDateStr, toLocalDateStr } from '../lib/dates';
 import { ScheduleActivityFeedButton } from '../components/ScheduleActivityFeedButton';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, useColors, currentTheme, typeColors as themeTypeColors, MAX_FONT_SCALE, metrics, size, space, tabular, type } from '../theme';
+import { useTheme, useColors, currentTheme, typeColors as themeTypeColors, metrics, radii, size, space, tabular, type } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Calendar as CalendarIcon, ChevronDown, ChevronRight, Ellipsis, FolderOpen } from 'lucide-react-native';
+import { Calendar as CalendarIcon, Check, CheckCheck, ChevronDown, ChevronRight, Ellipsis, FolderOpen, Plus, SendHorizontal, SquareCheck, Trash2 } from 'lucide-react-native';
 import {
-  CalendarBlock, Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, GanttBar, ListRow, NowLine, PageHeader, StatusDot,
-  TodayMarker, UnderlineTabs, type DotStatus,
+  ButtonRow, CalendarBlock, Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, FieldLabel, GanttBar, ListRow, ModalSheet, NowLine,
+  PageHeader, PrimaryButton, ProgressLine, PropertyRow, SecondaryButton, SheetHeader, StatusDot, TextField, TodayMarker, ToggleRow,
+  UnderlineTabs, type DotStatus,
 } from '../components/kit';
 import { SkeletonList } from '../components/ui/Skeleton';
 import { useLayout } from '../lib/useLayout';
 import { scheduleDot } from '../lib/scheduleStatus';
-import { sheetFrame } from '../components/ui/Sheet';
+import { haptic } from '../lib/haptics';
 import type { ScrollViewInstance } from 'react-native';
 import type { JSX } from 'react';
 import { goBackOrHome } from '../navigation/back';
@@ -1279,585 +1277,350 @@ const colors = {
     setSelectedItem(null);
   };
 
+  // ── Pop-up form pieces (Schedule item details / new item) ──────────────
+  const fdot = (color?: string | null) => <View style={[fs.dot, { backgroundColor: color || k.status.upcoming }]} />;
+  const ftick = <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} />;
+  /** Inline options under a form row, inside its card. */
+  const choiceRows = (prefix: string, options: { key: string; label: string; color?: string | null }[], value: string, onPick: (key: string) => void) =>
+    options.map(o => (
+      <ListRow
+        key={`${prefix}:${o.key}`}
+        lead={fdot(o.color)}
+        title={o.label}
+        titleLines={1}
+        selected={o.key === value}
+        trailing={o.key === value ? ftick : undefined}
+        onPress={() => { haptic.select(); onPick(o.key); }}
+      />
+    ));
+  /** A form row whose value is typed in place (dates as YYYY-MM-DD). */
+  const inputRow = (key: string, label: string, value: string, onChange: (v: string) => void, placeholder: string) => (
+    <View key={key} style={fs.inputRow}>
+      <Text style={[type.rowTitle, fs.flex, { color: k.text }]}>{label}</Text>
+      <TextInput
+        style={[type.rowTitle, tabular, fs.inlineInput, { color: k.text }]}
+        value={value}
+        returnKeyType="done"
+        autoCorrect={false}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={k.faint}
+        keyboardType="numbers-and-punctuation"
+        accessibilityLabel={label}
+      />
+    </View>
+  );
+  /** Full-screen form frame: Cancel · title · Save, then a scroll body. */
+  const formPage = (title: string, onCancel: () => void, onSave: () => void, saveBusy: boolean, body: JSX.Element) => (
+    <View style={[fs.page, { backgroundColor: k.bg, paddingTop: insets.top }]}>
+      <View style={fs.pageHeader}>
+        <SheetHeader title={title} onCancel={onCancel} doneLabel="Save" onDone={onSave} doneDisabled={saveBusy} doneLoading={saveBusy} />
+      </View>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
+        <ScrollView
+          style={styles.flex1}
+          contentContainerStyle={[fs.pageBody, { paddingBottom: space.screenBottom + insets.bottom }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {body}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+  const typeChoices = Object.entries(TYPE_LABELS).map(([key, label]) => ({ key, label, color: TYPE_COLORS[key] }));
+  const priorityChoices = Object.entries(PRIORITY_LABELS).map(([key, label]) => ({ key, label, color: PRIORITY_COLORS[key] }));
+  const statusChoices = pickerStatusOptions.map(o => ({ key: o.key, label: o.name, color: o.color }));
+
   const renderDetailSheet = () => {
     if (!selectedItem) return null;
     const detailStatusOpt = getStatusOption(detailStatus);
     const statusColor = detailStatusOpt.color;
 
     return (
-      <Modal visible={showDetailSheet} animationType="slide" presentationStyle="fullScreen">
-        <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
-          <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity hitSlop={10} onPress={closeDetail}>
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Schedule Item</Text>
-            <View style={{ width: 24 }} />
-          </View>
+      <Modal visible={showDetailSheet} animationType="slide" presentationStyle="fullScreen" onRequestClose={closeDetail}>
+        {formPage('Schedule item', closeDetail, handleSave, saving, (
+          <>
+            <TextField
+              value={detailName}
+              autoCapitalize="sentences"
+              returnKeyType="done"
+              onChangeText={setDetailName}
+              placeholder="Item name"
+              accessibilityLabel="Name"
+            />
 
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
-            <ScrollView style={styles.flex1} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Name</Text>
-              <TextInput
-                style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44, fontSize: 16, fontWeight: '600' }]}
-                value={detailName}
+            {(selectedItem.assignedToName || selectedItem.groupName) ? (
+              <Card variant="list">
+                {selectedItem.assignedToName ? <PropertyRow key="assigned" label="Assigned" value={selectedItem.assignedToName} /> : null}
+                {selectedItem.groupName ? <PropertyRow key="group" label="Group" value={selectedItem.groupName} /> : null}
+              </Card>
+            ) : null}
+
+            <View style={fs.group}>
+              <FieldLabel>Details</FieldLabel>
+              <Card variant="list">
+                <PropertyRow key="type" form label="Type" onPress={() => { setShowDetailTypePicker(!showDetailTypePicker); setShowDetailPriorityPicker(false); setShowStatusPicker(false); }}>
+                  <View style={fs.value}>{fdot(TYPE_COLORS[detailType])}<Text style={[type.rowTitle, { color: k.text }]}>{TYPE_LABELS[detailType] || detailType}</Text></View>
+                </PropertyRow>
+                {showDetailTypePicker ? choiceRows('type', typeChoices, detailType, key => { setDetailType(key); setShowDetailTypePicker(false); }) : null}
+                {inputRow('start', 'Start date', detailStartDate, setDetailStartDate, 'YYYY-MM-DD')}
+                {inputRow('end', 'End date', detailEndDate, setDetailEndDate, 'YYYY-MM-DD')}
+                <PropertyRow key="priority" form label="Priority" onPress={() => { setShowDetailPriorityPicker(!showDetailPriorityPicker); setShowDetailTypePicker(false); setShowStatusPicker(false); }}>
+                  <View style={fs.value}>{fdot(PRIORITY_COLORS[detailPriority])}<Text style={[type.rowTitle, { color: k.text }]}>{PRIORITY_LABELS[detailPriority] || detailPriority}</Text></View>
+                </PropertyRow>
+                {showDetailPriorityPicker ? choiceRows('prio', priorityChoices, detailPriority, key => { setDetailPriority(key); setShowDetailPriorityPicker(false); }) : null}
+              </Card>
+              <TextField
+                multilineBox
+                value={detailDescription}
                 autoCapitalize="sentences"
-                returnKeyType="done"
-                onChangeText={setDetailName}
-                placeholder="Item name"
-                placeholderTextColor={colors.secondary}
+                onChangeText={setDetailDescription}
+                placeholder="Description (optional)"
+                accessibilityLabel="Description"
               />
+            </View>
 
-              {selectedItem.assignedToName && (
-                <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
-                  <View style={styles.detailInfoRow}>
-                    <Ionicons name="person-outline" size={16} color={colors.secondary} />
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoLabel, { color: colors.secondary }]}>Assigned</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.assignedToName}</Text>
-                  </View>
-                </View>
-              )}
-              {selectedItem.groupName && (
-                <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
-                  <View style={styles.detailInfoRow}>
-                    <Ionicons name="layers-outline" size={16} color={colors.secondary} />
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoLabel, { color: colors.secondary }]}>Group</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.groupName}</Text>
-                  </View>
-                </View>
-              )}
-
-              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Details</Text>
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
-                <TouchableOpacity
-                  style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                  onPress={() => { setShowDetailTypePicker(!showDetailTypePicker); setShowDetailPriorityPicker(false); setShowStatusPicker(false); }}
-                >
-                  <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[detailType] || colors.accent }]} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[detailType] || detailType}</Text>
-                  <Ionicons name={showDetailTypePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-                </TouchableOpacity>
-                {showDetailTypePicker && (
-                  <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                    {Object.entries(TYPE_LABELS).map(([key, label]) => {
-                      const tc = TYPE_COLORS[key] || colors.accent;
-                      const isSelected = detailType === key;
-                      return (
-                        <TouchableOpacity
-                          key={key}
-                          style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: tc + '15' }]}
-                          onPress={() => { setDetailType(key); setShowDetailTypePicker(false); }}
-                        >
-                          <View style={[styles.statusDot, { backgroundColor: tc }]} />
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
-                          {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                )}
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Start Date</Text>
-                <TextInput
-                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
-                  value={detailStartDate}
-                  returnKeyType="done"
-                  autoCorrect={false}
-                  onChangeText={setDetailStartDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.secondary}
-                  keyboardType="numbers-and-punctuation"
-                />
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>End Date</Text>
-                <TextInput
-                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
-                  value={detailEndDate}
-                  returnKeyType="done"
-                  autoCorrect={false}
-                  onChangeText={setDetailEndDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.secondary}
-                  keyboardType="numbers-and-punctuation"
-                />
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
-                <TouchableOpacity
-                  style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                  onPress={() => { setShowDetailPriorityPicker(!showDetailPriorityPicker); setShowDetailTypePicker(false); setShowStatusPicker(false); }}
-                >
-                  <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[detailPriority] || colors.accent }]} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[detailPriority] || detailPriority}</Text>
-                  <Ionicons name={showDetailPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-                </TouchableOpacity>
-                {showDetailPriorityPicker && (
-                  <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                    {Object.entries(PRIORITY_LABELS).map(([key, label]) => {
-                      const pc = PRIORITY_COLORS[key] || colors.accent;
-                      const isSelected = detailPriority === key;
-                      return (
-                        <TouchableOpacity
-                          key={key}
-                          style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: pc + '15' }]}
-                          onPress={() => { setDetailPriority(key); setShowDetailPriorityPicker(false); }}
-                        >
-                          <View style={[styles.statusDot, { backgroundColor: pc }]} />
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
-                          {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                )}
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Description</Text>
-                <TextInput
-                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={detailDescription}
-                  autoCapitalize="sentences"
-                  onChangeText={setDetailDescription}
-                  multiline
-                  numberOfLines={2}
-                  placeholder="Optional description..."
-                  placeholderTextColor={colors.secondary}
-                />
-              </View>
-
-              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Update</Text>
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
-                <TouchableOpacity
-                  style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                  onPress={() => setShowStatusPicker(!showStatusPicker)}
-                >
-                  <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{detailStatusOpt.name}</Text>
-                  <Ionicons name={showStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-                </TouchableOpacity>
-
-                {showStatusPicker && (
-                  <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                    {pickerStatusOptions.map(opt => {
-                      const sc = opt.color;
-                      const isSelected = detailStatus === opt.key;
-                      return (
-                        <TouchableOpacity
-                          key={opt.key}
-                          style={[
-                            styles.inlineStatusOption,
-                            { borderBottomColor: colors.border },
-                            isSelected && { backgroundColor: sc + '15' },
-                          ]}
-                          onPress={() => {
-                            setDetailStatus(opt.key);
-                            setShowStatusPicker(false);
-                          }}
-                        >
-                          <View style={[styles.statusDot, { backgroundColor: sc }]} />
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{opt.name}</Text>
-                          {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                )}
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Progress ({detailProgress}%)</Text>
-                <View style={styles.progressInputRow}>
-                  <View style={[styles.progressTrackLarge, { backgroundColor: colors.border }]}>
-                    <View style={[styles.progressFillLarge, { width: `${Math.min(parseInt(detailProgress) || 0, 100)}%`, backgroundColor: statusColor }]} />
+            <View style={fs.group}>
+              <FieldLabel>Update</FieldLabel>
+              <Card variant="list">
+                <PropertyRow key="status" form label="Status" onPress={() => setShowStatusPicker(!showStatusPicker)}>
+                  <View style={fs.value}>{fdot(statusColor)}<Text style={[type.rowTitle, { color: k.text }]}>{detailStatusOpt.name}</Text></View>
+                </PropertyRow>
+                {showStatusPicker ? choiceRows('status', statusChoices, detailStatus, key => { setDetailStatus(key); setShowStatusPicker(false); }) : null}
+                <View key="progress" style={fs.inputRow}>
+                  <Text style={[type.rowTitle, { color: k.text }]}>Progress</Text>
+                  <View style={fs.flex}>
+                    <ProgressLine value={Math.min(parseInt(detailProgress) || 0, 100) / 100} />
                   </View>
                   <TextInput
-                    style={[styles.progressInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                    style={[type.rowTitle, tabular, fs.pctInput, { color: k.text, borderColor: k.border, backgroundColor: k.surface }]}
                     value={detailProgress}
                     returnKeyType="done"
                     onChangeText={t => { const n = t.replace(/[^0-9]/g, ''); setDetailProgress(n ? String(Math.min(parseInt(n), 100)) : '0'); }}
                     keyboardType="number-pad"
                     maxLength={3}
+                    accessibilityLabel="Progress percent"
                   />
+                  <Text style={[type.meta, { color: k.muted }]}>%</Text>
                 </View>
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
-                <TextInput
-                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={detailNotes}
-                  autoCapitalize="sentences"
-                  onChangeText={setDetailNotes}
-                  multiline
-                  numberOfLines={3}
-                  placeholder="Add notes..."
-                  placeholderTextColor={colors.secondary}
+                <ToggleRow
+                  key="weekends"
+                  label="Allow on weekends"
+                  value={detailWeekendOverride}
+                  onValueChange={setDetailWeekendOverride}
                 />
-              </View>
+              </Card>
+              <TextField
+                multilineBox
+                value={detailNotes}
+                autoCapitalize="sentences"
+                onChangeText={setDetailNotes}
+                placeholder="Notes"
+                accessibilityLabel="Notes"
+              />
+            </View>
 
-              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <View style={styles.switchRow}>
-                  <View style={styles.switchLabelRow}>
-                    <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.switchLabel, { color: colors.text }]}>Allow on weekends</Text>
-                  </View>
-                  <Switch
-                    value={detailWeekendOverride}
-                    onValueChange={setDetailWeekendOverride}
-                    trackColor={{ false: colors.border, true: colors.accent + '80' }}
-                    thumbColor={detailWeekendOverride ? colors.accent : '#f4f3f4'}
-                  />
-                </View>
-              </View>
-
-              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Checklist Steps</Text>
-                {loadingSteps ? (
-                  <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 12 }} />
-                ) : (
-                  checklistSteps.map(step => (
-                    <View key={step.id} style={[styles.stepRow, { borderBottomColor: colors.border }]}>
-                      <TouchableOpacity hitSlop={10} onPress={() => handleToggleStep(step)} style={styles.stepCheckbox}>
-                        <Ionicons
-                          name={step.isCompleted ? 'checkbox' : 'square-outline'}
-                          size={20}
-                          color={step.isCompleted ? colors.accent : colors.secondary}
-                        />
-                      </TouchableOpacity>
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.stepName, { color: colors.text }, step.isCompleted && styles.stepCompleted]}>{step.name}</Text>
-                      <TouchableOpacity hitSlop={12} onPress={() => handleDeleteStep(step.id)} style={styles.stepDeleteBtn}>
-                        <Ionicons name="trash-outline" size={16} color={theme.statusDanger} />
-                      </TouchableOpacity>
+            <View style={fs.group}>
+              <FieldLabel>Checklist steps</FieldLabel>
+              {loadingSteps ? (
+                <ActivityIndicator size="small" color={k.accent} />
+              ) : checklistSteps.length > 0 ? (
+                <Card variant="list">
+                  {checklistSteps.map(step => (
+                    <View key={step.id} style={fs.stepRow}>
+                      <Checkbox checked={!!step.isCompleted} onPress={() => handleToggleStep(step)} accessibilityLabel={step.name} />
+                      <Text style={[type.rowTitle, fs.flex, { color: step.isCompleted ? k.muted : k.text }, step.isCompleted && fs.strike]}>{step.name}</Text>
+                      <Pressable hitSlop={metrics.hitSlop} onPress={() => handleDeleteStep(step.id)} accessibilityRole="button" accessibilityLabel={`Delete ${step.name}`}>
+                        <Trash2 size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />
+                      </Pressable>
                     </View>
-                  ))
-                )}
-                {checklistSteps.length === 0 && !loadingSteps && (
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noNotesText, { color: colors.secondary }]}>No checklist steps yet</Text>
-                )}
-                <View style={styles.addNoteRow}>
-                  <TextInput
-                    style={[styles.addNoteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                  ))}
+                </Card>
+              ) : (
+                <Text style={[type.meta, { color: k.muted }]}>No checklist steps yet</Text>
+              )}
+              <View style={fs.addRow}>
+                <View style={fs.flex}>
+                  <TextField
                     value={newStepName}
                     autoCapitalize="sentences"
                     returnKeyType="done"
                     submitBehavior="submit"
                     onSubmitEditing={() => { if (newStepName.trim() && !addingStep) handleAddStep(); }}
                     onChangeText={setNewStepName}
-                    placeholder="Add a step..."
-                    placeholderTextColor={colors.secondary}
+                    placeholder="Add a step"
+                    accessibilityLabel="New step"
                   />
-                  <TouchableOpacity hitSlop={4}
-                    style={[styles.addNoteBtn, { backgroundColor: colors.accent, opacity: !newStepName.trim() || addingStep ? 0.5 : 1 }]}
-                    onPress={handleAddStep}
-                    disabled={!newStepName.trim() || addingStep}
-                  >
-                    {addingStep ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Ionicons name="add" size={18} color="#fff" />
-                    )}
-                  </TouchableOpacity>
                 </View>
+                <Pressable
+                  onPress={handleAddStep}
+                  disabled={!newStepName.trim() || addingStep}
+                  hitSlop={metrics.hitSlop}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add step"
+                  style={[fs.iconBtn, { opacity: !newStepName.trim() || addingStep ? metrics.disabledOpacity : 1 }]}
+                >
+                  {addingStep ? <ActivityIndicator size="small" color={k.accent} /> : <Plus size={size.icon.header} color={k.accent} strokeWidth={metrics.iconStroke} />}
+                </Pressable>
               </View>
+            </View>
 
-              {linkedChecklists.length > 0 && (
-                <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Linked Checklists</Text>
+            {linkedChecklists.length > 0 ? (
+              <View style={fs.group}>
+                <FieldLabel>Linked checklists</FieldLabel>
+                <Card variant="list">
                   {linkedChecklists.map(cl => (
-                    <View key={cl.id} style={[styles.linkedItemRow, { borderBottomColor: colors.border }]}>
-                      <Ionicons name="checkmark-circle-outline" size={16} color={colors.accent} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.linkedItemName, { color: colors.text }]}>{cl.name}</Text>
-                    </View>
+                    <ListRow key={cl.id} lead={<CheckCheck size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />} title={cl.name} />
                   ))}
-                </View>
-              )}
+                </Card>
+              </View>
+            ) : null}
 
-              {linkedTasks.length > 0 && (
-                <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Linked Tasks</Text>
+            {linkedTasks.length > 0 ? (
+              <View style={fs.group}>
+                <FieldLabel>Linked tasks</FieldLabel>
+                <Card variant="list">
                   {linkedTasks.map(t => (
-                    <View key={t.id} style={[styles.linkedItemRow, { borderBottomColor: colors.border }]}>
-                      <Ionicons name="checkbox-outline" size={16} color={colors.accent} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.linkedItemName, { color: colors.text }]}>{t.title}</Text>
+                    <ListRow key={t.id} lead={<SquareCheck size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />} title={t.title} />
+                  ))}
+                </Card>
+              </View>
+            ) : null}
+
+            <View style={fs.group}>
+              <FieldLabel>Activity</FieldLabel>
+              {loadingNotes ? (
+                <ActivityIndicator size="small" color={k.accent} />
+              ) : activityNotes.length > 0 ? (
+                <Card variant="list">
+                  {activityNotes.map(note => (
+                    <View key={note.id} style={fs.note}>
+                      <View style={fs.noteHead}>
+                        <Text style={[type.metaSemi, { color: k.text }]}>{note.userName || 'System'}</Text>
+                        <Text style={[type.caption, tabular, { color: k.muted }]}>{formatNoteDate(note.createdAt)}</Text>
+                      </View>
+                      <Text style={[type.bodyPreview, { color: note.type === 'system' ? k.muted : k.textBody }]}>{note.content}</Text>
                     </View>
                   ))}
-                </View>
+                </Card>
+              ) : (
+                <Text style={[type.meta, { color: k.muted }]}>No activity yet</Text>
               )}
-
-              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Activity Notes</Text>
-                {loadingNotes ? (
-                  <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 12 }} />
-                ) : (
-                  activityNotes.map(note => (
-                    <View key={note.id} style={[styles.activityNote, { borderColor: colors.border }]}>
-                      <View style={styles.noteHeader}>
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteUser, { color: colors.text }]}>{note.userName || 'System'}</Text>
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteDate, { color: colors.secondary }]}>{formatNoteDate(note.createdAt)}</Text>
-                      </View>
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteContent, { color: note.type === 'system' ? colors.secondary : colors.text }]}>{note.content}</Text>
-                    </View>
-                  ))
-                )}
-                {activityNotes.length === 0 && !loadingNotes && (
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noNotesText, { color: colors.secondary }]}>No activity notes yet</Text>
-                )}
-                <View style={styles.addNoteRow}>
-                  <TextInput
-                    style={[styles.addNoteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+              <View style={fs.addRow}>
+                <View style={fs.flex}>
+                  <TextField
                     value={newNoteText}
                     autoCapitalize="sentences"
                     returnKeyType="send"
                     onSubmitEditing={() => { if (newNoteText.trim() && !addingNote) handleAddNote(); }}
                     onChangeText={setNewNoteText}
-                    placeholder="Add a note..."
-                    placeholderTextColor={colors.secondary}
+                    placeholder="Add a note"
+                    accessibilityLabel="New note"
                   />
-                  <TouchableOpacity hitSlop={4}
-                    style={[styles.addNoteBtn, { backgroundColor: colors.accent, opacity: !newNoteText.trim() || addingNote ? 0.5 : 1 }]}
-                    onPress={handleAddNote}
-                    disabled={!newNoteText.trim() || addingNote}
-                  >
-                    {addingNote ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Ionicons name="send" size={16} color="#fff" />
-                    )}
-                  </TouchableOpacity>
                 </View>
+                <Pressable
+                  onPress={handleAddNote}
+                  disabled={!newNoteText.trim() || addingNote}
+                  hitSlop={metrics.hitSlop}
+                  accessibilityRole="button"
+                  accessibilityLabel="Post note"
+                  style={[fs.iconBtn, { opacity: !newNoteText.trim() || addingNote ? metrics.disabledOpacity : 1 }]}
+                >
+                  {addingNote ? <ActivityIndicator size="small" color={k.accent} /> : <SendHorizontal size={size.icon.header} color={k.accent} strokeWidth={metrics.iconStroke} />}
+                </Pressable>
               </View>
+            </View>
 
-              <View style={styles.detailActions}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: colors.border }]}
-                  onPress={closeDetail}
-                >
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.actionBtnText, { color: colors.text }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: colors.accent, opacity: saving ? 0.6 : 1 }]}
-                  onPress={handleSave}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.actionBtnText, { color: '#fff' }]}>Save Changes</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-              <View style={{ height: 40 }} />
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </View>
+            <ButtonRow>
+              <SecondaryButton label="Cancel" onPress={closeDetail} />
+              <PrimaryButton label="Save changes" onPress={handleSave} loading={saving} />
+            </ButtonRow>
+          </>
+        ))}
       </Modal>
     );
   };
 
   const renderAddModal = () => (
-    <Modal visible={showAddModal} animationType="slide" presentationStyle="fullScreen">
-      <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
-        <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <TouchableOpacity hitSlop={12} onPress={() => { setShowAddModal(false); resetAddForm(); }}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 15, fontWeight: '500' }}>Cancel</Text>
-          </TouchableOpacity>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalHeaderTitle, { color: colors.text }]}>New Schedule Item</Text>
-          <TouchableOpacity hitSlop={12} onPress={handleAddItem} disabled={addSaving} style={{ opacity: addSaving ? 0.5 : 1 }}>
-            {addSaving ? (
-              <ActivityIndicator size="small" color={colors.accent} />
-            ) : (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Save</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
-          <ScrollView style={styles.flex1} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Name *</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
-              value={addName}
-              autoCapitalize="sentences"
-              returnKeyType="done"
-              onChangeText={setAddName}
-              placeholder="Schedule item name"
-              placeholderTextColor={colors.secondary}
-            />
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
-            <TouchableOpacity
-              style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-              onPress={() => { setShowAddTypePicker(!showAddTypePicker); setShowAddPriorityPicker(false); setShowAddStatusPicker(false); }}
-            >
-              <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[addType] || colors.accent }]} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[addType] || addType}</Text>
-              <Ionicons name={showAddTypePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-            </TouchableOpacity>
-            {showAddTypePicker && (
-              <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                {Object.entries(TYPE_LABELS).map(([key, label]) => {
-                  const tc = TYPE_COLORS[key] || colors.accent;
-                  const isSelected = addType === key;
-                  return (
-                    <TouchableOpacity
-                      key={key}
-                      style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: tc + '15' }]}
-                      onPress={() => { setAddType(key); setShowAddTypePicker(false); }}
-                    >
-                      <View style={[styles.statusDot, { backgroundColor: tc }]} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
-                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Start Date</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
-              value={addStartDate}
-              returnKeyType="done"
-              autoCorrect={false}
-              onChangeText={setAddStartDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.secondary}
-              keyboardType="numbers-and-punctuation"
-            />
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>End Date</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
-              value={addEndDate}
-              returnKeyType="done"
-              autoCorrect={false}
-              onChangeText={setAddEndDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.secondary}
-              keyboardType="numbers-and-punctuation"
-            />
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
-            <TouchableOpacity
-              style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-              onPress={() => { setShowAddPriorityPicker(!showAddPriorityPicker); setShowAddTypePicker(false); setShowAddStatusPicker(false); }}
-            >
-              <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[addPriority] || colors.accent }]} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[addPriority] || addPriority}</Text>
-              <Ionicons name={showAddPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-            </TouchableOpacity>
-            {showAddPriorityPicker && (
-              <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                {Object.entries(PRIORITY_LABELS).map(([key, label]) => {
-                  const pc = PRIORITY_COLORS[key] || colors.accent;
-                  const isSelected = addPriority === key;
-                  return (
-                    <TouchableOpacity
-                      key={key}
-                      style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: pc + '15' }]}
-                      onPress={() => { setAddPriority(key); setShowAddPriorityPicker(false); }}
-                    >
-                      <View style={[styles.statusDot, { backgroundColor: pc }]} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
-                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
-            <TouchableOpacity
-              style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-              onPress={() => { setShowAddStatusPicker(!showAddStatusPicker); setShowAddTypePicker(false); setShowAddPriorityPicker(false); }}
-            >
-              <View style={[styles.statusDot, { backgroundColor: getStatusOption(addStatus).color }]} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{getStatusOption(addStatus).name}</Text>
-              <Ionicons name={showAddStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-            </TouchableOpacity>
-            {showAddStatusPicker && (
-              <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                {pickerStatusOptions.map(opt => {
-                  const sc = opt.color;
-                  const isSelected = addStatus === opt.key;
-                  return (
-                    <TouchableOpacity
-                      key={opt.key}
-                      style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: sc + '15' }]}
-                      onPress={() => { setAddStatus(opt.key); setShowAddStatusPicker(false); }}
-                    >
-                      <View style={[styles.statusDot, { backgroundColor: sc }]} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{opt.name}</Text>
-                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Description</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={addDescription}
-              autoCapitalize="sentences"
-              onChangeText={setAddDescription}
-              multiline
-              numberOfLines={2}
-              placeholder="Optional description..."
-              placeholderTextColor={colors.secondary}
-            />
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={addNotes}
-              autoCapitalize="sentences"
-              onChangeText={setAddNotes}
-              multiline
-              numberOfLines={3}
-              placeholder="Optional notes..."
-              placeholderTextColor={colors.secondary}
-            />
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </View>
+    <Modal visible={showAddModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => { setShowAddModal(false); resetAddForm(); }}>
+      {formPage('New schedule item', () => { setShowAddModal(false); resetAddForm(); }, handleAddItem, addSaving, (
+        <>
+          <TextField
+            value={addName}
+            autoCapitalize="sentences"
+            returnKeyType="done"
+            onChangeText={setAddName}
+            placeholder="Schedule item name"
+            accessibilityLabel="Name"
+          />
+          <Card variant="list">
+            <PropertyRow key="type" form label="Type" onPress={() => { setShowAddTypePicker(!showAddTypePicker); setShowAddPriorityPicker(false); setShowAddStatusPicker(false); }}>
+              <View style={fs.value}>{fdot(TYPE_COLORS[addType])}<Text style={[type.rowTitle, { color: k.text }]}>{TYPE_LABELS[addType] || addType}</Text></View>
+            </PropertyRow>
+            {showAddTypePicker ? choiceRows('type', typeChoices, addType, key => { setAddType(key); setShowAddTypePicker(false); }) : null}
+            {inputRow('start', 'Start date', addStartDate, setAddStartDate, 'YYYY-MM-DD')}
+            {inputRow('end', 'End date', addEndDate, setAddEndDate, 'YYYY-MM-DD')}
+            <PropertyRow key="priority" form label="Priority" onPress={() => { setShowAddPriorityPicker(!showAddPriorityPicker); setShowAddTypePicker(false); setShowAddStatusPicker(false); }}>
+              <View style={fs.value}>{fdot(PRIORITY_COLORS[addPriority])}<Text style={[type.rowTitle, { color: k.text }]}>{PRIORITY_LABELS[addPriority] || addPriority}</Text></View>
+            </PropertyRow>
+            {showAddPriorityPicker ? choiceRows('prio', priorityChoices, addPriority, key => { setAddPriority(key); setShowAddPriorityPicker(false); }) : null}
+            <PropertyRow key="status" form label="Status" onPress={() => { setShowAddStatusPicker(!showAddStatusPicker); setShowAddTypePicker(false); setShowAddPriorityPicker(false); }}>
+              <View style={fs.value}>{fdot(getStatusOption(addStatus).color)}<Text style={[type.rowTitle, { color: k.text }]}>{getStatusOption(addStatus).name}</Text></View>
+            </PropertyRow>
+            {showAddStatusPicker ? choiceRows('status', statusChoices, addStatus, key => { setAddStatus(key); setShowAddStatusPicker(false); }) : null}
+          </Card>
+          <TextField
+            multilineBox
+            value={addDescription}
+            autoCapitalize="sentences"
+            onChangeText={setAddDescription}
+            placeholder="Description (optional)"
+            accessibilityLabel="Description"
+          />
+          <TextField
+            multilineBox
+            value={addNotes}
+            autoCapitalize="sentences"
+            onChangeText={setAddNotes}
+            placeholder="Notes (optional)"
+            accessibilityLabel="Notes"
+          />
+        </>
+      ))}
     </Modal>
   );
 
   const renderProjectPickerModal = () => (
-    <Modal visible={showProjectPicker} animationType="slide" transparent>
-      <View style={styles.pickerOverlay}>
-        <View style={[styles.pickerContainer, sheetFrame, { backgroundColor: colors.card }]}>
-          <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerTitle, { color: colors.text }]}>Select Project</Text>
-            <TouchableOpacity hitSlop={10} onPress={() => setShowProjectPicker(false)}>
-              <Ionicons name="close" size={24} color={colors.secondary} />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={getSortedProjectItems(projects)}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => {
-              if (item.isHeader) {
-                return (
-                  <View style={[styles.pickerSectionHeader, { backgroundColor: theme.nav }]}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
-                  </View>
-                );
-              }
-              return (
-                <TouchableOpacity
-                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
-                  onPress={() => { setSelectedProjectId(item.id); setShowProjectPicker(false); }}
-                >
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
-                  {selectedProjectId === item.id && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-                </TouchableOpacity>
-              );
-            }}
-          />
-        </View>
-      </View>
-    </Modal>
+    <ModalSheet visible={showProjectPicker} onRequestClose={() => setShowProjectPicker(false)} title="Project" doneLabel="Done" onDone={() => setShowProjectPicker(false)} fill>
+      <FlatList
+        data={getSortedProjectItems(projects)}
+        keyExtractor={item => item.id}
+        style={fs.pickList}
+        contentContainerStyle={fs.pickContent}
+        renderItem={({ item }) => {
+          if (item.isHeader) {
+            return (
+              <View style={fs.pickHeader}>
+                <Text style={[type.meta, { color: k.muted }]}>{item.label}</Text>
+              </View>
+            );
+          }
+          const active = selectedProjectId === item.id;
+          return (
+            <Pressable
+              style={({ pressed }) => [fs.pickRow, { borderBottomColor: k.border, backgroundColor: active ? k.tint : k.surface, opacity: pressed ? metrics.pressedOpacity : 1 }]}
+              onPress={() => { haptic.select(); setSelectedProjectId(item.id); setShowProjectPicker(false); }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[type.rowTitle, fs.flex, { color: k.text }]} numberOfLines={1}>{item.label}</Text>
+              {active ? ftick : null}
+            </Pressable>
+          );
+        }}
+      />
+    </ModalSheet>
   );
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -1967,64 +1730,10 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   flex1: { flex: 1 },
 
-  modalContainer: { flex: 1 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 56 : 16, paddingBottom: 12, borderBottomWidth: 1 },
-  modalHeaderTitle: { fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center' },
-  detailInfoSection: { borderTopWidth: 1, paddingTop: 12, marginBottom: 16 },
-  detailInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
-  detailInfoLabel: { fontSize: 12, fontWeight: '500', width: 70 },
-  detailInfoValue: { fontSize: 13, fontWeight: '500' },
-  detailEditSection: { borderTopWidth: 1, paddingTop: 12, marginBottom: 16 },
-  detailSectionTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12 },
-  fieldLabel: { fontSize: 12, fontWeight: '500', marginBottom: 4, marginTop: 8 },
-  fieldPicker: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
-  fieldPickerText: { flex: 1, fontSize: 14 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  inlineStatusList: { borderWidth: 1, borderRadius: 8, marginTop: 4, overflow: 'hidden' },
-  inlineStatusOption: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, gap: 8, borderBottomWidth: StyleSheet.hairlineWidth },
-  inlineStatusText: { flex: 1, fontSize: 14, fontWeight: '500' },
-  progressInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  progressTrackLarge: { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
-  progressFillLarge: { height: '100%', borderRadius: 3 },
-  progressInput: { width: 56, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, textAlign: 'center', fontSize: 14 },
-  notesInput: { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13, minHeight: 60, textAlignVertical: 'top' },
-
-  activityNote: { borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 8 },
-  noteHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  noteUser: { fontSize: 12, fontWeight: '600' },
-  noteDate: { fontSize: 10 },
-  noteContent: { fontSize: 13 },
-  noNotesText: { fontSize: 13, textAlign: 'center', paddingVertical: 12 },
-  addNoteRow: { flexDirection: 'row', marginTop: 10, gap: 8 },
-  addNoteInput: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13 },
-  addNoteBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-
-  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
-  switchLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  switchLabel: { fontSize: 14, fontWeight: '500' },
-  stepRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
-  stepCheckbox: { padding: 2 },
-  stepName: { flex: 1, fontSize: 13, fontWeight: '500' },
-  stepCompleted: { textDecorationLine: 'line-through', opacity: 0.6 },
-  stepDeleteBtn: { padding: 4 },
-  linkedItemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
-  linkedItemName: { flex: 1, fontSize: 13, fontWeight: '500' },
   depLineH: { position: 'absolute', height: 2 },
   depLineV: { position: 'absolute', width: 2 },
   depArrow: { position: 'absolute', width: 0, height: 0, borderTopWidth: 4, borderBottomWidth: 4, borderLeftWidth: 6, borderTopColor: 'transparent', borderBottomColor: 'transparent' },
 
-  detailActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-  actionBtnText: { fontWeight: '600', fontSize: 14 },
-
-  pickerOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
-  pickerContainer: { maxHeight: '70%', borderTopLeftRadius: 16, borderTopRightRadius: 16 },
-  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
-  pickerTitle: { fontSize: 16, fontWeight: '700' },
-  pickerSectionHeader: { paddingHorizontal: 16, paddingVertical: 6 },
-  pickerSectionText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  pickerItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
-  pickerItemText: { fontSize: 14, fontWeight: '500' },
 });
 
 const S = metrics.schedule;
@@ -2067,4 +1776,27 @@ const ss = StyleSheet.create({
   calHour: { position: 'absolute', left: 0, marginTop: -space.inline },
   calDayCol: { borderLeftWidth: size.border },
   calHourLine: { position: 'absolute', left: 0, right: 0, height: size.border },
+});
+
+const fs = StyleSheet.create({
+  flex: { flex: 1 },
+  page: { flex: 1 },
+  pageHeader: { paddingHorizontal: space.screenX },
+  pageBody: { paddingHorizontal: space.screenX, paddingTop: space.inline, gap: metrics.sheet.gap },
+  group: { gap: metrics.form.labelGap },
+  dot: { width: size.statusDot, height: size.statusDot, borderRadius: size.statusDot / 2 },
+  value: { flexDirection: 'row', alignItems: 'center', gap: metrics.statusDot.gap },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: metrics.propertyRow.gap, paddingVertical: metrics.propertyRow.formPadY },
+  inlineInput: { minWidth: metrics.form.dateInputWidth, textAlign: 'right', paddingVertical: 0 },
+  pctInput: { width: metrics.form.pctInputWidth, textAlign: 'center', paddingVertical: space.inlineSm, borderWidth: size.border, borderRadius: radii.md },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, paddingVertical: metrics.listRow.padY },
+  strike: { textDecorationLine: 'line-through' },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  iconBtn: { minWidth: metrics.minHit, minHeight: metrics.minHit, alignItems: 'center', justifyContent: 'center' },
+  note: { paddingVertical: metrics.listRow.padY, gap: metrics.listRow.bodyGap },
+  noteHead: { flexDirection: 'row', alignItems: 'baseline', gap: space.inline },
+  pickList: { marginHorizontal: space.screenX },
+  pickContent: { paddingBottom: space.screenBottom },
+  pickHeader: { paddingTop: space.section, paddingBottom: space.inline, paddingHorizontal: space.inlineSm },
+  pickRow: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, minHeight: metrics.minHit + space.inline, paddingHorizontal: space.cardX, borderBottomWidth: size.border },
 });

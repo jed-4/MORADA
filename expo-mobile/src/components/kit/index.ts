@@ -25,4 +25,5 @@ export { CalendarBlock, AgendaStrip } from './CalendarBlock';
 export { GanttBar, GanttOverflow, type Trade } from './GanttBar';
 export { DayDivider, TodayMarker, NowLine } from './Markers';
 export { CommentComposer } from './CommentComposer';
+export { ModalSheet } from './ModalSheet';
 export { SheetBody, FieldLabel, FieldHint, TextField, PrimaryButton, SecondaryButton, TextButton, ButtonRow, ToggleRow } from './Form';
