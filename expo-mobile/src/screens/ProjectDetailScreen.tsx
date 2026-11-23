@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useLayoutEffect, type ReactNode } from 'react';
+import { Fragment, useState, useEffect, useCallback, useRef, useLayoutEffect, type ReactNode } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, Alert, Pressable } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -22,9 +22,10 @@ import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import { haptic } from '../lib/haptics';
 import { SkeletonList } from '../components/ui/Skeleton';
 import {
-  CaptureChip, Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, ListRow, ProgressLine, ProjectSquare,
-  PropertyRow, SectionCardHeader, SectionTile,
+  CaptureChip, Card, Checkbox, Divider, EmptyState, FAB, FAB_CLEARANCE, ListRow, ProgressLine, ProjectSquare,
+  PropertyRow, SectionCardHeader, SectionTile, StatusDot, fallbackProjectColor,
 } from '../components/kit';
+import { scheduleDot } from '../lib/scheduleStatus';
 
 interface Project {
   id: string;
@@ -70,6 +71,7 @@ interface ScheduleItem {
   endDate?: string;
   status?: string;
   parentItemId?: string;
+  progressPercent?: number | null;
 }
 
 interface ChecklistInstance {
@@ -437,7 +439,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
 
   if (!project) {
     return (
-      <View style={[styles.container, { backgroundColor: c.bg }]}>
+      <View style={[styles.container, { backgroundColor: c.bg }, embedded && { paddingTop: insets.top }]}>
         {navBar}
         <EmptyState icon={Layers} title="Project not found" helper="It may have been archived or you no longer have access." />
       </View>
@@ -451,6 +453,22 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
     .filter(Boolean)
     .join(' · ');
   const metaLine = [clientContact?.name, stage].filter(Boolean).join(' · ');
+  // Progress rides in from the Projects list; arriving any other way, work it
+  // out the server's way (mean of top-level schedule items' progress).
+  const topItems = scheduleItems.filter(i => !i.parentItemId);
+  const progress =
+    typeof listProgress === 'number'
+      ? listProgress
+      : topItems.length > 0
+        ? Math.round(topItems.reduce((sum, i) => sum + (i.progressPercent || 0), 0) / topItems.length)
+        : null;
+  const projectColor = project.color || fallbackProjectColor(project.id);
+  /** "16 Nov", or "16 – 18 Nov" style range; one date when start = end. */
+  const itemDates = (item: ScheduleItem) => {
+    const a = shortDate(item.startDate);
+    const b = item.endDate ? shortDate(item.endDate) : '';
+    return !b || b === a ? a : `${a} – ${b}`;
+  };
   const start = project.startDate ?? project.proposedStartDate;
   const finish = project.proposedEndDate ?? project.endDate;
   const phone = clientContact?.phone || clientContact?.mobile;
@@ -462,7 +480,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   ) => {
     const open = opts.id ? !collapsed[opts.id] : false;
     return (
-      <Card variant="list" style={styles.sectionCard}>
+      <Card variant="list" style={open ? styles.sectionCard : undefined}>
         <SectionCardHeader
           title={opts.title}
           count={opts.count === 0 ? undefined : opts.count}
@@ -475,6 +493,15 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
       </Card>
     );
   };
+
+  /** Rows inside an expanded checklist: a rule between each, like the card rows. */
+  const withDividers = (rows: ReactNode[]) =>
+    rows.map((row, i) => (
+      <Fragment key={i}>
+        {i > 0 ? <Divider /> : null}
+        {row}
+      </Fragment>
+    ));
 
   const subLabel = (text: string) => (
     <Text key={`sub:${text}`} style={[type.caption, styles.subLabel, { color: c.muted }]}>
@@ -516,11 +543,11 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
             </Text>
             {price ? <Text style={[type.price, tabular, { color: c.text }]}>{price}</Text> : null}
           </View>
-          {(metaLine || typeof listProgress === 'number') ? (
+          {(metaLine || typeof progress === 'number') ? (
             <View style={styles.metaBlock}>
               {metaLine ? <Text style={[type.body, { color: c.muted }]}>{metaLine}</Text> : null}
-              {typeof listProgress === 'number' ? (
-                <ProgressLine value={listProgress / 100} color={project.color} trackColor={c.hairline} />
+              {typeof progress === 'number' ? (
+                <ProgressLine value={progress / 100} color={projectColor} trackColor={c.hairline} />
               ) : null}
             </View>
           ) : null}
@@ -587,8 +614,8 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
               key={item.id}
               onPress={() => go('Schedule')}
               title={item.name}
-              subtitle={[shortDate(item.startDate), item.endDate ? shortDate(item.endDate) : null].filter(Boolean).join(' – ')}
-              trailing={item.status ? sentence(item.status) : undefined}
+              subtitle={itemDates(item)}
+              trailing={item.status ? <StatusDot status={scheduleDot(item.status)} label={sentence(item.status)} /> : undefined}
             />
           )),
           tomorrowOnlyItems.length > 0 ? subLabel('Tomorrow') : null,
@@ -597,8 +624,8 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
               key={item.id}
               onPress={() => go('Schedule')}
               title={item.name}
-              subtitle={[shortDate(item.startDate), item.endDate ? shortDate(item.endDate) : null].filter(Boolean).join(' – ')}
-              trailing={item.status ? sentence(item.status) : undefined}
+              subtitle={itemDates(item)}
+              trailing={item.status ? <StatusDot status={scheduleDot(item.status)} label={sentence(item.status)} /> : undefined}
             />
           )),
         ])}
@@ -613,7 +640,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
               <ListRow
                 key={entry.id}
                 onPress={() => go('SiteDiary')}
-                title={entry.title || 'Site diary entry'}
+                title={entry.title || (entry.entryDateTime ? `Diary · ${dayDate(entry.entryDateTime)}` : 'Diary entry')}
                 titleLines={1}
                 trailing={dayDate(entry.entryDateTime)}
               />
@@ -650,7 +677,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
                       <Text style={[type.body, styles.quietRow, { color: c.muted }]}>No items</Text>
                     ) : (
                       <View>
-                        {ungrouped.map(renderChecklistItem)}
+                        {withDividers(ungrouped.map(renderChecklistItem))}
                         {Object.entries(groups).map(([groupName, grpItems]) => {
                           const gk = `${inst.id}:${groupName}`;
                           const gCollapsed = collapsedChecklistGroups[gk];
@@ -661,7 +688,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
                                 <Text style={[type.metaSemi, { color: c.muted, flex: 1 }]} numberOfLines={1}>{groupName}</Text>
                                 <Text style={[type.meta, tabular, { color: c.muted }]}>{`${doneInGroup}/${grpItems.length}`}</Text>
                               </Pressable>
-                              {!gCollapsed && grpItems.map(renderChecklistItem)}
+                              {!gCollapsed && withDividers(grpItems.map(renderChecklistItem))}
                             </View>
                           );
                         })}

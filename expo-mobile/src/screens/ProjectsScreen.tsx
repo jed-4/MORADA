@@ -16,7 +16,7 @@ import ProjectDetailScreen from './ProjectDetailScreen';
 import { ProjectRail } from '../components/projects/ProjectRail';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { SkeletonList } from '../components/ui/Skeleton';
-import { Card, Divider, EmptyState, FilterChips, GroupHeader, ProgressLine, ProjectSquare, RootTitle } from '../components/kit';
+import { Card, Divider, EmptyState, FilterChips, GroupHeader, ProgressLine, ProjectSquare, RootTitle, fallbackProjectColor } from '../components/kit';
 
 interface Project {
   id: string;
@@ -190,7 +190,8 @@ export default function ProjectsScreen({ navigation, route }: Props) {
   const m = metrics.projects;
 
   const renderCard = (item: Project, last: boolean) => {
-    const color = item.color || null;
+    // Same colour as the square, so the progress line never reads as a different project.
+    const color = item.color || fallbackProjectColor(item.id);
     // `progress` is computed by the server from schedule item progressPercent
     // values; null when a project has no schedule. Construction cards only.
     const showProgress = groupOf(item) === 'construction' && typeof item.progress === 'number';
@@ -383,6 +384,6 @@ const styles = StyleSheet.create({
   cardBody: { flex: 1, gap: metrics.listRow.bodyGap },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: metrics.projects.cardInnerGap },
   progress: { marginTop: metrics.projects.progressTop - metrics.listRow.bodyGap },
-  empty: { minHeight: metrics.emptyState.circle * 6 },
+  empty: { minHeight: metrics.emptyState.areaMinHeight },
   retry: { alignSelf: 'center', padding: space.section, marginBottom: metrics.emptyState.padBottom },
 });

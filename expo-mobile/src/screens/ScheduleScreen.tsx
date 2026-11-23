@@ -34,6 +34,7 @@ import {
 } from '../components/kit';
 import { SkeletonList } from '../components/ui/Skeleton';
 import { useLayout } from '../lib/useLayout';
+import { scheduleDot } from '../lib/scheduleStatus';
 import { sheetFrame } from '../components/ui/Sheet';
 import type { ScrollViewInstance } from 'react-native';
 import type { JSX } from 'react';
@@ -187,23 +188,26 @@ const TYPE_LABELS: Record<string, string> = {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+/** Same rule as the bars: the first 10 characters are the calendar day, read as local midnight. */
+const localDay = (d: string) => new Date(String(d).substring(0, 10) + 'T00:00:00');
+
 function formatDateRange(start: string, end: string): string {
-  const s = new Date(start);
-  const e = new Date(end);
+  const s = localDay(start);
+  const e = localDay(end);
   const sd = s.getDate();
   const sm = MONTHS[s.getMonth()];
   const ed = e.getDate();
   const em = MONTHS[e.getMonth()];
   if (s.getFullYear() !== e.getFullYear()) {
-    return `${sd} ${sm} ${s.getFullYear()} - ${ed} ${em} ${e.getFullYear()}`;
+    return `${sd} ${sm} ${s.getFullYear()} – ${ed} ${em} ${e.getFullYear()}`;
   }
   if (s.getMonth() === e.getMonth() && sd === ed) {
     return `${sd} ${sm}`;
   }
   if (s.getMonth() === e.getMonth()) {
-    return `${sd} - ${ed} ${sm}`;
+    return `${sd} – ${ed} ${sm}`;
   }
-  return `${sd} ${sm} - ${ed} ${em}`;
+  return `${sd} ${sm} – ${ed} ${em}`;
 }
 
 function formatNoteDate(dateStr: string): string {
@@ -758,15 +762,7 @@ const colors = {
     : Object.entries(STATUS_LABELS).map(([key, label]) => ({ key, name: label, color: statusColorFor(key) || theme.textMuted }));
 
   // ── Status → dot ──────────────────────────────────────────────────────────
-  const dotFor = (status?: string | null): DotStatus => {
-    switch (status) {
-      case 'completed': return 'done';
-      case 'in_progress': return 'inProgress';
-      case 'on_hold': return 'pending';
-      case 'cancelled': return 'rejected';
-      default: return 'upcoming';
-    }
-  };
+  const dotFor = scheduleDot;
 
   const itemMeta = (item: ScheduleItem) =>
     [formatDateRange(item.startDate, item.endDate), item.assignedToName].filter(Boolean).join(' · ');
@@ -1210,10 +1206,10 @@ const colors = {
               <View style={{ flexDirection: 'row', height: gridHeight + cal.hourHeight / 2 }}>
                 <View style={ss.calGutter}>
                   {hours.map(h => (
-                    <Text key={h} style={[type.micro, ss.calHour, { top: (h - startHour) * cal.hourHeight, color: k.muted }]}>{hourLabel(h)}</Text>
+                    <Text key={h} style={[type.micro, tabular, ss.calHour, { top: (h - startHour) * cal.hourHeight, color: k.muted }]}>{hourLabel(h)}</Text>
                   ))}
                   {showNow ? (
-                    <Text style={[type.micro, ss.calHour, { top: nowY, color: k.accent, backgroundColor: k.bg }]}>{nowLabel}</Text>
+                    <Text style={[type.micro, tabular, ss.calHour, { top: nowY, color: k.accent, backgroundColor: k.bg }]}>{nowLabel}</Text>
                   ) : null}
                 </View>
                 {weekDays.map((day, i) => {
@@ -1240,7 +1236,7 @@ const colors = {
                           >
                             <CalendarBlock
                               title={it.name}
-                              time={`${shortTime(it.startTime)} – ${shortTime(it.endTime)}`}
+                              time={[shortTime(it.startTime), shortTime(it.endTime)].filter(Boolean).join(' – ')}
                               color={getItemColor(it)}
                               height={height}
                             />

@@ -16,6 +16,11 @@ export function timeAgo(value: string | Date | null | undefined): string {
   return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
 }
 
+/** Compact relative time for activity rows: "now", "3m", "2h", "5d", then "12 Nov". */
+export function compactAgo(value: string | Date | null | undefined): string {
+  return timeAgo(value).replace(/ ago$/, '').replace(/^just now$/, 'now');
+}
+
 export function getInitials(name: string | null | undefined): string {
   if (!name) return '?';
   return name

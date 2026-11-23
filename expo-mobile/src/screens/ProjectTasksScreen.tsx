@@ -28,8 +28,9 @@ import { TwoPane } from '../components/ui/TwoPane';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme, useColors, currentTheme, MAX_FONT_SCALE, metrics, space, type } from '../theme';
-import { ChevronRight, Eye, EyeOff, LayoutGrid, List, SquareCheck } from 'lucide-react-native';
+import { useTheme, useColors, currentTheme, MAX_FONT_SCALE, metrics, space, tabular, type } from '../theme';
+import { ChevronDown, ChevronRight, Eye, EyeOff, LayoutGrid, List, SquareCheck } from 'lucide-react-native';
+import { usePersistedState } from '../lib/usePersistedState';
 import { Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, GroupHeader, ListRow, TasksHeader } from '../components/kit';
 import { SkeletonList } from '../components/ui/Skeleton';
 import { getInitials } from '../lib/format';
@@ -133,7 +134,7 @@ const colors = {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [collapsedSections, setCollapsedSections] = usePersistedState<Record<string, boolean>>(`projectTasks.collapsed.${projectId}`, {});
 
   // View / edit modal
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -150,7 +151,7 @@ const colors = {
   const [showPriorityPicker, setShowPriorityPicker] = useState(false);
 
   // Filter
-  const [hideDone, setHideDone] = useState(true);
+  const [hideDone, setHideDone] = usePersistedState<boolean>('projectTasks.hideDone', true);
   // Groups with no tasks fold into one "Show empty groups" line.
   const [showEmptyGroups, setShowEmptyGroups] = useState(false);
 
@@ -264,7 +265,7 @@ const colors = {
   };
 
   const toggleSection = (key: string) => {
-    setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
+    setCollapsedSections({ ...collapsedSections, [key]: !collapsedSections[key] });
   };
 
   const handleToggleDone = async (task: Task) => {
@@ -574,7 +575,7 @@ const colors = {
   // change on fold/unfold, so the board's scroll views stay mounted.
   const columnWidth = isWide
     ? Math.floor((screenWidth - 2 * space.screenX - 2 * space.rowGap) / 3)
-    : Math.max(screenWidth * 0.68, 240);
+    : Math.max(screenWidth * metrics.projectTasks.boardColumnShare, metrics.projectTasks.boardColumnMin);
 
   const renderDeleteButton = (task: Task) => (
     <TouchableOpacity
@@ -635,7 +636,7 @@ const colors = {
             {
               icon: hideDone ? EyeOff : Eye,
               label: hideDone ? 'Show done tasks' : 'Hide done tasks',
-              onPress: () => setHideDone(v => !v),
+              onPress: () => setHideDone(!hideDone),
             },
             {
               icon: viewMode === 'list' ? LayoutGrid : List,
@@ -653,7 +654,7 @@ const colors = {
         <TwoPane
           {...paneProps}
           // Slimmer list than the default 360 so the open task gets the room (Jed, 11-21).
-          listWidth={300}
+          listWidth={metrics.projectTasks.listPaneWidth}
           emptyTitle="Select a task"
           emptyIcon="checkbox-outline"
           detail={paneTask ? (
@@ -684,6 +685,9 @@ const colors = {
             </View>
           ) : (
             <>
+              {hideDone && groupedTasks.every(g => g.tasks.length === 0) ? (
+                <Text style={[type.body, { color: k.muted }]}>All tasks done. Tap the eye to show them.</Text>
+              ) : null}
               {groupedTasks
                 .filter(group => group.tasks.length > 0 || showEmptyGroups)
                 .map(group => {
@@ -721,7 +725,11 @@ const colors = {
                       {emptyGroupNames.join(', ')}
                     </Text>
                   ) : null}
-                  <ChevronRight size={metrics.projectTasks.emptyGroupsIcon} color={k.muted} strokeWidth={metrics.iconStroke} />
+                  {showEmptyGroups ? (
+                    <ChevronDown size={metrics.projectTasks.emptyGroupsIcon} color={k.muted} strokeWidth={metrics.iconStroke} />
+                  ) : (
+                    <ChevronRight size={metrics.projectTasks.emptyGroupsIcon} color={k.muted} strokeWidth={metrics.iconStroke} />
+                  )}
                 </Pressable>
               ) : null}
             </>
@@ -740,7 +748,11 @@ const colors = {
         >
           {groupedTasks.map(group => (
             <View key={group.key} style={[ks.boardColumn, { width: columnWidth }]}>
-              <GroupHeader title={group.label} meta={group.tasks.length} open onToggle={() => {}} />
+              {/* Board columns don't fold, so a plain title + count (no caret). */}
+              <View style={ks.boardHead}>
+                <Text style={[type.rowTitle, { color: k.text, flexShrink: 1 }]} numberOfLines={1}>{group.label}</Text>
+                <Text style={[type.meta, tabular, { color: k.muted }]}>{group.tasks.length}</Text>
+              </View>
               {group.tasks.length === 0 ? (
                 <Text style={[type.meta, { color: k.muted }]}>No tasks</Text>
               ) : (
@@ -1326,8 +1338,9 @@ const ks = StyleSheet.create({
   // Circle sits 1dp lower so it lines up with the first line of the title.
   circle: { paddingTop: pt.circleOffset },
   emptyGroups: { flexDirection: 'row', alignItems: 'center', gap: space.inline, paddingVertical: space.inlineSm },
-  empty: { minHeight: metrics.emptyState.circle * 6 },
+  empty: { minHeight: metrics.emptyState.areaMinHeight },
   board: { paddingHorizontal: space.screenX, paddingTop: pt.listTop, gap: space.rowGap },
   boardColumn: { gap: 0 },
+  boardHead: { flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.gap, minHeight: metrics.groupHeader.height, marginBottom: space.groupHeaderToCard },
   boardCards: { gap: pt.boardCardGap },
 });

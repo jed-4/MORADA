@@ -28,20 +28,20 @@ import { useToast } from '../components/ui/Toast';
 import { Skeleton, SkeletonRow } from '../components/ui/Skeleton';
 import { haptic } from '../lib/haptics';
 import { useLayout } from '../lib/useLayout';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePersistedState } from '../lib/usePersistedState';
 import { compareProjects } from '../lib/projects';
 import { SuggestionSheet } from '../components/more/SuggestionSheet';
 import { QuickCaptureRow } from '../components/home/QuickCaptureRow';
 import { clockedOutOnThisPhone } from '../services/liveActivity';
 import { refreshWidgetSnapshot } from '../services/widgetSnapshot';
-import { getInitials, timeAgo } from '../lib/format';
+import { getInitials, timeAgo, compactAgo } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useTheme, useColors, fontSize, fontWeight, radius, projectColors, metrics, radii, size, space, tabular, type, fonts } from '../theme';
 import {
   Activity, AtSign, Bell, Building, ChevronDown, ChevronRight, CircleCheck, Clock, Folder, Lightbulb, LogOut, Settings,
 } from 'lucide-react-native';
-import { Avatar, Card, Checkbox, Divider, ListRow, UnreadBadge } from '../components/kit';
+import { Avatar, Card, Checkbox, Divider, ListRow, UnreadBadge, fallbackProjectColor } from '../components/kit';
 import { AgendaRow, EmptyLine, MoreRow, ProjectLineRow, Rows, SubLabel, WorkspaceSection } from '../components/home/WorkspaceSections';
 
 interface Project {
@@ -251,8 +251,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const [breakMinutes, setBreakMinutes] = useState(0);
   const clockTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [, setTick] = useState(0);
-  const [completedExpanded, setCompletedExpanded] = useState(false);
-  const [activityCollapsed, setActivityCollapsed] = useState(false);
+  const [completedExpanded, setCompletedExpanded] = usePersistedState<boolean>('workspace.completedExpanded', false);
   // Mirror the Projects list: never show archived or business projects in the
   // Workspace project row (the dashboard endpoint returns them unfiltered).
   const sortedProjects = useMemo(
@@ -268,20 +267,6 @@ export default function DashboardScreen({ navigation }: Props) {
   const [scheduleStatusOptions, setScheduleStatusOptions] = useState<{ key: string; name: string; color: string }[]>([]);
   const [phaseLabels, setPhaseLabels] = useState<Record<string, string>>({});
   const [subStatusLabels, setSubStatusLabels] = useState<Record<string, string>>({});
-
-  // Collapsed state for Recent Activity persists across sessions.
-  useEffect(() => {
-    AsyncStorage.getItem('@morada_home_activity_collapsed')
-      .then((v) => { if (v === '1') setActivityCollapsed(true); })
-      .catch(() => {});
-  }, []);
-  const toggleActivityCollapsed = () => {
-    haptic.select();
-    setActivityCollapsed((prev) => {
-      AsyncStorage.setItem('@morada_home_activity_collapsed', prev ? '0' : '1').catch(() => {});
-      return !prev;
-    });
-  };
 
   const clockOutSheetRef = useRef<SheetRef>(null);
   const suggestionSheetRef = useRef<SheetRef>(null);
@@ -527,24 +512,24 @@ export default function DashboardScreen({ navigation }: Props) {
   const incompleteTasks = todayTasks.filter(t => !isComplete(t.status));
   const completedTasks = todayTasks.filter(t => isComplete(t.status));
 
-  const getProjectName = (pid?: string) => {
+  const getProjectName = (pid?: string, known?: string | null) => {
     if (!pid) return 'No project';
     const p = projects.find(pr => pr.id === pid);
-    if (!p) return 'Unknown';
+    if (!p) return known || 'Project';
     return p.projectNumber ? `${p.projectNumber} - ${p.name}` : p.name;
   };
 
   const getCostCodeLabel = (ccId: string) => {
     const cc = costCodes.find(c => c.id === ccId);
-    return cc ? `${cc.code} - ${cc.title}` : 'Unknown';
+    return cc ? `${cc.code} - ${cc.title}` : null;
   };
 
   const getProjectColor = (projectId?: string): string => {
-    const fallback = companySettings?.brandColor || projectColors[0];
-    if (!projectId) return fallback;
+    // Same fallback as Projects and Project detail, so a project without a
+    // colour gets one consistent square everywhere.
+    if (!projectId) return companySettings?.brandColor || projectColors[0];
     const project = projects.find(p => p.id === projectId);
-    if (project?.color) return project.color;
-    return fallback;
+    return project?.color || fallbackProjectColor(projectId);
   };
 
   const now = new Date();
@@ -774,7 +759,7 @@ export default function DashboardScreen({ navigation }: Props) {
                   {completedTasks.length > 0 ? (
                     <Pressable
                       key="__completed"
-                      onPress={() => { haptic.select(); setCompletedExpanded(v => !v); }}
+                      onPress={() => { haptic.select(); setCompletedExpanded(!completedExpanded); }}
                       accessibilityRole="button"
                       accessibilityState={{ expanded: completedExpanded }}
                       style={styles.completedToggle}
@@ -810,7 +795,7 @@ export default function DashboardScreen({ navigation }: Props) {
           </Animated.View>
 
           {/* Projects: pinned first, capped at 5 */}
-          {workspaceProjects.length > 0 && (
+          {(
             <Animated.View entering={FadeInDown.duration(300).delay(120)} style={[styles.section, halfW]}>
               <WorkspaceSection
                 id="projects"
@@ -819,6 +804,9 @@ export default function DashboardScreen({ navigation }: Props) {
                 count={workspaceProjects.length}
                 onOpen={() => tabNav.navigate('Projects')}
               >
+                {workspaceProjects.length === 0 ? (
+                  <EmptyLine>No projects yet</EmptyLine>
+                ) : (
                 <Rows>
                   {workspaceProjects.slice(0, ws.maxProjects).map(p => (
                     <ProjectLineRow
@@ -838,6 +826,7 @@ export default function DashboardScreen({ navigation }: Props) {
                     <MoreRow key="__more" count={workspaceProjects.length - ws.maxProjects} onPress={() => tabNav.navigate('Projects')} />
                   ) : null}
                 </Rows>
+                )}
               </WorkspaceSection>
             </Animated.View>
           )}
@@ -862,7 +851,7 @@ export default function DashboardScreen({ navigation }: Props) {
                       <AgendaRow
                         key={ts.id}
                         color={getProjectColor(ts.projectId)}
-                        title={getProjectName(ts.projectId)}
+                        title={getProjectName(ts.projectId, ts.projectName)}
                         meta={[ccId ? getCostCodeLabel(ccId) : null, formatDateLabel(ts.date)].filter(Boolean).join(' · ')}
                         right={Number.isFinite(hours) ? `${hours.toFixed(1)}h` : null}
                         rightStrong
@@ -898,7 +887,7 @@ export default function DashboardScreen({ navigation }: Props) {
                           <Text style={{ fontFamily: fonts.semibold }}>{userName}</Text>
                           {` ${activity.description}`}
                         </Text>
-                        <Text style={[type.meta, tabular, { color: c.mutedStrong }]}>{timeAgo(activity.createdAt)}</Text>
+                        <Text style={[type.meta, tabular, { color: c.mutedStrong }]}>{compactAgo(activity.createdAt)}</Text>
                       </View>
                     );
                   })}

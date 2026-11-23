@@ -93,7 +93,6 @@ export default function ScopeScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set());
   // Which categories are folded, remembered per project (GOTCHAS #15).
   const [collapsedIds, setCollapsedIds] = usePersistedState<string[]>(`scope.collapsed.${projectId}`, []);
   const [showAllLines, setShowAllLines] = useState<Set<string>>(new Set());
@@ -217,11 +216,10 @@ export default function ScopeScreen({ navigation, route }: Props) {
       )
     );
     // Collapse the stage when marking complete, expand when uncompleting
+    const prevCollapsed = collapsedIds;
     if (newVal) {
-      setCollapsedStages(prev => new Set([...prev, stage.id]));
       if (!collapsedIds.includes(stage.id)) setCollapsedIds([...collapsedIds, stage.id]);
     } else {
-      setCollapsedStages(prev => { const next = new Set(prev); next.delete(stage.id); return next; });
       setCollapsedIds(collapsedIds.filter(x => x !== stage.id));
     }
     try {
@@ -237,12 +235,8 @@ export default function ScopeScreen({ navigation, route }: Props) {
           item.stage === stage.name ? { ...item, isCompleted: !newVal } : item
         )
       );
-      // Rollback collapse state
-      if (newVal) {
-        setCollapsedStages(prev => { const next = new Set(prev); next.delete(stage.id); return next; });
-      } else {
-        setCollapsedStages(prev => new Set([...prev, stage.id]));
-      }
+      // Roll the fold back too.
+      setCollapsedIds(prevCollapsed);
       Alert.alert('Error', err?.message || 'Failed to update stage.');
     }
   };
@@ -296,7 +290,7 @@ export default function ScopeScreen({ navigation, route }: Props) {
     <View style={sx.top}>
       <PageHeader
         title="Scope"
-        project={{ name: projectName ?? '', color: projectColor ?? null, id: projectId }}
+        project={projectName ? { name: projectName, color: projectColor ?? null, id: projectId } : null}
         onBack={() => navigation.goBack()}
         actions={[
           { icon: searchVisible ? X : Search, label: searchVisible ? 'Close search' : 'Search scope', onPress: () => { if (searchVisible) setSearch(''); setSearchVisible(v => !v); } },
@@ -329,7 +323,7 @@ export default function ScopeScreen({ navigation, route }: Props) {
   if (loading) {
     return (
       <View style={[sx.container, { backgroundColor: k.bg, paddingTop: insets.top + metrics.schedule.top }]}>
-        <View style={sx.topPad}><PageHeader title="Scope" project={{ name: projectName ?? '', color: projectColor ?? null, id: projectId }} onBack={() => navigation.goBack()} /></View>
+        <View style={sx.topPad}><PageHeader title="Scope" project={projectName ? { name: projectName, color: projectColor ?? null, id: projectId } : null} onBack={() => navigation.goBack()} /></View>
         <SkeletonList />
       </View>
     );
@@ -369,7 +363,7 @@ export default function ScopeScreen({ navigation, route }: Props) {
             </Text>
             <View style={sx.typeRow}>
               <View style={[sx.typeDot, { backgroundColor: dotColor }]} />
-              <Text style={[type.caption, { color: k.muted }]}>{typeKey.charAt(0).toUpperCase() + typeKey.slice(1)}</Text>
+              <Text style={[type.caption, { color: k.muted }]}>{(typeKey.charAt(0).toUpperCase() + typeKey.slice(1)).replace(/_/g, ' ')}</Text>
             </View>
           </View>
           {hasDetail ? <Chevron size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} /> : null}
@@ -427,11 +421,13 @@ export default function ScopeScreen({ navigation, route }: Props) {
       collapsedRun = [];
     }
   };
-  const searching = !!q || hideDone;
+  const searching = !!q;
+  const filtering = searching || hideDone;
   sectionData.forEach(sct => {
     const shown = sct.items.filter(matches);
-    if (searching && shown.length === 0) return;
-    // While searching, every matching category is open.
+    if (filtering && shown.length === 0) return;
+    // While searching, every matching category is open; hiding done items
+    // keeps the folds you chose.
     const collapsed = !searching && collapsedIds.includes(sct.stage.id);
     const meta = `${sct.completedCount}/${sct.allItemCount}`;
     if (collapsed) {
@@ -523,5 +519,5 @@ const sx = StyleSheet.create({
   bullet: { width: sp.bullet, height: sp.bullet, borderRadius: sp.bullet / 2, marginTop: (type.bodyRead.lineHeight - sp.bullet) / 2 },
   subList: { gap: sp.bulletGap, paddingTop: space.inlineSm },
   subRow: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap - space.inlineSm },
-  empty: { minHeight: metrics.emptyState.circle * 6 },
+  empty: { minHeight: metrics.emptyState.areaMinHeight },
 });

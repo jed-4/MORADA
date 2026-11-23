@@ -116,15 +116,16 @@ export function PageHeader({
 export function TasksHeader({ title, project, onBack, actions }: { title: string; project?: HeaderProject | null; onBack?: () => void; actions?: HeaderAction[] }) {
   const c = useColors();
   return (
-    <View style={{ gap: metrics.pageHeader.gap }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: metrics.pageHeader.gap }}>
-        <Back onBack={onBack} iconSize={metrics.pageHeader.backTasks} />
-        <Text accessibilityRole="header" numberOfLines={2} style={[type.title, { color: c.text, flex: 1 }]}>
+    // back · column (title / project) · actions
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: metrics.pageHeader.gap }}>
+      <Back onBack={onBack} iconSize={metrics.pageHeader.backTasks} />
+      <View style={{ flex: 1, gap: metrics.pageHeader.tasksTitleGap }}>
+        <Text accessibilityRole="header" numberOfLines={2} style={[type.title, { color: c.text }]}>
           {title}
         </Text>
-        <Actions actions={actions} iconSize={size.icon.header} />
+        {project ? <ProjectLine project={project} square="taskHeader" textStyle={type.meta} /> : null}
       </View>
-      {project ? <ProjectLine project={project} square="taskHeader" textStyle={type.meta} /> : null}
+      <Actions actions={actions} iconSize={size.icon.header} />
     </View>
   );
 }

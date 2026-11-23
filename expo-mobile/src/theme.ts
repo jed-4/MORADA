@@ -472,7 +472,7 @@ export const metrics = {
     radius: { header: 3, taskHeader: 3, row: 4, rail: 4, card: 5 },
     opacity: 0.9,
   },
-  pageHeader: { height: 28, padY: 2, gap: 4, projectPadLeft: 8, projectGap: 6, actionGap: 18, back: 22, backTasks: 24, rootAction: 22 },
+  pageHeader: { height: 28, padY: 2, gap: 4, tasksTitleGap: 3, projectPadLeft: 8, projectGap: 6, actionGap: 18, back: 22, backTasks: 24, rootAction: 22 },
   sheetHeader: { height: 44, sideWidth: 70 },
   underlineTabs: { height: 27, gap: 20, underlineGap: 7, navGap: 14, navIcon: 16 },
   segmented: { height: 32, pad: 2, gap: 2, segPadY: 5, segPadX: 12 },
@@ -499,7 +499,7 @@ export const metrics = {
     profile: { size: 40, font: 16 },
   },
   badge: { height: 18, padX: 6 },
-  emptyState: { gap: 10, padBottom: 80, circle: 56, icon: 26, maxWidth: 250 },
+  emptyState: { gap: 10, padBottom: 80, circle: 56, icon: 26, maxWidth: 250, areaMinHeight: 336 },
   sheet: { grabberWidth: 36, grabberHeight: 5, grabberTop: 8, padX: 16, padBottom: 34, gap: 14 },
   actionBar: { padY: 10, padX: 16, buttonHeight: 39, primaryWidth: 140, primaryHeight: 40, icon: 16, gap: 12, savePadLeft: 20 },
   thumb: { fallbackIcon: 18, diary: 80 },
@@ -569,6 +569,11 @@ export const metrics = {
     circleOffset: 1,
     emptyGroupsIcon: 14,
     boardCardGap: 8,
+    /** Phone board: a column is this share of the screen so the next one peeks in. */
+    boardColumnShare: 0.68,
+    boardColumnMin: 240,
+    /** Duo list pane, slimmer than the TwoPane default so the task gets the room (Jed, 11-21). */
+    listPaneWidth: 300,
   },
   schedule: {
     top: 4,
