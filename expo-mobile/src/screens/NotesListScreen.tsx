@@ -1,25 +1,26 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useLayoutEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
+  ScrollView,
   useColorScheme,
-  SafeAreaView,
   FlatList,
   ActivityIndicator,
   Alert,
   RefreshControl,
   TextInput,
-  Modal,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CloudOff, Ellipsis, FileText, Pin, Search, X } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest, apiFetch, ApiError } from '../services/api';
-import { timeAgo } from '../lib/format';
+import { compactAgo } from '../lib/format';
 
-import { useTheme, MAX_FONT_SCALE } from '../theme';
+import { useTheme, useColors, metrics, radii, size, space, tabular, type } from '../theme';
+import { Card, EmptyState, FAB, FAB_CLEARANCE, ListRow, ModalSheet, PageHeader, Segmented, TextButton } from '../components/kit';
 import { SwipeRow } from '../components/ui/SwipeRow';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { haptic } from '../lib/haptics';
@@ -74,9 +75,10 @@ function SwipeableNoteRow({
   onTogglePin: () => void;
   onArchive: () => void;
 }) {
+  const c = useColors();
   return (
     <SwipeRow
-      containerStyle={[styles.swipeContainer, { borderBottomColor: colors.border }]}
+      containerStyle={styles.swipe}
       left={{
         label: note.pinned ? 'Unpin' : 'Pin',
         icon: note.pinned ? 'pin-outline' : 'pin',
@@ -92,42 +94,30 @@ function SwipeableNoteRow({
         onAction: onArchive,
       }}
     >
-      <View style={[styles.noteRowAnimated, { backgroundColor: colors.bg }]}>
-        <TouchableOpacity
-          style={styles.noteRow}
-          activeOpacity={0.6}
-          onPress={onPress}
-          onLongPress={onLongPress}
-        >
-          <View style={styles.noteContent}>
-            <View style={styles.noteTitleRow}>
-              {note.pinned && (
-                <Ionicons name="pin" size={14} color={colors.accent} style={styles.pinIcon} />
-              )}
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteTitle, { color: colors.text }]} numberOfLines={1}>
-                {note.title || 'Untitled'}
-              </Text>
-            </View>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.notePreview, { color: colors.secondary }]} numberOfLines={1}>
-              {getPreviewText(note) || 'No content'}
+      <Pressable
+        style={({ pressed }) => [styles.row, { backgroundColor: c.surface, opacity: pressed ? metrics.pressedOpacity : 1 }]}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={metrics.longPressMs}
+        accessibilityRole="button"
+        accessibilityLabel={note.title || 'Untitled'}
+      >
+        <View style={styles.rowBody}>
+          <View style={styles.rowTop}>
+            {note.pinned ? <Pin size={size.icon.meta} color={c.muted} strokeWidth={metrics.iconStroke} /> : null}
+            <Text style={[type.rowTitle, styles.flex, { color: c.text }]} numberOfLines={2}>
+              {note.title || 'Untitled'}
             </Text>
+            <Text style={[type.caption, tabular, { color: c.muted }]}>{compactAgo(note.updatedAt)}</Text>
           </View>
-          <View style={styles.noteMeta}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteTime, { color: colors.placeholder }]}>
-              {timeAgo(note.updatedAt)}
-            </Text>
-            <TouchableOpacity
-              onPress={onLongPress}
-              // 18pt icon + 13 each side = 44pt.
-              hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }}
-              accessibilityRole="button"
-              accessibilityLabel="Note actions"
-            >
-              <Ionicons name="ellipsis-horizontal" size={18} color={colors.placeholder} />
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </View>
+          <Text style={[type.meta, { color: c.muted }]} numberOfLines={1}>
+            {getPreviewText(note) || 'No content'}
+          </Text>
+        </View>
+        <Pressable onPress={onLongPress} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Note actions">
+          <Ellipsis size={size.icon.row} color={c.muted} strokeWidth={metrics.iconStroke} />
+        </Pressable>
+      </Pressable>
     </SwipeRow>
   );
 }
@@ -161,18 +151,21 @@ export default function NotesListScreen({ navigation, route }: Props) {
   const [templateFetchError, setTemplateFetchError] = useState(false);
 
   const theme = useTheme();
-const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    inputBg: theme.card,
-    placeholder: theme.textMuted,
-    danger: theme.statusDanger,
-    archive: theme.statusWarning,
-};
+  const k = useColors();
+  const insets = useSafeAreaInsets();
+  // Swipe action colours (SwipeRow) and the few inline colours left.
+  const colors = {
+    bg: k.bg,
+    card: k.surface,
+    text: k.text,
+    secondary: k.muted,
+    border: k.border,
+    accent: k.accent,
+    inputBg: k.surface,
+    placeholder: k.faint,
+    danger: k.danger,
+    archive: k.status.pendingText,
+  };
 
   const fetchNotes = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -284,22 +277,10 @@ const colors = {
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      navigation.setOptions({
-        title: isProjectScoped ? `${projectName || 'Project'} · Notes` : 'Notes',
-        headerRight: () => (
-          <TouchableOpacity onPress={handlePlusTap} style={{ paddingRight: 8 }} disabled={creating}>
-            {creating ? (
-              <ActivityIndicator size="small" color={colors.accent} />
-            ) : (
-              <Ionicons name="add-circle" size={26} color={colors.accent} />
-            )}
-          </TouchableOpacity>
-        ),
-      });
-    }, [navigation, creating, colors.accent, isProjectScoped, projectName])
-  );
+  // One-row page header + FAB instead of the stack header's +.
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
 
   const filteredNotes = search.trim()
     ? notes.filter(
@@ -429,21 +410,16 @@ const colors = {
     />
   );
 
-  const renderSectionHeader = (title: string) => (
-    <View style={[styles.sectionHeader, { borderBottomColor: colors.border }]}>
-      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.secondary }]}>{title}</Text>
-    </View>
-  );
 
   const projectNameFor = (id?: string | null): string => {
     if (!id) return 'No project';
     return projects.find((p) => p.id === id)?.name || 'Project';
   };
 
-  const allItems: { type: 'header' | 'note'; data?: NoteItem; title?: string }[] = [];
+  // Sections: Pinned / Notes, or one per project in the grouped view.
+  const sections: { title: string | null; notes: NoteItem[] }[] = [];
   if (groupedView) {
-    // Group by project (headers = project names). filteredNotes is already
-    // pinned-first / recency sorted, so each group inherits that order.
+    // filteredNotes is already pinned-first / recency sorted, so each group inherits that order.
     const groups = new Map<string, NoteItem[]>();
     filteredNotes.forEach((n) => {
       const key = n.projectId || '__none__';
@@ -457,316 +433,143 @@ const colors = {
         if (b === '__none__') return -1;
         return projectNameFor(a).localeCompare(projectNameFor(b));
       })
-      .forEach(([key, groupNotes]) => {
-        allItems.push({ type: 'header', title: projectNameFor(key === '__none__' ? null : key) });
-        groupNotes.forEach((n) => allItems.push({ type: 'note', data: n }));
-      });
+      .forEach(([key, groupNotes]) => sections.push({ title: projectNameFor(key === '__none__' ? null : key), notes: groupNotes }));
   } else {
-    if (pinnedNotes.length > 0) {
-      allItems.push({ type: 'header', title: 'Pinned' });
-      pinnedNotes.forEach((n) => allItems.push({ type: 'note', data: n }));
-    }
-    if (unpinnedNotes.length > 0) {
-      if (pinnedNotes.length > 0) {
-        allItems.push({ type: 'header', title: 'Notes' });
-      }
-      unpinnedNotes.forEach((n) => allItems.push({ type: 'note', data: n }));
-    }
+    if (pinnedNotes.length > 0) sections.push({ title: 'Pinned', notes: pinnedNotes });
+    if (unpinnedNotes.length > 0) sections.push({ title: pinnedNotes.length > 0 ? 'Notes' : null, notes: unpinnedNotes });
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
-      {!isProjectScoped && (
-        <View style={styles.segmentContainer}>
-          <View style={[styles.segment, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {(['my', 'project'] as const).map((key) => {
-              const active = tab === key;
-              return (
-                <TouchableOpacity
-                  key={key}
-                  style={[styles.segmentBtn, active && { backgroundColor: colors.accent }]}
-                  onPress={() => setTab(key)}
-                  activeOpacity={0.8}
-                >
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-                    style={[
-                      styles.segmentText,
-                      { color: active ? '#fff' : colors.secondary },
-                    ]}
-                  >
-                    {key === 'my' ? 'My Notes' : 'Project Notes'}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
-      <View style={styles.searchContainer}>
-        <View style={[styles.searchBar, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-          <Ionicons name="search" size={18} color={colors.placeholder} />
+    <View style={[styles.container, { backgroundColor: k.bg }]}>
+      <View style={[styles.top, { paddingTop: insets.top + metrics.schedule.top }]}>
+        <PageHeader
+          title="Notes"
+          project={isProjectScoped ? { name: projectName || 'Project', color: route?.params?.projectColor ?? null, id: projectId } : null}
+          onBack={() => navigation.goBack()}
+        />
+        {!isProjectScoped ? (
+          <Segmented
+            options={[{ key: 'my', label: 'My notes' }, { key: 'project', label: 'Project notes' }]}
+            value={tab}
+            onChange={(v) => setTab(v as 'my' | 'project')}
+          />
+        ) : null}
+        <View style={[styles.search, { backgroundColor: k.surface, borderColor: k.border }]}>
+          <Search size={metrics.projects.searchIcon} color={k.muted} strokeWidth={metrics.iconStroke} />
           <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search notes..."
-            placeholderTextColor={colors.placeholder}
+            style={[type.body, styles.searchInput, { color: k.text }]}
+            placeholder="Search notes"
+            placeholderTextColor={k.faint}
             value={search}
             autoCapitalize="none"
             autoCorrect={false}
-            clearButtonMode="never"
             onChangeText={setSearch}
             returnKeyType="search"
           />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }} accessibilityLabel="Clear search">
-              <Ionicons name="close-circle" size={18} color={colors.placeholder} />
-            </TouchableOpacity>
-          )}
+          {search.length > 0 ? (
+            <Pressable onPress={() => setSearch('')} hitSlop={metrics.hitSlop} accessibilityLabel="Clear search">
+              <X size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
       {loading ? (
         <SkeletonList />
       ) : fetchError && notes.length === 0 ? (
-        <View style={styles.centerContainer}>
-          <Ionicons name="cloud-offline-outline" size={56} color={colors.placeholder} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>Couldn't load notes</Text>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySubtitle, { color: colors.secondary }]}>
-            Check your connection and try again.
-          </Text>
-          <TouchableOpacity onPress={() => fetchNotes()} style={{ marginTop: 12 }}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Retry</Text>
-          </TouchableOpacity>
+        <View style={styles.center}>
+          <EmptyState icon={CloudOff} title="Couldn't load notes" helper="Check your connection and try again." />
+          <TextButton label="Retry" center onPress={() => fetchNotes()} />
         </View>
-      ) : allItems.length === 0 ? (
-        <View style={styles.centerContainer}>
-          <Ionicons name="document-text-outline" size={56} color={colors.placeholder} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>
-            {search ? 'No matching notes' : 'No notes yet'}
-          </Text>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySubtitle, { color: colors.secondary }]}>
-            {search ? 'Try a different search term' : 'Tap + to create your first note'}
-          </Text>
+      ) : sections.length === 0 ? (
+        <View style={styles.center}>
+          <EmptyState
+            icon={FileText}
+            title={search ? 'No matching notes' : 'No notes yet'}
+            helper={search ? 'Try a different search.' : 'Tap + to write your first note.'}
+          />
         </View>
       ) : (
         <FlatList
-          data={allItems}
-          keyExtractor={(item, index) =>
-            item.type === 'note' ? item.data!.id : `header-${index}`
-          }
-          renderItem={({ item }) =>
-            item.type === 'header'
-              ? renderSectionHeader(item.title!)
-              : renderNoteItem({ item: item.data! })
-          }
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => fetchNotes(true)} tintColor={colors.accent} />
-          }
-          contentContainerStyle={[styles.listContent, readableFrame]}
+          data={sections}
+          keyExtractor={(sct, i) => `${sct.title ?? 'all'}-${i}`}
+          renderItem={({ item: sct }) => (
+            <View style={styles.section}>
+              {sct.title ? <Text style={[type.meta, { color: k.muted }]}>{sct.title}</Text> : null}
+              <Card variant="list">
+                {sct.notes.map((n) => <View key={n.id}>{renderNoteItem({ item: n })}</View>)}
+              </Card>
+            </View>
+          )}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchNotes(true)} tintColor={k.accent} />}
+          contentContainerStyle={[styles.list, { paddingBottom: space.screenBottom + FAB_CLEARANCE + insets.bottom }, readableFrame]}
         />
       )}
 
-      <Modal
+      {creating ? null : <FAB onPress={handlePlusTap} label="New note" />}
+
+      <ModalSheet
         visible={templateModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
         onRequestClose={() => setTemplateModalVisible(false)}
+        title="Choose a template"
+        onCancel={() => setTemplateModalVisible(false)}
+        fill
       >
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
-          <View style={[styles.templateHeader, { borderBottomColor: colors.border }]}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.templateTitle, { color: colors.text }]}>Choose Template</Text>
-            <TouchableOpacity onPress={() => setTemplateModalVisible(false)}>
-              <Ionicons name="close" size={24} color={colors.secondary} />
-            </TouchableOpacity>
+        {loadingTemplates ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={k.accent} />
           </View>
-          {loadingTemplates ? (
-            <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color={colors.accent} />
-            </View>
-          ) : templates.length === 0 ? (
-            <View style={styles.centerContainer}>
-              <Ionicons name={templateFetchError ? 'cloud-offline-outline' : 'document-text-outline'} size={48} color={colors.placeholder} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>
-                {templateFetchError ? 'Failed to load templates' : 'No templates'}
-              </Text>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptySubtitle, { color: colors.secondary }]}>
-                {templateFetchError ? 'Check your connection and try again.' : 'Create templates on the web to use them here.'}
-              </Text>
-              {templateFetchError && (
-                <TouchableOpacity onPress={openTemplatePicker} style={{ marginTop: 12 }}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Retry</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ) : (
-            <FlatList
-              data={templates}
-              keyExtractor={(t) => t.id}
-              contentContainerStyle={{ paddingBottom: 40 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.templateRow, { borderBottomColor: colors.border }]}
-                  onPress={() => handleCreateFromTemplate(item)}
-                >
-                  <Ionicons name="document-text" size={22} color={colors.accent} style={{ marginRight: 12 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.templateName, { color: colors.text }]}>{item.name}</Text>
-                    {item.description ? (
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.templateDesc, { color: colors.secondary }]} numberOfLines={1}>
-                        {item.description}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={colors.secondary} />
-                </TouchableOpacity>
-              )}
+        ) : templates.length === 0 ? (
+          <View style={styles.center}>
+            <EmptyState
+              icon={templateFetchError ? CloudOff : FileText}
+              title={templateFetchError ? "Couldn't load templates" : 'No templates'}
+              helper={templateFetchError ? 'Check your connection and try again.' : 'Create templates on the web to use them here.'}
             />
-          )}
-        </SafeAreaView>
-      </Modal>
-    </SafeAreaView>
+            {templateFetchError ? <TextButton label="Retry" center onPress={openTemplatePicker} /> : null}
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.templateList}>
+            <Card variant="list">
+              {templates.map((t) => (
+                <ListRow
+                  key={t.id}
+                  lead={<FileText size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />}
+                  title={t.name}
+                  subtitle={t.description || undefined}
+                  chevron
+                  onPress={() => handleCreateFromTemplate(t)}
+                />
+              ))}
+            </Card>
+          </ScrollView>
+        )}
+      </ModalSheet>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  segmentContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-  },
-  segment: {
-    flexDirection: 'row',
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 3,
-    gap: 3,
-  },
-  segmentBtn: {
-    flex: 1,
-    paddingVertical: 7,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segmentText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  searchContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  searchBar: {
+  container: { flex: 1 },
+  flex: { flex: 1 },
+  top: { paddingHorizontal: space.screenX, gap: metrics.sheet.gap - 2, paddingBottom: space.inline },
+  search: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    height: 40,
-    gap: 8,
+    gap: space.inline,
+    minHeight: metrics.projects.searchHeight,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+    paddingHorizontal: metrics.projects.cardPad,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    height: 40,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-    gap: 8,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 12,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  listContent: {
-    paddingBottom: 40,
-  },
-  sectionHeader: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  swipeContainer: {
-    overflow: 'hidden',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  noteRowAnimated: {
-    width: '100%',
-  },
-  noteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-  },
-  noteContent: {
-    flex: 1,
-    marginRight: 12,
-    gap: 4,
-  },
-  noteTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  pinIcon: {
-    marginRight: 2,
-  },
-  noteTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
-  },
-  notePreview: {
-    fontSize: 14,
-  },
-  noteMeta: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  noteTime: {
-    fontSize: 12,
-  },
-  templateHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  templateTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  templateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  templateName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  templateDesc: {
-    fontSize: 13,
-    marginTop: 2,
-  },
+  searchInput: { flex: 1, paddingVertical: 0 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: space.screenX },
+  list: { paddingHorizontal: space.screenX, paddingTop: space.inline, gap: metrics.sheet.gap },
+  section: { gap: space.groupHeaderToCard },
+  swipe: { overflow: 'hidden' },
+  // Rows carry their own white so the swipe actions show from behind them.
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, paddingVertical: metrics.listRow.padY },
+  rowBody: { flex: 1, gap: metrics.listRow.bodyGap },
+  rowTop: { flexDirection: 'row', alignItems: 'flex-start', gap: space.inline },
+  templateList: { paddingHorizontal: space.screenX, paddingBottom: space.screenBottom },
 });
