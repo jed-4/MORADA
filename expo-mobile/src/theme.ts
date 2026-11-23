@@ -676,6 +676,16 @@ export const metrics = {
     nowLabelClear: 18,
     list: { padX: 16, gap: 16, dayGap: 8, timeCol: 52, rowPadY: 10, rowGap: 12, nowGap: 8, nowDot: 6 },
   },
+  more: {
+    gap: 14,
+    rowGap: 12,
+    rowHeight: 45,
+    rowPadY: 12,
+    profileHeight: 55,
+    profilePadBottom: 12,
+    profileTextGap: 2,
+    chipGap: 8,
+  },
   messages: {
     top: 8,
     gap: 22,

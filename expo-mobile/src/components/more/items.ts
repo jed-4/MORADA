@@ -1,30 +1,17 @@
-import type { Ionicons } from '@expo/vector-icons';
+import {
+  BookOpen,
+  CalendarDays,
+  CheckCheck,
+  Clock,
+  FileText,
+  Hammer,
+  Palette,
+  SquareCheck,
+  type LucideIcon,
+} from 'lucide-react-native';
 
-// Single source of truth for the More panel's grouped content.
-// Colours are theme token KEYS (not hexes) — MorePanel resolves them via
-// useTheme() at render so every tile works in light and dark mode.
-
-export type MoreColorToken =
-  | 'primary'
-  | 'sage'
-  | 'amber'
-  | 'teal'
-  | 'coral'
-  | 'rose'
-  | 'lavender'
-  | 'textMuted';
-
-/** Matching wash token for each accent — the tile's icon-circle background. */
-export const MORE_COLOR_BG: Record<MoreColorToken, string> = {
-  primary: 'primaryLight',
-  sage: 'sageLight',
-  amber: 'amberLight',
-  teal: 'tealLight',
-  coral: 'coralLight',
-  rose: 'roseLight',
-  lavender: 'lavenderLight',
-  textMuted: 'subtle',
-};
+// Single source of truth for the More sheet's content (revamp P06: one plain
+// list card + create chips; no colour per item).
 
 export type MoreAction =
   | { type: 'more-screen'; screen: string; params?: Record<string, unknown> }
@@ -34,39 +21,33 @@ export type MoreAction =
 export interface MoreTile {
   id: string;
   label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: MoreColorToken;
+  icon: LucideIcon;
   action: MoreAction;
-  /** Show the Messages unread count pill on this tile. */
-  showUnreadBadge?: boolean;
-  /** Render in the destructive (statusDanger) style. */
-  destructive?: boolean;
 }
 
 export const workspaceItems: MoreTile[] = [
-  { id: 'notes', label: 'Notes', icon: 'document-text', color: 'sage', action: { type: 'more-screen', screen: 'Notes' } },
-  { id: 'site-diary', label: 'Site Diary', icon: 'book', color: 'primary', action: { type: 'more-screen', screen: 'SiteDiaryList' } },
-  { id: 'tasks', label: 'My Tasks', icon: 'checkbox', color: 'lavender', action: { type: 'more-screen', screen: 'Tasks' } },
-  { id: 'timesheets', label: 'Timesheets', icon: 'time', color: 'amber', action: { type: 'more-screen', screen: 'Timesheets' } },
-  { id: 'checklists', label: 'Checklists', icon: 'checkmark-done', color: 'sage', action: { type: 'more-screen', screen: 'Checklists' } },
-  { id: 'schedule', label: 'Schedule', icon: 'calendar', color: 'rose', action: { type: 'more-screen', screen: 'Schedule' } },
+  { id: 'notes', label: 'Notes', icon: FileText, action: { type: 'more-screen', screen: 'Notes' } },
+  { id: 'site-diary', label: 'Site diary', icon: BookOpen, action: { type: 'more-screen', screen: 'SiteDiaryList' } },
+  { id: 'tasks', label: 'My tasks', icon: SquareCheck, action: { type: 'more-screen', screen: 'Tasks' } },
+  { id: 'timesheets', label: 'Timesheets', icon: Clock, action: { type: 'more-screen', screen: 'Timesheets' } },
+  { id: 'checklists', label: 'Checklists', icon: CheckCheck, action: { type: 'more-screen', screen: 'Checklists' } },
+  { id: 'schedule', label: 'Schedule', icon: CalendarDays, action: { type: 'more-screen', screen: 'Schedule' } },
   // Shown only to roles that can view selections (MorePanel filters it).
-  { id: 'selections', label: 'Selections', icon: 'color-palette', color: 'teal', action: { type: 'more-screen', screen: 'SelectionsProjects' } },
+  { id: 'selections', label: 'Selections', icon: Palette, action: { type: 'more-screen', screen: 'SelectionsProjects' } },
   // Shown only to roles that can view defects (MorePanel filters it).
-  { id: 'my-defects', label: 'My Defects', icon: 'construct', color: 'coral', action: { type: 'more-screen', screen: 'MyDefects', params: { mine: true } } },
+  { id: 'my-defects', label: 'My defects', icon: Hammer, action: { type: 'more-screen', screen: 'MyDefects', params: { mine: true } } },
 ];
 
 export const createItems: MoreTile[] = [
-  { id: 'new-task', label: 'New Task', icon: 'checkbox-outline', color: 'lavender', action: { type: 'sheet', sheet: 'new-task' } },
+  { id: 'new-task', label: 'New task', icon: SquareCheck, action: { type: 'sheet', sheet: 'new-task' } },
   // NoteEditor without a noteId opens a blank editor that auto-creates the
   // note on first save (POST /api/notes) — so this is a true "new note" flow.
-  { id: 'new-note', label: 'New Note', icon: 'document-text-outline', color: 'sage', action: { type: 'more-screen', screen: 'NoteEditor' } },
-  { id: 'new-diary', label: 'New Diary Entry', icon: 'book-outline', color: 'primary', action: { type: 'more-screen', screen: 'SiteDiaryList', params: { openCreate: true } } },
+  { id: 'new-note', label: 'New note', icon: FileText, action: { type: 'more-screen', screen: 'NoteEditor' } },
+  { id: 'new-diary', label: 'Diary entry', icon: BookOpen, action: { type: 'more-screen', screen: 'SiteDiaryList', params: { openCreate: true } } },
 ];
 
-// Settings lives on the tappable profile row; Log Out and Suggest an Idea live
-// in the Dashboard avatar menu — rare/destructive actions stay away from the
-// thumb-friendly bottom of this sheet.
+// Settings, Help & feedback and Sign out sit in their own card at the foot of
+// the sheet (design P06); Sign out asks before acting.
 
 // Keep this list in sync with the web app's client/src/lib/suggestionSections.ts.
 export const SUGGESTION_SECTIONS: { value: string; label: string }[] = [
