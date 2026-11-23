@@ -1009,7 +1009,20 @@ export default function TimesheetsScreen() {
   // that project already chosen, then clear the param so it fires once.
   const route = useRoute();
   const nav = useNavigation();
-  const { logProjectId, logCostCodeId } = (route.params ?? {}) as { logProjectId?: string; logCostCodeId?: string };
+  const { logProjectId, logCostCodeId, clockInProjectId: clockInParam } = (route.params ?? {}) as {
+    logProjectId?: string;
+    logCostCodeId?: string;
+    clockInProjectId?: string;
+  };
+  // Workspace's Clock in lands here with the project chosen there: preselect
+  // it for Clock in (the cost code is still picked here), then clear the param.
+  useEffect(() => {
+    if (!clockInParam) return;
+    setClockInProjectId(clockInParam);
+    setClockInCostCodeId('');
+    nav.setParams({ clockInProjectId: undefined } as never);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clockInParam]);
   useEffect(() => {
     if (!logProjectId) return;
     resetForm();

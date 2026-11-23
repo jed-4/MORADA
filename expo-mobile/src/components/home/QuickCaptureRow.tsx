@@ -34,7 +34,7 @@ interface QuickProject {
   color?: string | null;
 }
 
-type Action = 'diary' | 'receipt' | 'defect';
+type Action = 'diary' | 'receipt' | 'defect' | 'clock';
 
 export function QuickCaptureRow({
   projects,
@@ -75,6 +75,11 @@ export function QuickCaptureRow({
 
   const run = useCallback(async (action: Action, p: { id: string; name: string }) => {
     const params = { projectId: p.id, projectName: p.name };
+    if (action === 'clock') {
+      // Timesheets opens with this project already chosen for Clock in.
+      tabNav.navigate('More', { screen: 'Timesheets', params: { clockInProjectId: p.id } });
+      return;
+    }
     if (action === 'receipt') {
       openInProjects('ReceiptCapture', params);
       return;
@@ -97,7 +102,7 @@ export function QuickCaptureRow({
       console.warn('Quick capture camera failed:', e);
       Alert.alert('Camera Unavailable', 'Could not open the camera.');
     }
-  }, [openInProjects]);
+  }, [openInProjects, tabNav]);
 
   const start = (action: Action) => {
     haptic.light();
@@ -152,7 +157,7 @@ export function QuickCaptureRow({
           icon: Clock,
           label: 'Clock in',
           a11y: 'Clock in',
-          onPress: () => { haptic.light(); tabNav.navigate('More', { screen: 'Timesheets' }); },
+          onPress: () => start('clock'),
         }]
       : []),
   ];

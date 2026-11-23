@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { useLayout, WIDE_BREAKPOINT } from './useLayout';
+import { useLayout, BIG_SCREEN_SHORT_SIDE } from './useLayout';
 import { DESIGN_PREVIEW } from './designPreview';
 
 /** Below this short side (pt) a big screen locks back to portrait. */
@@ -12,7 +12,7 @@ const RELOCK_BELOW = 500;
  * The app starts locked to portrait (expo-screen-orientation plugin,
  * initialOrientation PORTRAIT_UP in app.config.js), so a normal iPhone, or the
  * iPhone Duo folded, behaves exactly as before. When the screen's SHORT side is
- * at least WIDE_BREAKPOINT (the Duo unfolded), rotation is unlocked so it can
+ * at least BIG_SCREEN_SHORT_SIDE (the Duo unfolded), rotation is unlocked so it can
  * be used sideways, e.g. propped on a site table.
  *
  * Short side, not width: once unlocked and turned sideways the width grows
@@ -25,8 +25,8 @@ export function useOrientationPolicy() {
   // screen is near-square, so turned sideways its short side shrinks a
   // little; a single threshold could lock it back to portrait mid-rotation
   // and bounce. Every phone (and the Duo folded) is well under 500.
-  const bigRef = useRef(shortSide >= WIDE_BREAKPOINT);
-  if (shortSide >= WIDE_BREAKPOINT) bigRef.current = true;
+  const bigRef = useRef(shortSide >= BIG_SCREEN_SHORT_SIDE);
+  if (shortSide >= BIG_SCREEN_SHORT_SIDE) bigRef.current = true;
   else if (shortSide < RELOCK_BELOW) bigRef.current = false;
   // Design review (simulator build only): always free to rotate, so the
   // wide (Duo) layouts can be checked by turning the simulator sideways.
