@@ -305,6 +305,8 @@ export default function SelectionsScreen({ navigation, route }: Props) {
     <TwoPane
       key="pane"
       {...paneProps}
+      // D05: list pane 420.
+      listWidth={size.listPane.selections}
       list={list}
       detail={
         selectedId ? (

@@ -417,7 +417,9 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
     ? new Date(chosen.approvedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
     : null;
   const docs = (chosen?.attachments ?? []).filter((a) => a.fileType?.toLowerCase() !== 'image');
-  const imageSize = isWide ? sl.heroImage * 1.6 : sl.heroImage;
+  // Duo (D05): image card 220 beside the title column; phone keeps the hero.
+  const imageSize = isWide ? sl.duoImage : sl.heroImage;
+  const duo = isWide;
   const hasMoreActions = (chosen && canEdit) || !!chosen?.url;
 
   const section = (key: string, title: string, count: number | null, body: React.ReactNode) => {
@@ -444,21 +446,51 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.body,
-          readableFrame,
+          duo ? styles.bodyWide : readableFrame,
           { paddingTop: embedded ? metrics.schedule.top : insets.top + metrics.schedule.top, paddingBottom: space.screenBottom + (isTeam ? 0 : insets.bottom) },
         ]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
       >
-        <DetailHeader
-          onBack={embedded ? undefined : () => navigation.goBack()}
-          actions={[
-            { icon: Share2, label: 'Share', onPress: share },
-            ...(hasMoreActions ? [{ icon: Ellipsis, label: 'More actions', onPress: () => moreRef.current?.present() }] : []),
-          ]}
-        />
+        {duo ? (
+          // D05 header: "Room · Selection" · Post to project chat · Share · More
+          <View style={styles.duoHeader}>
+            <Text style={[type.meta, styles.flex, { color: c.muted }]} numberOfLines={1}>
+              {[selection.room, selection.name].filter(Boolean).join(' · ')}
+            </Text>
+            {isTeam ? (
+              <Pressable
+                onPress={postToChat}
+                disabled={posting}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.chatBtn, { backgroundColor: c.surface, borderColor: c.border, opacity: posting ? metrics.disabledOpacity : pressed ? metrics.pressedOpacity : 1 }]}
+              >
+                <MessageSquare size={size.icon.row} color={c.accent} strokeWidth={metrics.iconStroke} />
+                <Text style={[type.meta, { color: c.accent }]}>{posting ? 'Posting…' : 'Post to project chat'}</Text>
+              </Pressable>
+            ) : null}
+            <Pressable onPress={share} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Share">
+              <Share2 size={size.icon.header - 2} color={c.icon} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+            {hasMoreActions ? (
+              <Pressable onPress={() => moreRef.current?.present()} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="More actions">
+                <Ellipsis size={size.icon.header} color={c.icon} strokeWidth={metrics.iconStroke} />
+              </Pressable>
+            ) : null}
+          </View>
+        ) : (
+          <DetailHeader
+            onBack={embedded ? undefined : () => navigation.goBack()}
+            actions={[
+              { icon: Share2, label: 'Share', onPress: share },
+              ...(hasMoreActions ? [{ icon: Ellipsis, label: 'More actions', onPress: () => moreRef.current?.present() }] : []),
+            ]}
+          />
+        )}
+
+        <View style={duo ? styles.duoTop : styles.phoneTop}>
 
         {/* Product image: contained on a white card, swipe for more */}
-        <Card style={styles.imageCard}>
+        <Card style={[styles.imageCard, duo && styles.imageCardDuo]}>
           <View style={{ width: '100%' }} onLayout={(e) => setHeroWidth(e.nativeEvent.layout.width)}>
             {photos.length > 0 ? (
               <ScrollView
@@ -502,7 +534,7 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
         </Card>
 
         {/* Title block */}
-        <View style={styles.titleBlock}>
+        <View style={[styles.titleBlock, duo && styles.flex]}>
           <Text style={[type.detailTitle, { color: c.text }]}>{settled && chosen ? chosen.name : selection.name}</Text>
           {(() => {
             // Settled: the product is the title, so name the selection here.
@@ -523,6 +555,13 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
               </Text>
             ) : null}
           </View>
+          {/* Duo: the notes sit under the status, beside the image. */}
+          {duo && (!!selection.notes?.trim() || !!chosen?.description) ? (
+            <Text style={[type.bodyPreview, { color: c.muted }]}>
+              {[selection.notes?.trim(), chosen?.description].filter(Boolean).join('\n\n')}
+            </Text>
+          ) : null}
+        </View>
         </View>
 
         {/* Nothing approved: say so plainly instead of showing a spec. */}
@@ -534,18 +573,24 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
           </Card>
         )}
 
-        {(specRows.length > 0 || price !== null) && (
-          <Card variant="list">
-            {specRows.map((row, i) => (
-              <PropertyRow
-                key={`${row.label}-${i}`}
-                label={row.label}
-                labelWidth={sl.propLabel}
-                value={row.value}
-                link={row.copyable}
-                onCopy={row.copyable ? () => copyCode(row.value) : undefined}
-              />
-            ))}
+        {(specRows.length > 0 || price !== null) && (() => {
+          // Duo: two property cards side by side — first half (+ price) left, the rest right.
+          const half = duo ? Math.ceil(specRows.length / 2) : specRows.length;
+          const rightRows = specRows.slice(half);
+          const renderRow = (row: (typeof specRows)[number], i: number) => (
+            <PropertyRow
+              key={`${row.label}-${i}`}
+              label={row.label}
+              labelWidth={sl.propLabel}
+              value={row.value}
+              link={row.copyable}
+              onCopy={row.copyable ? () => copyCode(row.value) : undefined}
+            />
+          );
+          return (
+          <View style={duo ? styles.duoProps : undefined}>
+          <Card variant="list" style={duo ? styles.flex : undefined}>
+            {specRows.slice(0, half).map(renderRow)}
             {/* Money only arrives for roles with selections pricing access — the
                 server strips it for everyone else, so these simply don't render.
                 It is the CLIENT'S price; cost and markup are never shown here. */}
@@ -560,7 +605,12 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
               </PropertyRow>
             ) : null}
           </Card>
-        )}
+          {duo && rightRows.length > 0 ? (
+            <Card variant="list" style={styles.flex}>{rightRows.map((row, i) => renderRow(row, half + i))}</Card>
+          ) : null}
+          </View>
+          );
+        })()}
 
         {/* A client's pick waiting on sign-off: approve it from site. */}
         {chosen && !chosen.approvedAt && canApprove && (
@@ -626,7 +676,7 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
 
         {/* Notes: the trades notes (the field the web app lets you write and no
             other screen shows), then the product description. */}
-        {(!!selection.notes?.trim() || !!chosen?.description) &&
+        {!duo && (!!selection.notes?.trim() || !!chosen?.description) &&
           section('notes', 'Notes', null, (
             <Card variant="notes">
               {!!selection.notes?.trim() && (
@@ -698,7 +748,7 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
           ))}
       </ScrollView>
 
-      {isTeam && <SecondaryActionBar icon={MessageSquare} label={posting ? 'Posting…' : 'Post to project chat'} onPress={postToChat} disabled={posting} />}
+      {isTeam && !duo && <SecondaryActionBar icon={MessageSquare} label={posting ? 'Posting…' : 'Post to project chat'} onPress={postToChat} disabled={posting} />}
 
       <Sheet ref={moreRef} title={settled && chosen ? chosen.name : selection.name}>
         <View style={styles.sheetBody}>
@@ -801,6 +851,23 @@ const SL = metrics.selections;
 
 const styles = StyleSheet.create({
   // ── Revamp v1 ──
+  flex: { flex: 1, minWidth: 0 },
+  // Duo (D05): padding 12/24, header row, image 220 beside the title column, two property cards.
+  bodyWide: { paddingHorizontal: SL.duoPadX },
+  duoHeader: { flexDirection: 'row', alignItems: 'center', gap: metrics.pageHeader.actionGap },
+  chatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.inline,
+    minHeight: SL.duoChatHeight,
+    paddingHorizontal: space.rowGap,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+  },
+  phoneTop: { gap: metrics.scope.gap },
+  duoTop: { flexDirection: 'row', alignItems: 'flex-start', gap: SL.duoTopGap },
+  imageCardDuo: { width: SL.duoImageCard },
+  duoProps: { flexDirection: 'row', alignItems: 'flex-start', gap: SL.duoTopGap - 4 },
   pad: { paddingHorizontal: space.screenX, paddingBottom: metrics.scope.gap },
   body: { paddingHorizontal: space.screenX, gap: metrics.scope.gap },
   imageCard: { paddingTop: SL.heroPad.top, paddingBottom: SL.heroPad.bottom, paddingHorizontal: 0, alignItems: 'center', gap: space.rowGap },

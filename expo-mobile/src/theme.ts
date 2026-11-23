@@ -625,6 +625,11 @@ export const metrics = {
     bullet: 4,
   },
   selections: {
+    duoPadX: 24,
+    duoImage: 180,
+    duoImageCard: 220,
+    duoTopGap: 20,
+    duoChatHeight: 30,
     rowPadY: 10,
     rowBodyGap: 3,
     trailingGap: 5,
