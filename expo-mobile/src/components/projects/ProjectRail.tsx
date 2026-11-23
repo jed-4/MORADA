@@ -1,5 +1,6 @@
 import { ScrollView, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useTheme, lightTheme } from '../../theme';
+import { metrics, radii, size, space, tabular, type, useColors } from '../../theme';
+import { ProjectSquare } from '../kit';
 import { haptic } from '../../lib/haptics';
 
 /**
@@ -33,13 +34,12 @@ export function ProjectRail({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
-  const theme = useTheme();
+  const c = useColors();
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       {projects.map((p) => {
         const selected = p.id === selectedId;
-        const label = (p.jobNumber || p.projectNumber || initials(p.name)).slice(0, 5);
-        const colour = p.color || lightTheme.textMuted;
+        const number = (p.jobNumber || p.projectNumber || initials(p.name)).slice(0, 6);
         return (
           <Pressable
             key={p.id}
@@ -50,23 +50,12 @@ export function ProjectRail({
             accessibilityRole="button"
             accessibilityLabel={`Open ${p.name}`}
             accessibilityState={{ selected }}
-            style={styles.item}
+            style={({ pressed }) => [styles.item, selected && { backgroundColor: c.tint }, pressed && { opacity: metrics.pressedOpacity }]}
           >
-            <View
-              style={[
-                styles.badge,
-                { backgroundColor: colour },
-                selected && { borderColor: theme.textPrimary, borderWidth: 3 },
-              ]}
-            >
-              <Text style={styles.badgeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                {label}
-              </Text>
-            </View>
-            <Text
-              style={[styles.name, { color: selected ? theme.textPrimary : theme.textSecondary }]}
-              numberOfLines={2}
-            >
+            {/* D02 rail: square 16 · job number 11 · short name 10; current = tint. */}
+            <ProjectSquare color={p.color} fallbackKey={p.id} size="rail" />
+            <Text style={[type.micro, tabular, { color: selected ? c.link : c.muted }]} numberOfLines={1}>{number}</Text>
+            <Text style={[type.tiny, styles.name, { color: selected ? c.link : c.muted }]} numberOfLines={2}>
               {p.name}
             </Text>
           </Pressable>
@@ -78,9 +67,14 @@ export function ProjectRail({
 
 const styles = StyleSheet.create({
   scroll: { alignSelf: 'stretch' },
-  content: { alignItems: 'center', paddingBottom: 24, gap: 10 },
-  item: { width: 68, alignItems: 'center', gap: 4, paddingVertical: 2 },
-  badge: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
-  badgeText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  name: { fontSize: 10, textAlign: 'center', lineHeight: 12 },
+  content: { alignItems: 'center', paddingBottom: space.screenBottom, gap: space.inlineSm },
+  item: {
+    width: size.railWidth - space.rowGap,
+    alignItems: 'center',
+    gap: space.inlineSm,
+    paddingVertical: space.inline,
+    paddingHorizontal: space.inlineSm,
+    borderRadius: radii.lg,
+  },
+  name: { textAlign: 'center' },
 });

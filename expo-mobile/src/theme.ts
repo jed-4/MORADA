@@ -554,6 +554,10 @@ export const metrics = {
     searchIcon: 16,
   },
   projectDetail: {
+    duoPadX: 28,
+    duoColGap: 24,
+    duoCardGap: 16,
+    duoSide: 340,
     navHeight: 34,
     navPad: { top: 6, right: 16, bottom: 6, left: 10 },
     navGap: 2,

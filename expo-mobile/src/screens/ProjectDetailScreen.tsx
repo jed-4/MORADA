@@ -16,6 +16,7 @@ import { usePermission } from '../lib/usePermission';
 import { useSetSiteLocation } from '../components/SetSiteLocationButton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReturnToTwoPane } from '../lib/twoPane';
+import { useLayout } from '../lib/useLayout';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { useTwoPaneDetail } from '../components/ui/TwoPane';
 import { Sheet, type SheetRef } from '../components/ui/Sheet';
@@ -142,6 +143,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   const insets = useSafeAreaInsets();
   // Folded with this project open on the right: a back button floats top-left.
   const { heldOnFold } = useTwoPaneDetail();
+  const { isWide } = useLayout();
   const embeddedTop = insets.top + (heldOnFold ? 50 : 12);
   // Unfolding on this screen (pushed from the list) goes back to the list with
   // this project open on the right, so you keep your place.
@@ -527,44 +529,9 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
     />
   );
 
-  return (
-    <View style={[styles.container, { backgroundColor: c.bg }]}>
-      {navBar}
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, readableFrame, embedded && { paddingTop: embeddedTop }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
-      >
-        {/* Project header */}
-        <View>
-          <View style={styles.titleRow}>
-            <ProjectSquare color={project.color} fallbackKey={project.id} size="card" />
-            <Text style={[type.title, { color: c.text, flex: 1 }]} numberOfLines={2}>
-              {project.name}
-            </Text>
-            {price ? <Text style={[type.price, tabular, { color: c.text }]}>{price}</Text> : null}
-          </View>
-          {(metaLine || typeof progress === 'number') ? (
-            <View style={styles.metaBlock}>
-              {metaLine ? <Text style={[type.body, { color: c.muted }]}>{metaLine}</Text> : null}
-              {typeof progress === 'number' ? (
-                <ProgressLine value={progress / 100} color={projectColor} trackColor={c.hairline} />
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-
-        {/* Section tiles */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tilesRow}
-          style={styles.tilesScroll}
-        >
-          {tiles.map(t => (
-            <SectionTile key={t.key} icon={t.icon} label={t.label} count={t.count ? t.count : null} onPress={t.onPress} />
-          ))}
-        </ScrollView>
-
+  // Section cards: one column on a phone, two on the Duo (D02).
+  const sec_overview = (
+    <>
         {/* Overview */}
         {sectionCard({ id: 'projectInfo', title: 'Overview' }, [
           stage ? <PropertyRow key="stage" label="Stage" value={stage} /> : null,
@@ -586,7 +553,10 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
             <PropertyRow key="none" label="Details" placeholder="Nothing on file yet" />
           ) : null,
         ])}
-
+    </>
+  );
+  const sec_tasks = (
+    <>
         {/* Tasks */}
         {sectionCard({ id: 'tasks', title: 'Tasks', count: openTasks.length, onOpen: () => go('ProjectTasks') }, [
           todayTasks.length === 0 ? (
@@ -602,7 +572,10 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
             />
           )),
         ])}
-
+    </>
+  );
+  const sec_schedule = (
+    <>
         {/* Schedule: today & tomorrow */}
         {sectionCard({ id: 'schedule', title: 'Schedule', count: nearScheduleItems.length, onOpen: () => go('Schedule') }, [
           nearScheduleItems.length === 0 ? (
@@ -629,7 +602,10 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
             />
           )),
         ])}
-
+    </>
+  );
+  const sec_diary = (
+    <>
         {/* Site diary */}
         {sectionCard(
           { id: 'siteDiary', title: 'Site diary', count: siteDiaryEntries.length >= 8 ? '8+' : siteDiaryEntries.length, onOpen: () => go('SiteDiary') },
@@ -647,7 +623,10 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
             ))
           ),
         )}
-
+    </>
+  );
+  const sec_checklists = (
+    <>
         {/* Checklists (expand a checklist to tick items here) */}
         {sectionCard(
           { id: 'checklists', title: 'Checklists', count: checklistInstances.length, onOpen: () => go('Checklists') },
@@ -700,11 +679,83 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
             })
           ),
         )}
-
+    </>
+  );
+  const sec_links = (
+    <>
         {/* Header-only cards: open the section */}
         {canViewSelections ? sectionCard({ title: 'Selections', onOpen: () => go('Selections') }) : null}
         {sectionCard({ title: 'Scope', onOpen: () => go('Scope') })}
         {canViewDefects ? sectionCard({ title: 'Defects', onOpen: () => go('DefectsList') }) : null}
+    </>
+  );
+
+  return (
+    <View style={[styles.container, { backgroundColor: c.bg }]}>
+      {navBar}
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, isWide ? styles.scrollWide : readableFrame, embedded && { paddingTop: embeddedTop }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
+      >
+        {/* Project header */}
+        <View>
+          {isWide && project.jobNumber ? (
+            <Text style={[type.meta, tabular, { color: c.muted }]}>{`#${project.jobNumber}`}</Text>
+          ) : null}
+          <View style={styles.titleRow}>
+            <ProjectSquare color={project.color} fallbackKey={project.id} size="card" />
+            <Text style={[type.title, { color: c.text, flex: 1 }]} numberOfLines={2}>
+              {project.name}
+            </Text>
+            {price ? <Text style={[type.price, tabular, { color: c.text }]}>{price}</Text> : null}
+          </View>
+          {(metaLine || typeof progress === 'number') ? (
+            <View style={styles.metaBlock}>
+              {metaLine ? <Text style={[type.body, { color: c.muted }]}>{metaLine}</Text> : null}
+              {typeof progress === 'number' ? (
+                <ProgressLine value={progress / 100} color={projectColor} trackColor={c.hairline} />
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+
+        {/* Section tiles */}
+        <ScrollView
+          horizontal
+          // Duo: the nine tiles fit in one row, so no sideways scroll.
+          scrollEnabled={!isWide}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[styles.tilesRow, isWide && styles.tilesRowWide]}
+          style={isWide ? styles.tilesScrollWide : styles.tilesScroll}
+        >
+          {tiles.map(t => (
+            <SectionTile key={t.key} icon={t.icon} label={t.label} count={t.count ? t.count : null} onPress={t.onPress} />
+          ))}
+        </ScrollView>
+
+        {isWide ? (
+          <View style={styles.duoCols}>
+            <View style={styles.duoMain}>
+              {sec_overview}
+              {sec_schedule}
+              {sec_checklists}
+            </View>
+            <View style={styles.duoSide}>
+              {sec_tasks}
+              {sec_diary}
+              {sec_links}
+            </View>
+          </View>
+        ) : (
+          <>
+            {sec_overview}
+            {sec_tasks}
+            {sec_schedule}
+            {sec_diary}
+            {sec_checklists}
+            {sec_links}
+          </>
+        )}
       </ScrollView>
 
       <FAB onPress={() => captureSheetRef.current?.present()} label="Add to this project" />
@@ -774,6 +825,13 @@ const styles = StyleSheet.create({
   metaBlock: { paddingLeft: pd.metaPadLeft, gap: pd.metaGap, marginTop: space.inlineSm },
   // Tiles run to the screen edge so the last one is visibly cut off.
   tilesScroll: { marginHorizontal: -space.screenX, flexGrow: 0 },
+  tilesScrollWide: { flexGrow: 0 },
+  tilesRowWide: { paddingHorizontal: 0 },
+  // Duo (D02): padding 12/28; info + schedule on the left, tasks on the right (340).
+  scrollWide: { paddingHorizontal: pd.duoPadX },
+  duoCols: { flexDirection: 'row', alignItems: 'flex-start', gap: pd.duoColGap },
+  duoMain: { flex: 1, minWidth: 0, gap: pd.duoCardGap },
+  duoSide: { width: pd.duoSide, gap: pd.duoCardGap },
   tilesRow: { gap: pd.tileGap, paddingHorizontal: space.screenX },
   sectionCard: { paddingBottom: pd.cardPadBottom },
   quietRow: { paddingVertical: metrics.listRow.padY },
