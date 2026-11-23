@@ -6,20 +6,16 @@ import {
   ScrollView,
   FlatList,
   RefreshControl,
-  TouchableOpacity,
   ActivityIndicator,
   useColorScheme,
-  Modal,
   TextInput,
   Alert,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   BackHandler,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Check, ChevronRight, ClipboardList, MessageSquare, Paperclip, Search, X } from 'lucide-react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Check, ChevronRight, ClipboardList, FileText, Image as ImageIcon, MessageSquare, Paperclip, Plus, Search, SendHorizontal, Trash2, User, UserX, X } from 'lucide-react-native';
 import { apiFetch, apiRequest, uploadFileFromUri } from '../services/api';
 import { addToQueue, isOnline } from '../services/offlineQueue';
 import { usePersistedState } from '../lib/usePersistedState';
@@ -28,16 +24,15 @@ import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme, useColors, lightTheme, MAX_FONT_SCALE, metrics, radii, size, space, tabular, type } from '../theme';
+import { useTheme, useColors, lightTheme, metrics, radii, size, space, tabular, type } from '../theme';
 import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import { SkeletonList } from '../components/ui/Skeleton';
 import { haptic } from '../lib/haptics';
 import {
-  Card, Checkbox, CollapsedGroupList, DetailHeader, EmptyState, GroupHeader, ListRow, PageHeader, ProgressLine, ProjectSquare,
-  initialsOf, type CollapsedGroup,
+  Avatar, ButtonRow, Card, Checkbox, CollapsedGroupList, DetailHeader, EmptyState, GroupHeader, ListRow, ModalSheet, PageHeader,
+  ProgressLine, ProjectSquare, SecondaryButton, TextField, initialsOf, type CollapsedGroup,
 } from '../components/kit';
 import { SwipeRow } from '../components/ui/SwipeRow';
-import { sheetFrame } from '../components/ui/Sheet';
 import { TwoPane } from '../components/ui/TwoPane';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { useLayout } from '../lib/useLayout';
@@ -874,244 +869,172 @@ const colors = {
         </View>
       </Sheet>
 
-      <Modal
+      {/* Item menu: actions, then notes / attachments / assign as sub-pages. */}
+      <ModalSheet
         visible={!!menuItem}
-        transparent
-        animationType="slide"
-        onRequestClose={closeMenu}
+        onRequestClose={menuMode === 'actions' ? closeMenu : () => setMenuMode('actions')}
+        title={menuMode === 'activity' ? 'Notes' : menuMode === 'attachments' ? 'Attachments' : menuMode === 'assignee' ? 'Assign to' : 'Item'}
+        cancelLabel={menuMode === 'actions' ? 'Close' : 'Back'}
+        onCancel={menuMode === 'actions' ? closeMenu : () => setMenuMode('actions')}
       >
-        <Pressable style={styles.modalOverlay} onPress={closeMenu}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ justifyContent: 'flex-end', flex: 1 }}>
-            <Pressable onPress={(e) => e.stopPropagation()}>
-              <View style={[styles.modalSheet, sheetFrame, { backgroundColor: colors.card }]}>
-                <View style={[styles.modalHandle, { backgroundColor: colors.muted }]} />
+        <View style={ck.menuBody}>
+          {menuMode === 'actions' && menuItem ? (
+            <>
+              <Text style={[type.rowTitle, { color: k.text }]} numberOfLines={3}>{menuItem.description}</Text>
+              <Card variant="list">
+                <ListRow
+                  key="notes"
+                  lead={<MessageSquare size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />}
+                  title="Notes"
+                  trailing={menuItem.notes ? <Text style={[type.meta, tabular, { color: k.muted }]}>{parseNoteFeed(menuItem.notes).length}</Text> : undefined}
+                  chevron
+                  onPress={() => setMenuMode('activity')}
+                />
+                <ListRow
+                  key="assign"
+                  lead={<User size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />}
+                  title={menuItem.assigneeName ? `Assigned: ${menuItem.assigneeName}` : 'Assign'}
+                  titleLines={1}
+                  chevron
+                  onPress={() => { setMenuMode('assignee'); fetchTeamMembers(); }}
+                />
+                <ListRow
+                  key="attach"
+                  lead={<Paperclip size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />}
+                  title="Attachments"
+                  trailing={Array.isArray(menuItem.attachmentIds) && menuItem.attachmentIds.length > 0
+                    ? <Text style={[type.meta, tabular, { color: k.muted }]}>{menuItem.attachmentIds.length}</Text>
+                    : undefined}
+                  chevron
+                  onPress={() => setMenuMode('attachments')}
+                />
+              </Card>
+            </>
+          ) : null}
 
-                {menuMode === 'actions' && menuItem && (
-                  <View>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalTitle, { color: colors.text }]} numberOfLines={2}>{menuItem.description}</Text>
-                    <TouchableOpacity
-                      style={styles.modalAction}
-                      onPress={() => setMenuMode('activity')}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="chatbubbles-outline" size={20} color={menuItem.notes ? colors.accent : colors.secondary} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalActionText, { color: colors.text }]}>Notes</Text>
-                      {menuItem.notes && (
-                        <View style={[styles.menuBadge, { backgroundColor: colors.accent + '20' }]}>
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 10, fontWeight: '600' }}>{parseNoteFeed(menuItem.notes).length}</Text>
-                        </View>
-                      )}
-                      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.modalAction}
-                      onPress={() => { setMenuMode('assignee'); fetchTeamMembers(); }}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name={menuItem.assigneeName ? 'person' : 'person-outline'} size={20} color={menuItem.assigneeName ? colors.accent : colors.secondary} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalActionText, { color: colors.text }]}>
-                        {menuItem.assigneeName ? `Assigned: ${menuItem.assigneeName}` : 'Assign'}
-                      </Text>
-                      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.modalAction}
-                      onPress={() => setMenuMode('attachments')}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="attach" size={20} color={Array.isArray(menuItem.attachmentIds) && menuItem.attachmentIds.length > 0 ? colors.accent : colors.secondary} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalActionText, { color: colors.text }]}>
-                        Attachments
-                      </Text>
-                      {Array.isArray(menuItem.attachmentIds) && menuItem.attachmentIds.length > 0 && (
-                        <View style={[styles.menuBadge, { backgroundColor: colors.accent + '20' }]}>
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 10, fontWeight: '600' }}>{menuItem.attachmentIds.length}</Text>
-                        </View>
-                      )}
-                      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {menuMode === 'activity' && menuItem && (
-                  <View>
-                    <View style={styles.modalSubHeader}>
-                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} accessibilityLabel='Back'>
-                        <Ionicons name="arrow-back" size={22} color={colors.text} />
-                      </TouchableOpacity>
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Notes</Text>
-                    </View>
-                    <ScrollView style={{ maxHeight: 220, marginBottom: 12 }}>
-                      {(() => {
-                        const entries = parseNoteFeed(menuItem.notes);
-                        if (entries.length === 0) {
-                          return (
-                            <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                              <Ionicons name="chatbubbles-outline" size={28} color={colors.muted} />
-                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 13, marginTop: 8 }}>No notes yet</Text>
+          {menuMode === 'activity' && menuItem ? (
+            <>
+              {(() => {
+                const entries = parseNoteFeed(menuItem.notes);
+                if (entries.length === 0) {
+                  return <Text style={[type.meta, ck.menuEmpty, { color: k.muted }]}>No notes yet</Text>;
+                }
+                return (
+                  <ScrollView style={{ maxHeight: metrics.checklists.menuListMax }}>
+                    <Card variant="list">
+                      {entries.map((entry, idx) => (
+                        <View key={idx} style={ck.feedRow}>
+                          <Avatar name={entry.author} size="activity" />
+                          <View style={ck.feedBody}>
+                            <View style={ck.feedHead}>
+                              <Text style={[type.metaSemi, { color: k.text }]}>{entry.author}</Text>
+                              <Text style={[type.caption, tabular, { color: k.muted }]}>{formatFeedDate(entry.date)}</Text>
                             </View>
-                          );
-                        }
-                        return entries.map((entry, idx) => (
-                          <View key={idx} style={styles.feedEntry}>
-                            <View style={[styles.feedAvatar, { backgroundColor: colors.accent + '20' }]}>
-                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 10, fontWeight: '700' }}>
-                                {entry.author.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                              </Text>
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
-                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>{entry.author}</Text>
-                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 10 }}>{formatFeedDate(entry.date)}</Text>
-                              </View>
-                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.text, fontSize: 13, marginTop: 2 }}>{entry.text}</Text>
-                            </View>
+                            <Text style={[type.bodyPreview, { color: k.textBody }]}>{entry.text}</Text>
                           </View>
-                        ));
-                      })()}
-                    </ScrollView>
-                    <View style={[styles.feedInputRow, { borderTopColor: colors.border }]}>
-                      <TextInput
-                        style={[styles.feedInput, { color: colors.text, borderColor: colors.border, backgroundColor: theme.background }]}
-                        placeholder="Add a note..."
-                        placeholderTextColor={colors.muted}
-                        value={noteText}
-                        autoCapitalize="sentences"
-                        onChangeText={setNoteText}
-                        multiline
-                        textAlignVertical="top"
-                      />
-                      <TouchableOpacity
-                        style={[styles.feedSendBtn, { backgroundColor: noteText.trim() ? colors.accent : colors.muted }]}
-                        onPress={handleAddNote}
-                        activeOpacity={0.7}
-                        disabled={savingNote || !noteText.trim()}
-                      >
-                        {savingNote ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <Ionicons name="send" size={16} color="#fff" />
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-
-                {menuMode === 'attachments' && menuItem && (
-                  <View>
-                    <View style={styles.modalSubHeader}>
-                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} accessibilityLabel='Back'>
-                        <Ionicons name="arrow-back" size={22} color={colors.text} />
-                      </TouchableOpacity>
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Attachments</Text>
-                    </View>
-                    {(() => {
-                      const attachments = Array.isArray(menuItem.attachmentIds) ? menuItem.attachmentIds as any[] : [];
-                      if (attachments.length === 0) {
-                        return (
-                          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                            <Ionicons name="cloud-upload-outline" size={28} color={colors.muted} />
-                            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 13, marginTop: 8 }}>No attachments</Text>
-                          </View>
-                        );
-                      }
-                      return (
-                        <ScrollView style={{ maxHeight: 200 }}>
-                          {attachments.map((att: any, idx: number) => (
-                            <View key={idx} style={[styles.attachmentRow, { borderColor: colors.border }]}>
-                              <Ionicons
-                                name={att.contentType?.startsWith('image/') ? 'image-outline' : 'document-outline'}
-                                size={18}
-                                color={colors.accent}
-                              />
-                              <View style={{ flex: 1, marginLeft: 8 }}>
-                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.text, fontSize: 13 }} numberOfLines={1}>{att.name}</Text>
-                                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 10 }}>
-                                  {att.uploadedBy} {att.uploadedAt ? `- ${formatFeedDate(att.uploadedAt)}` : ''}
-                                </Text>
-                              </View>
-                              <TouchableOpacity
-                                onPress={() => handleRemoveAttachment(idx)}
-                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                              >
-                                <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                              </TouchableOpacity>
-                            </View>
-                          ))}
-                        </ScrollView>
-                      );
-                    })()}
-                    <TouchableOpacity
-                      style={[styles.saveBtn, { backgroundColor: colors.accent, marginTop: 12, flexDirection: 'row', gap: 6 }]}
-                      onPress={handlePickAttachment}
-                      activeOpacity={0.7}
-                      disabled={uploadingAttachment}
-                    >
-                      {uploadingAttachment ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <>
-                          <Ionicons name="add" size={18} color="#fff" />
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.saveBtnText}>Add Attachment</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {menuMode === 'assignee' && menuItem && (
-                  <View>
-                    <View style={styles.modalSubHeader}>
-                      <TouchableOpacity onPress={() => setMenuMode('actions')} activeOpacity={0.7} hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} accessibilityLabel='Back'>
-                        <Ionicons name="arrow-back" size={22} color={colors.text} />
-                      </TouchableOpacity>
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalTitle, { color: colors.text, flex: 1 }]}>Assign To</Text>
-                    </View>
-                    {menuItem.assigneeId && (
-                      <TouchableOpacity
-                        style={[styles.assignRow, { borderColor: colors.border }]}
-                        onPress={() => handleAssign(null, null)}
-                        activeOpacity={0.7}
-                        disabled={savingAssignee}
-                      >
-                        <Ionicons name="close-circle-outline" size={20} color={colors.secondary} />
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.assignRowText, { color: colors.secondary }]}>Unassign</Text>
-                      </TouchableOpacity>
-                    )}
-                    {loadingTeam ? (
-                      <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 20 }} />
-                    ) : teamMembers.length === 0 ? (
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.secondary, fontSize: 13, textAlign: 'center', paddingVertical: 20 }}>No team members available</Text>
-                    ) : (
-                      <ScrollView style={{ maxHeight: 300 }}>
-                        {teamMembers.map(member => (
-                          <TouchableOpacity
-                            key={member.id}
-                            style={[styles.assignRow, { borderColor: colors.border }, menuItem.assigneeId === member.id && { backgroundColor: colors.accent + '15' }]}
-                            onPress={() => handleAssign(member.id, member.displayName)}
-                            activeOpacity={0.7}
-                            disabled={savingAssignee}
-                          >
-                            <View style={[styles.assignAvatar, { backgroundColor: colors.accent + '20' }]}>
-                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.assignAvatarText, { color: colors.accent }]}>
-                                {member.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                              </Text>
-                            </View>
-                            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.assignRowText, { color: colors.text }]}>{member.displayName}</Text>
-                            {menuItem.assigneeId === member.id && (
-                              <Ionicons name="checkmark" size={18} color={colors.accent} style={{ marginLeft: 'auto' }} />
-                            )}
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    )}
-                  </View>
-                )}
+                        </View>
+                      ))}
+                    </Card>
+                  </ScrollView>
+                );
+              })()}
+              <View style={ck.addRow}>
+                <View style={ck.flex1}>
+                  <TextField
+                    placeholder="Add a note"
+                    value={noteText}
+                    autoCapitalize="sentences"
+                    onChangeText={setNoteText}
+                    multiline
+                    accessibilityLabel="New note"
+                  />
+                </View>
+                <Pressable
+                  onPress={handleAddNote}
+                  disabled={savingNote || !noteText.trim()}
+                  hitSlop={metrics.hitSlop}
+                  accessibilityRole="button"
+                  accessibilityLabel="Post note"
+                  style={[ck.iconBtn, { opacity: savingNote || !noteText.trim() ? metrics.disabledOpacity : 1 }]}
+                >
+                  {savingNote ? <ActivityIndicator size="small" color={k.accent} /> : <SendHorizontal size={size.icon.header} color={k.accent} strokeWidth={metrics.iconStroke} />}
+                </Pressable>
               </View>
-            </Pressable>
-          </KeyboardAvoidingView>
-        </Pressable>
-      </Modal>
+            </>
+          ) : null}
+
+          {menuMode === 'attachments' && menuItem ? (
+            <>
+              {(() => {
+                const attachments = Array.isArray(menuItem.attachmentIds) ? menuItem.attachmentIds as any[] : [];
+                if (attachments.length === 0) {
+                  return <Text style={[type.meta, ck.menuEmpty, { color: k.muted }]}>No attachments</Text>;
+                }
+                return (
+                  <ScrollView style={{ maxHeight: metrics.checklists.menuListMax }}>
+                    <Card variant="list">
+                      {attachments.map((att: any, idx: number) => {
+                        const Glyph = att.contentType?.startsWith('image/') ? ImageIcon : FileText;
+                        return (
+                          <ListRow
+                            key={idx}
+                            lead={<Glyph size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />}
+                            title={att.name}
+                            titleLines={1}
+                            subtitle={[att.uploadedBy, att.uploadedAt ? formatFeedDate(att.uploadedAt) : null].filter(Boolean).join(' · ') || undefined}
+                            trailing={
+                              <Pressable onPress={() => handleRemoveAttachment(idx)} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel={`Remove ${att.name}`}>
+                                <Trash2 size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />
+                              </Pressable>
+                            }
+                          />
+                        );
+                      })}
+                    </Card>
+                  </ScrollView>
+                );
+              })()}
+              <ButtonRow>
+                <SecondaryButton label="Add attachment" icon={Plus} onPress={handlePickAttachment} loading={uploadingAttachment} />
+              </ButtonRow>
+            </>
+          ) : null}
+
+          {menuMode === 'assignee' && menuItem ? (
+            loadingTeam ? (
+              <ActivityIndicator size="small" color={k.accent} style={ck.menuEmpty} />
+            ) : (
+              <ScrollView style={{ maxHeight: metrics.checklists.menuListMax + metrics.checklists.menuListMax / 2 }}>
+                <Card variant="list">
+                  {menuItem.assigneeId ? (
+                    <ListRow
+                      key="__none"
+                      lead={<UserX size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />}
+                      title="Unassign"
+                      onPress={savingAssignee ? undefined : () => handleAssign(null, null)}
+                    />
+                  ) : null}
+                  {teamMembers.map(member => {
+                    const active = menuItem.assigneeId === member.id;
+                    return (
+                      <ListRow
+                        key={member.id}
+                        lead={<Avatar name={member.displayName} />}
+                        title={member.displayName}
+                        titleLines={1}
+                        selected={active}
+                        trailing={active ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
+                        onPress={savingAssignee ? undefined : () => handleAssign(member.id, member.displayName)}
+                      />
+                    );
+                  })}
+                </Card>
+                {teamMembers.length === 0 ? <Text style={[type.meta, ck.menuEmpty, { color: k.muted }]}>No team members available</Text> : null}
+              </ScrollView>
+            )
+          ) : null}
+        </View>
+      </ModalSheet>
     </View>
   );
 }
@@ -1134,6 +1057,14 @@ const ck = StyleSheet.create({
   empty: { minHeight: metrics.emptyState.circle * 6 },
   sheetBody: { paddingHorizontal: space.screenX, paddingTop: space.inline },
   // Detail
+  menuBody: { paddingHorizontal: space.screenX, paddingTop: space.inline, paddingBottom: space.screenBottom, gap: metrics.sheet.gap },
+  menuEmpty: { textAlign: 'center', paddingVertical: space.screenBottom },
+  feedRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.rowGap, paddingVertical: metrics.listRow.padY },
+  feedBody: { flex: 1, gap: metrics.listRow.bodyGap },
+  feedHead: { flexDirection: 'row', alignItems: 'baseline', gap: space.inline, flexWrap: 'wrap' },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  flex1: { flex: 1 },
+  iconBtn: { minWidth: metrics.minHit, minHeight: metrics.minHit, alignItems: 'center', justifyContent: 'center' },
   detail: { paddingHorizontal: space.screenX, paddingBottom: space.screenBottom, gap: metrics.scope.gap },
   titleBlock: { gap: space.inline },
   subLine: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
@@ -1154,128 +1085,4 @@ const ck = StyleSheet.create({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingHorizontal: 20,
-    paddingBottom: 34,
-    paddingTop: 10,
-  },
-  modalHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  modalAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(128,128,128,0.15)',
-  },
-  modalActionText: {
-    fontSize: 15,
-    flex: 1,
-  },
-  modalSubHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
-  saveBtn: {
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  saveBtnText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  assignRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  assignRowText: {
-    fontSize: 14,
-    flex: 1,
-  },
-  assignAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  assignAvatarText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  menuBadge: {
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginRight: -4,
-  },
-  feedEntry: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 2,
-  },
-  feedAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  feedInputRow: {
-    borderTopWidth: 1,
-    paddingTop: 10,
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'flex-end',
-  },
-  feedInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 13,
-    minHeight: 40,
-    maxHeight: 80,
-  },
-  feedSendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  attachmentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
 });

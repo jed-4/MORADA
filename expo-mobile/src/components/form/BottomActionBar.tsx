@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Keyboard, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, Keyboard, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../../theme';
+import { metrics, radii, size, space, type, useColors } from '../../theme';
+import { SHEET_MAX_WIDTH } from '../ui/Sheet';
 import { haptic } from '../../lib/haptics';
 
 /** Height the bar takes above the keyboard / home indicator (for scroll padding). */
@@ -23,16 +24,16 @@ export function BottomActionBar({
   onPress,
   busy,
   disabled,
-  icon = 'checkmark-circle-outline',
 }: {
   label: string;
   busyLabel?: string;
   onPress: () => void;
   busy?: boolean;
   disabled?: boolean;
+  /** Kept for callers; the revamp button is text only (one accent button). */
   icon?: keyof typeof Ionicons.glyphMap;
 }) {
-  const theme = useTheme();
+  const c = useColors();
   const insets = useSafeAreaInsets();
   const [keyboardUp, setKeyboardUp] = useState(false);
 
@@ -50,46 +51,46 @@ export function BottomActionBar({
       style={[
         styles.bar,
         {
-          backgroundColor: theme.card,
-          borderTopColor: theme.border,
+          backgroundColor: c.bg,
+          borderTopColor: c.border,
           // Over the keyboard there's no home indicator to clear.
-          paddingBottom: keyboardUp ? 10 : Math.max(insets.bottom, 12),
+          paddingBottom: keyboardUp ? metrics.actionBar.padY : Math.max(insets.bottom, metrics.actionBar.padY),
         },
       ]}
     >
-      <TouchableOpacity
-        style={[styles.btn, { backgroundColor: theme.primary }, off && styles.btnOff]}
+      <Pressable
+        style={({ pressed }) => [
+          styles.btn,
+          { backgroundColor: disabled ? c.accentDisabled : c.accent, opacity: busy ? metrics.solidPressedOpacity : pressed ? metrics.solidPressedOpacity : 1 },
+        ]}
         onPress={() => { haptic.light(); onPress(); }}
         disabled={off}
-        activeOpacity={0.8}
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityState={{ disabled: !!off, busy: !!busy }}
       >
-        {busy ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name={icon} size={20} color="#fff" />}
-        <Text style={styles.btnText}>{busy ? busyLabel || label : label}</Text>
-      </TouchableOpacity>
+        {busy ? <ActivityIndicator color={c.onAccent} size="small" /> : null}
+        <Text style={[type.rowTitleMedium, { color: c.onAccent }]}>{busy ? busyLabel || label : label}</Text>
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   bar: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 16,
-    paddingTop: 10,
+    borderTopWidth: size.border,
+    paddingHorizontal: space.screenX,
+    paddingTop: metrics.actionBar.padY,
     alignItems: 'center',
   },
   btn: {
     width: '100%',
-    maxWidth: 560,
-    minHeight: 52,
-    borderRadius: 12,
+    maxWidth: SHEET_MAX_WIDTH,
+    minHeight: metrics.actionBar.primaryHeight + space.inline,
+    borderRadius: radii.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: space.inline,
   },
-  btnOff: { opacity: 0.6 },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

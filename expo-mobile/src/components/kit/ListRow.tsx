@@ -19,6 +19,8 @@ interface ListRowProps {
   titleLines?: number;
   titleStyle?: 'regular' | 'strong' | 'medium';
   selected?: boolean;
+  /** Destructive action row (Delete): red title. */
+  danger?: boolean;
   onPress?: () => void;
   onLongPress?: () => void;
   accessibilityLabel?: string;
@@ -37,6 +39,7 @@ export function ListRow({
   titleLines = 2,
   titleStyle = 'regular',
   selected,
+  danger,
   onPress,
   onLongPress,
   accessibilityLabel,
@@ -52,7 +55,7 @@ export function ListRow({
           numberOfLines={titleLines}
           style={[
             titleType,
-            { color: done ? c.muted : c.text },
+            { color: danger ? c.danger : done ? c.muted : c.text },
             done && strike ? { textDecorationLine: 'line-through' } : null,
           ]}
         >

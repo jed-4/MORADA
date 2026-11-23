@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
-  TouchableOpacity,
   ActivityIndicator,
   Pressable,
 } from 'react-native';
@@ -18,7 +17,6 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
@@ -37,11 +35,14 @@ import { refreshWidgetSnapshot } from '../services/widgetSnapshot';
 import { getInitials, timeAgo, compactAgo } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, useColors, fontSize, fontWeight, radius, projectColors, metrics, radii, size, space, tabular, type, fonts } from '../theme';
+import { useTheme, useColors, projectColors, metrics, radii, size, space, tabular, type, fonts } from '../theme';
 import {
-  Activity, AtSign, Bell, Building, ChevronDown, ChevronRight, CircleCheck, Clock, Folder, Lightbulb, LogOut, Settings,
+  Activity, AtSign, Bell, Building, ChevronDown, ChevronRight, CircleCheck, Clock, Folder, Lightbulb, LogOut, Pencil, RotateCcw, Settings,
 } from 'lucide-react-native';
-import { Avatar, Card, Checkbox, Divider, ListRow, UnreadBadge, fallbackProjectColor } from '../components/kit';
+import {
+  Avatar, ButtonRow, Card, Checkbox, Divider, FieldLabel, ListRow, PrimaryButton, ProjectSquare, PropertyRow, SecondaryButton, SheetBody,
+  UnreadBadge, fallbackProjectColor, initialsOf,
+} from '../components/kit';
 import { AgendaRow, EmptyLine, MoreRow, ProjectLineRow, Rows, SubLabel, WorkspaceSection } from '../components/home/WorkspaceSections';
 
 interface Project {
@@ -902,361 +903,221 @@ export default function DashboardScreen({ navigation }: Props) {
       <SuggestionSheet ref={suggestionSheetRef} sourcePage="dashboard-menu" />
 
       <Sheet ref={clockOutSheetRef} title="Clock out?">
-        <View style={styles.sheetBody}>
-          {activeTimesheet && (
-            <View style={[styles.clockOutSummary, { backgroundColor: theme.background }]}>
-              <Text style={[styles.clockOutProject, { color: theme.textPrimary }]}>
-                {activeTimesheet.projectName || getProjectName(activeTimesheet.projectId)}
-              </Text>
-              <Text style={[styles.clockOutElapsed, { color: theme.textSecondary }]}>
-                Clocked in for {formatTimeSince(activeTimesheet.clockInTime)}
-              </Text>
+        <SheetBody>
+          {activeTimesheet ? (
+            <Card variant="list">
+              <PropertyRow key="project" label="Project" value={activeTimesheet.projectName || getProjectName(activeTimesheet.projectId)} />
+              <PropertyRow key="since" label="Clocked in" value={`for ${formatTimeSince(activeTimesheet.clockInTime)}`} />
+            </Card>
+          ) : null}
+          <View style={wx.group}>
+            <FieldLabel>Break</FieldLabel>
+            <View style={wx.chips}>
+              {BREAK_OPTIONS.map(mins => {
+                const selected = breakMinutes === mins;
+                return (
+                  <Pressable
+                    key={mins}
+                    onPress={() => { haptic.select(); setBreakMinutes(mins); }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    style={({ pressed }) => [
+                      wx.chip,
+                      { backgroundColor: selected ? c.tint : c.surface, borderColor: selected ? c.accent : c.border, opacity: pressed ? metrics.pressedOpacity : 1 },
+                    ]}
+                  >
+                    <Text style={[type.meta, tabular, { color: selected ? c.link : c.text }]}>{breakLabel(mins)}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
-          )}
-          <Text style={[styles.sheetLabel, { color: theme.textSecondary }]}>Break</Text>
-          <View style={styles.breakChipsRow}>
-            {BREAK_OPTIONS.map(mins => {
-              const selected = breakMinutes === mins;
-              return (
-                <Pressable
-                  key={mins}
-                  onPress={() => { haptic.select(); setBreakMinutes(mins); }}
-                  style={[
-                    styles.breakChip,
-                    {
-                      backgroundColor: selected ? theme.primaryLight : theme.card,
-                      borderColor: selected ? theme.primary : theme.border,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.breakChipText, { color: selected ? theme.primary : theme.textSecondary }]}>
-                    {breakLabel(mins)}
-                  </Text>
-                </Pressable>
-              );
-            })}
           </View>
-          <TouchableOpacity
-            style={[styles.destructiveBtn, { backgroundColor: theme.statusDangerSolid }]}
-            onPress={confirmClockOut}
-            disabled={clockingOut}
-            activeOpacity={0.8}
-          >
-            {clockingOut
-              ? <ActivityIndicator size="small" color="#FFFFFF" />
-              : <Text style={styles.destructiveBtnText}>Clock Out</Text>}
-          </TouchableOpacity>
-        </View>
+          <ButtonRow>
+            <PrimaryButton label="Clock out" onPress={confirmClockOut} loading={clockingOut} />
+          </ButtonRow>
+        </SheetBody>
       </Sheet>
 
       {/* Timesheet detail sheet */}
       <Sheet ref={timesheetSheetRef} title="Timesheet" onDismiss={() => setSelectedTimesheetDetail(null)}>
-        {selectedTimesheetDetail && (
-          <View style={styles.sheetBody}>
-            <View style={[styles.detailRow, { borderColor: theme.border }]}>
-              <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
-              <View style={styles.detailBody}>
-                <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Date</Text>
-                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
-                  {formatDateLabel(selectedTimesheetDetail.date)}
-                </Text>
-              </View>
-            </View>
-            <View style={[styles.detailRow, { borderColor: theme.border }]}>
-              <Ionicons name="briefcase-outline" size={16} color={theme.textSecondary} />
-              <View style={styles.detailBody}>
-                <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Project</Text>
-                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
-                  {getProjectName(selectedTimesheetDetail.projectId)}
-                </Text>
-              </View>
-            </View>
-            <View style={[styles.detailRow, { borderColor: theme.border }]}>
-              <Ionicons name="time-outline" size={16} color={theme.textSecondary} />
-              <View style={styles.detailBody}>
-                <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Duration</Text>
-                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
-                  {parseFloat(selectedTimesheetDetail.duration).toFixed(2)}h
-                  {selectedTimesheetDetail.startTime && selectedTimesheetDetail.endTime
-                    ? `  ·  ${selectedTimesheetDetail.startTime} – ${selectedTimesheetDetail.endTime}`
-                    : ''}
-                </Text>
-              </View>
-            </View>
-            {(() => {
-              const ccId = selectedTimesheetDetail.costCodeId || selectedTimesheetDetail.costCodeSplits?.[0]?.costCodeId;
-              return ccId ? (
-                <View style={[styles.detailRow, { borderColor: theme.border }]}>
-                  <Ionicons name="pricetag-outline" size={16} color={theme.textSecondary} />
-                  <View style={styles.detailBody}>
-                    <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Cost Code</Text>
-                    <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{getCostCodeLabel(ccId)}</Text>
+        {selectedTimesheetDetail ? (() => {
+          const ts = selectedTimesheetDetail;
+          const ccId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
+          const cc = ccId ? getCostCodeLabel(ccId) : null;
+          const st = ts.status;
+          const dotColor = st === 'approved' ? c.status.done : st === 'submitted' ? c.status.sent : st === 'rejected' ? c.danger : c.status.upcoming;
+          return (
+            <SheetBody>
+              <Card variant="list">
+                <PropertyRow key="date" label="Date" value={formatDateLabel(ts.date)} />
+                <PropertyRow key="project" label="Project" value={getProjectName(ts.projectId, ts.projectName)} />
+                <PropertyRow key="hours" label="Hours">
+                  <Text style={[type.body, tabular, { color: c.text }]}>
+                    {`${parseFloat(ts.duration).toFixed(2)}h${ts.startTime && ts.endTime ? `  ·  ${ts.startTime} – ${ts.endTime}` : ''}`}
+                  </Text>
+                </PropertyRow>
+                {cc ? <PropertyRow key="cc" label="Cost code" value={cc} /> : null}
+                <PropertyRow key="status" label="Status">
+                  <View style={wx.status}>
+                    <View style={[wx.dot, { backgroundColor: dotColor }]} />
+                    <Text style={[type.body, { color: st === 'rejected' ? c.danger : c.text }]}>{st.charAt(0).toUpperCase() + st.slice(1)}</Text>
                   </View>
-                </View>
-              ) : null;
-            })()}
-            <View style={styles.statusRow}>
-              <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Status</Text>
-              <View style={[styles.statusBadge, {
-                backgroundColor:
-                  selectedTimesheetDetail.status === 'approved' ? theme.statusSuccessBg :
-                  selectedTimesheetDetail.status === 'submitted' ? theme.statusInfoBg :
-                  selectedTimesheetDetail.status === 'rejected' ? theme.statusDangerBg : theme.primaryLight,
-              }]}>
-                <Text style={[styles.statusBadgeText, {
-                  color:
-                    selectedTimesheetDetail.status === 'approved' ? theme.statusSuccess :
-                    selectedTimesheetDetail.status === 'submitted' ? theme.statusInfo :
-                    selectedTimesheetDetail.status === 'rejected' ? theme.statusDanger : theme.primary,
-                }]}>
-                  {selectedTimesheetDetail.status.charAt(0).toUpperCase() + selectedTimesheetDetail.status.slice(1)}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={[styles.sheetPrimaryBtn, { backgroundColor: theme.primary }]}
-              onPress={() => {
-                timesheetSheetRef.current?.dismiss();
-                navigation.navigate('More', { screen: 'Timesheets' });
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="open-outline" size={16} color="#FFFFFF" style={styles.btnIcon} />
-              <Text style={styles.sheetPrimaryBtnText}>View in Timesheets</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+                </PropertyRow>
+              </Card>
+              <ButtonRow>
+                <SecondaryButton
+                  label="View in Timesheets"
+                  onPress={() => {
+                    timesheetSheetRef.current?.dismiss();
+                    navigation.navigate('More', { screen: 'Timesheets' });
+                  }}
+                />
+              </ButtonRow>
+            </SheetBody>
+          );
+        })() : null}
       </Sheet>
 
       {/* Task detail sheet */}
-      <Sheet
-        ref={taskSheetRef}
-        title={taskDetail?.title}
-        scrollable
-        onDismiss={() => setTaskDetail(null)}
-      >
+      <Sheet ref={taskSheetRef} scrollable onDismiss={() => setTaskDetail(null)}>
         {taskDetailLoading ? (
-          <View style={styles.sheetLoading}>
-            <ActivityIndicator size="large" color={theme.primary} />
+          <View style={wx.loading}>
+            <ActivityIndicator size="large" color={c.accent} />
           </View>
-        ) : (
-          <View style={styles.sheetBody}>
-            {/* Meta row: project + due date + priority */}
-            <View style={styles.taskMetaRow}>
-              {taskDetail?.projectId && (
-                <View style={[styles.taskMetaBadge, { backgroundColor: getProjectColor(taskDetail.projectId) + '25', borderColor: getProjectColor(taskDetail.projectId) + '50' }]}>
-                  <View style={[styles.taskMetaDot, { backgroundColor: getProjectColor(taskDetail.projectId) }]} />
-                  <Text style={[styles.taskMetaBadgeText, { color: theme.textPrimary }]} numberOfLines={1}>
+        ) : taskDetail ? (
+          <SheetBody>
+            <View style={wx.titleBlock}>
+              {taskDetail.projectId ? (
+                <View style={wx.kind}>
+                  <ProjectSquare color={getProjectColor(taskDetail.projectId)} fallbackKey={taskDetail.projectId} size="header" />
+                  <Text style={[type.meta, wx.shrink, { color: c.muted }]} numberOfLines={1}>
                     {projects.find(p => p.id === taskDetail.projectId)?.name || 'Project'}
                   </Text>
                 </View>
-              )}
-              {taskDetail?.dueDate && (
-                <View style={[styles.taskMetaBadge, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                  <Ionicons name="calendar-outline" size={12} color={theme.textSecondary} style={styles.taskMetaIcon} />
-                  <Text style={[styles.taskMetaBadgeText, { color: theme.textSecondary }]}>
-                    {formatDateLabel(taskDetail.dueDate)}
-                  </Text>
-                </View>
-              )}
-              {taskDetail?.priority && taskDetail.priority !== 'low' && (
-                <View style={[styles.taskMetaBadge, {
-                  backgroundColor: taskDetail.priority === 'high' || taskDetail.priority === 'urgent' ? theme.statusDangerBg : taskDetail.priority === 'medium' ? theme.statusWarningBg : theme.card,
-                  borderColor: taskDetail.priority === 'high' || taskDetail.priority === 'urgent' ? theme.statusDanger + '50' : taskDetail.priority === 'medium' ? theme.statusWarning + '50' : theme.border,
-                }]}>
-                  <Text style={[styles.taskMetaBadgeText, styles.capitalize, {
-                    color: taskDetail.priority === 'high' || taskDetail.priority === 'urgent' ? theme.statusDanger : taskDetail.priority === 'medium' ? theme.statusWarning : theme.textSecondary,
-                  }]}>
-                    {taskDetail.priority}
-                  </Text>
-                </View>
-              )}
+              ) : null}
+              <Text style={[type.headingSemi, { color: c.text }]}>{taskDetail.title}</Text>
+              {(taskDetail.dueDate || (taskDetail.priority && taskDetail.priority !== 'low')) ? (
+                <Text style={[type.meta, { color: c.muted }]}>
+                  {[
+                    taskDetail.dueDate ? `Due ${formatDateLabel(taskDetail.dueDate)}` : null,
+                    taskDetail.priority && taskDetail.priority !== 'low'
+                      ? `${taskDetail.priority.charAt(0).toUpperCase()}${taskDetail.priority.slice(1)} priority`
+                      : null,
+                  ].filter(Boolean).join(' · ')}
+                </Text>
+              ) : null}
             </View>
 
-            {/* Notes */}
-            {stripHtml(taskDetail?.contentText || taskDetail?.content) ? (
-              <View style={styles.sheetBlock}>
-                <Text style={[styles.sheetLabel, { color: theme.textSecondary }]}>Notes</Text>
-                <Text style={[styles.taskDescText, { color: theme.textPrimary, backgroundColor: theme.background, borderColor: theme.border }]}>
-                  {stripHtml(taskDetail?.contentText || taskDetail?.content)}
-                </Text>
+            {stripHtml(taskDetail.contentText || taskDetail.content) ? (
+              <View style={wx.group}>
+                <FieldLabel>Notes</FieldLabel>
+                <Card variant="notes">
+                  <Text style={[type.bodyRead, { color: c.textLong }]}>{stripHtml(taskDetail.contentText || taskDetail.content)}</Text>
+                </Card>
               </View>
             ) : null}
 
-            {/* Checklist items */}
-            {taskDetail?.checklist && taskDetail.checklist.length > 0 ? (
-              <View style={styles.sheetBlock}>
-                <View style={styles.checklistHeader}>
-                  <Text style={[styles.sheetLabel, { color: theme.textSecondary }]}>Checklist</Text>
-                  <Text style={[styles.taskMetaBadgeText, { color: theme.textSecondary }]}>
-                    {taskDetail.checklist.filter(i => i.completed).length}/{taskDetail.checklist.length}
+            {taskDetail.checklist && taskDetail.checklist.length > 0 ? (
+              <View style={wx.group}>
+                <View style={wx.labelRow}>
+                  <FieldLabel>Checklist</FieldLabel>
+                  <Text style={[type.meta, tabular, { color: c.muted }]}>
+                    {`${taskDetail.checklist.filter(i => i.completed).length}/${taskDetail.checklist.length}`}
                   </Text>
                 </View>
-                {taskDetail.checklist.map((item, idx) => (
-                  <Pressable
-                    key={item.id || idx}
-                    style={[styles.checklistRow, { borderColor: theme.border, backgroundColor: theme.background }]}
-                    onPress={() => handleChecklistItemToggle(idx)}
-                  >
-                    <View style={[styles.checklistBox, {
-                      borderColor: item.completed ? theme.primary : theme.textMuted,
-                      backgroundColor: item.completed ? theme.primary : 'transparent',
-                    }]}>
-                      {item.completed && <Ionicons name="checkmark" size={11} color="#FFFFFF" />}
-                    </View>
-                    <Text style={[styles.checklistItemText, {
-                      color: item.completed ? theme.textMuted : theme.textPrimary,
-                    }]}>
-                      {item.text}
-                    </Text>
-                    {item.assigneeName ? (
-                      <Text style={[styles.taskMetaBadgeText, styles.checklistAssignee, { color: theme.textSecondary }]} numberOfLines={1}>
-                        {item.assigneeName.split(' ')[0]}
-                      </Text>
-                    ) : null}
-                  </Pressable>
-                ))}
+                <Card variant="list">
+                  {taskDetail.checklist.map((item, idx) => (
+                    <Pressable
+                      key={item.id || idx}
+                      style={({ pressed }) => [wx.itemRow, { opacity: pressed ? metrics.pressedOpacity : 1 }]}
+                      onPress={() => handleChecklistItemToggle(idx)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: !!item.completed }}
+                    >
+                      <Checkbox checked={!!item.completed} accessibilityLabel={item.text} />
+                      <Text style={[type.rowTitle, wx.flex, { color: item.completed ? c.muted : c.text }, item.completed && wx.strike]}>{item.text}</Text>
+                      {item.assigneeName ? (
+                        <Text style={[type.caption, { color: c.muted }]}>{initialsOf(item.assigneeName)}</Text>
+                      ) : null}
+                    </Pressable>
+                  ))}
+                </Card>
               </View>
             ) : null}
 
-            {/* Linked checklist instance */}
-            {taskDetail?.checklistInstanceName ? (
-              <View style={styles.sheetBlock}>
-                <Text style={[styles.sheetLabel, { color: theme.textSecondary }]}>Linked Checklist</Text>
-                <View style={[styles.checklistRow, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                  <Ionicons name="list-outline" size={16} color={theme.primary} style={styles.btnIcon} />
-                  <Text style={[styles.checklistItemText, { color: theme.textPrimary }]}>{taskDetail.checklistInstanceName}</Text>
-                </View>
-              </View>
+            {taskDetail.checklistInstanceName ? (
+              <Card variant="list">
+                <PropertyRow key="linked" label="Checklist" value={taskDetail.checklistInstanceName} />
+              </Card>
             ) : null}
 
-            {/* Actions */}
-            <View style={styles.sheetActionsRow}>
-              <TouchableOpacity
-                style={[styles.sheetSecondaryBtn, {
-                  backgroundColor: isComplete(taskDetail?.status) ? theme.card : theme.primaryLight,
-                  borderColor: isComplete(taskDetail?.status) ? theme.border : theme.primary + '60',
-                }]}
+            <ButtonRow>
+              <SecondaryButton
+                label={isComplete(taskDetail.status) ? 'Mark incomplete' : 'Mark complete'}
+                icon={isComplete(taskDetail.status) ? RotateCcw : CircleCheck}
                 onPress={handleTaskSheetToggleComplete}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={isComplete(taskDetail?.status) ? 'refresh-outline' : 'checkmark-circle-outline'}
-                  size={15}
-                  color={isComplete(taskDetail?.status) ? theme.textSecondary : theme.primary}
-                  style={styles.btnIcon}
-                />
-                <Text style={[styles.sheetSecondaryBtnText, { color: isComplete(taskDetail?.status) ? theme.textSecondary : theme.primary }]}>
-                  {isComplete(taskDetail?.status) ? 'Mark Incomplete' : 'Mark Complete'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.sheetPrimaryBtn, styles.sheetActionBtn, { backgroundColor: theme.primary }]}
+              />
+              <PrimaryButton
+                label="Edit"
+                icon={Pencil}
                 onPress={() => {
                   taskSheetRef.current?.dismiss();
                   const tabNav = navigation.getParent<NativeStackNavigationProp<any>>();
-                  (tabNav ?? navigation).navigate('More', { screen: 'Tasks', params: { openTaskId: taskDetail?.id } });
+                  (tabNav ?? navigation).navigate('More', { screen: 'Tasks', params: { openTaskId: taskDetail.id } });
                 }}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="create-outline" size={15} color="#FFFFFF" style={styles.btnIcon} />
-                <Text style={styles.sheetPrimaryBtnText}>Edit</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+              />
+            </ButtonRow>
+          </SheetBody>
+        ) : null}
       </Sheet>
 
       {/* Schedule item detail sheet */}
-      <Sheet
-        ref={scheduleSheetRef}
-        title={scheduleDetail?.name}
-        onDismiss={() => setScheduleDetail(null)}
-      >
-        {scheduleDetail && (
-          <View style={styles.sheetBody}>
-            {/* Meta badges row */}
-            <View style={styles.taskMetaRow}>
-              {scheduleDetail.projectName && (
-                <View style={[styles.taskMetaBadge, {
-                  backgroundColor: getProjectColor(scheduleDetail.projectId) + '25',
-                  borderColor: getProjectColor(scheduleDetail.projectId) + '50',
-                }]}>
-                  <View style={[styles.taskMetaDot, { backgroundColor: getProjectColor(scheduleDetail.projectId) }]} />
-                  <Text style={[styles.taskMetaBadgeText, { color: theme.textPrimary }]} numberOfLines={1}>
-                    {scheduleDetail.projectName}
-                  </Text>
+      <Sheet ref={scheduleSheetRef} onDismiss={() => setScheduleDetail(null)}>
+        {scheduleDetail ? (() => {
+          const opt = scheduleStatusOptions.find(o => o.key === scheduleDetail.status);
+          const dates = `${formatDateLabel(scheduleDetail.startDate)}${scheduleDetail.startDate !== scheduleDetail.endDate ? ` – ${formatDateLabel(scheduleDetail.endDate)}` : ''}`;
+          const times = [scheduleDetail.startTime?.slice(0, 5), scheduleDetail.endTime?.slice(0, 5)].filter(Boolean).join(' – ');
+          return (
+            <SheetBody>
+              <View style={wx.titleBlock}>
+                <View style={wx.kind}>
+                  {scheduleDetail.type ? (
+                    <Text style={[type.meta, { color: c.muted }]}>{scheduleDetail.type.charAt(0).toUpperCase() + scheduleDetail.type.slice(1)}</Text>
+                  ) : null}
+                  {scheduleDetail.projectName ? (
+                    <>
+                      {scheduleDetail.type ? <Text style={[type.meta, { color: c.faint }]}>·</Text> : null}
+                      <ProjectSquare color={getProjectColor(scheduleDetail.projectId)} fallbackKey={scheduleDetail.projectId} size="header" />
+                      <Text style={[type.meta, wx.shrink, { color: c.muted }]} numberOfLines={1}>{scheduleDetail.projectName}</Text>
+                    </>
+                  ) : null}
                 </View>
-              )}
-              {scheduleDetail.type && (
-                <View style={[styles.taskMetaBadge, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                  <Text style={[styles.taskMetaBadgeText, styles.capitalize, { color: theme.textSecondary }]}>
-                    {scheduleDetail.type}
-                  </Text>
-                </View>
-              )}
-              {scheduleDetail.status && (() => {
-                const opt = scheduleStatusOptions.find(o => o.key === scheduleDetail.status);
-                const sc = opt?.color || theme.textMuted;
-                const label = opt?.name || scheduleDetail.status;
-                return (
-                  <View style={[styles.taskMetaBadge, { backgroundColor: sc + '25', borderColor: sc + '60' }]}>
-                    <View style={[styles.taskMetaDot, { backgroundColor: sc }]} />
-                    <Text style={[styles.taskMetaBadgeText, { color: sc }]}>{label}</Text>
+                <Text style={[type.headingSemi, { color: c.text }]}>{scheduleDetail.name}</Text>
+                {scheduleDetail.status ? (
+                  <View style={wx.status}>
+                    <View style={[wx.dot, { backgroundColor: opt?.color || c.status.upcoming }]} />
+                    <Text style={[type.meta, { color: c.muted }]}>{opt?.name || scheduleDetail.status}</Text>
                   </View>
-                );
-              })()}
-            </View>
-
-            {/* Date / Time */}
-            <View style={[styles.detailRow, { borderColor: theme.border }]}>
-              <Ionicons name="calendar-outline" size={16} color={theme.primary} />
-              <View style={styles.detailBody}>
-                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
-                  {formatDateLabel(scheduleDetail.startDate)}
-                  {scheduleDetail.startDate !== scheduleDetail.endDate
-                    ? ` → ${formatDateLabel(scheduleDetail.endDate)}`
-                    : ''}
-                </Text>
-                {(scheduleDetail.startTime || scheduleDetail.endTime) && (
-                  <Text style={[styles.detailSubtext, { color: theme.textSecondary }]}>
-                    {scheduleDetail.startTime ? scheduleDetail.startTime.slice(0, 5) : ''}
-                    {scheduleDetail.startTime && scheduleDetail.endTime ? ' – ' : ''}
-                    {scheduleDetail.endTime ? scheduleDetail.endTime.slice(0, 5) : ''}
-                  </Text>
-                )}
+                ) : null}
               </View>
-            </View>
-
-            {/* Assigned To */}
-            {scheduleDetail.assignedToName && (
-              <View style={[styles.detailRow, { borderColor: theme.border }]}>
-                <Ionicons name="person-outline" size={16} color={theme.primary} />
-                <View style={styles.detailBody}>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
-                    {scheduleDetail.assignedToName}
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.sheetPrimaryBtn, { backgroundColor: theme.primary }]}
-              onPress={() => {
-                scheduleSheetRef.current?.dismiss();
-                const tabNav = navigation.getParent<NativeStackNavigationProp<any>>();
-                (tabNav ?? navigation).navigate('More', {
-                  screen: 'Schedule',
-                  params: { projectId: scheduleDetail.projectId },
-                });
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="calendar-outline" size={15} color="#FFFFFF" style={styles.btnIcon} />
-              <Text style={styles.sheetPrimaryBtnText}>View in Schedule</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+              <Card variant="list">
+                <PropertyRow key="dates" label="Dates" value={dates} />
+                {times ? <PropertyRow key="times" label="Time" value={times} /> : null}
+                {scheduleDetail.assignedToName ? <PropertyRow key="assigned" label="Assigned" value={scheduleDetail.assignedToName} /> : null}
+              </Card>
+              <ButtonRow>
+                <SecondaryButton
+                  label="View in Schedule"
+                  onPress={() => {
+                    scheduleSheetRef.current?.dismiss();
+                    const tabNav = navigation.getParent<NativeStackNavigationProp<any>>();
+                    (tabNav ?? navigation).navigate('More', { screen: 'Schedule', params: { projectId: scheduleDetail.projectId } });
+                  }}
+                />
+              </ButtonRow>
+            </SheetBody>
+          );
+        })() : null}
       </Sheet>
     </View>
   );
@@ -1297,207 +1158,20 @@ const styles = StyleSheet.create({
   clockOutBtn: { borderRadius: radii.lg, paddingHorizontal: space.cardX, minHeight: metrics.actionBar.buttonHeight, justifyContent: 'center' },
   completedToggle: { flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.toggleGap, paddingVertical: metrics.workspace.row.padY },
   activityRow: { flexDirection: 'row', alignItems: 'center', gap: metrics.workspace.activityRow.gap, paddingVertical: metrics.workspace.activityRow.padY },
-  // Sheets
-  sheetBody: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    gap: 12,
-  },
-  sheetLoading: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  sheetBlock: {
-    gap: 6,
-  },
-  sheetLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  clockOutSummary: {
-    borderRadius: radius.xl,
-    padding: 14,
-    gap: 2,
-  },
-  clockOutProject: {
-    fontSize: fontSize.bodyLg,
-    fontWeight: fontWeight.semibold,
-  },
-  clockOutElapsed: {
-    fontSize: fontSize.bodySm,
-  },
-  breakChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  breakChip: {
-    borderRadius: radius.full,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  breakChipText: {
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-  },
-  destructiveBtn: {
-    height: 48,
-    borderRadius: radius.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  destructiveBtnText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.bodyLg,
-    fontWeight: fontWeight.semibold,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  detailBody: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  detailLabel: {
-    fontSize: fontSize.table,
-    marginBottom: 2,
-  },
-  detailValue: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
-  },
-  detailSubtext: {
-    fontSize: fontSize.xs,
-    marginTop: 2,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 4,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-  },
-  statusBadgeText: {
-    fontSize: fontSize.table,
-    fontWeight: fontWeight.semibold,
-  },
-  sheetPrimaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 44,
-    borderRadius: radius.xl,
-    marginTop: 4,
-  },
-  sheetPrimaryBtnText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-  },
-  sheetSecondaryBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 44,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-  },
-  sheetSecondaryBtnText: {
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-  },
-  sheetActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  sheetActionBtn: {
-    flex: 1,
-    marginTop: 0,
-  },
-  btnIcon: {
-    marginRight: 6,
-  },
-  // Task sheet meta
-  taskMetaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  taskMetaBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    borderWidth: 1,
-  },
-  taskMetaDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 5,
-  },
-  taskMetaIcon: {
-    marginRight: 4,
-  },
-  taskMetaBadgeText: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
-  },
-  capitalize: {
-    textTransform: 'capitalize',
-  },
-  taskDescText: {
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-    padding: 12,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  checklistHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  checklistRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 6,
-  },
-  checklistBox: {
-    width: 18,
-    height: 18,
-    borderRadius: radius.sm,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-    flexShrink: 0,
-  },
-  checklistItemText: {
-    flex: 1,
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-  },
-  checklistAssignee: {
-    marginLeft: 8,
-  },
+});
+
+const wx = StyleSheet.create({
+  flex: { flex: 1 },
+  shrink: { flexShrink: 1 },
+  loading: { paddingVertical: space.screenBottom * 2, alignItems: 'center' },
+  group: { gap: metrics.form.labelGap },
+  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  titleBlock: { gap: metrics.form.labelGap },
+  kind: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  status: { flexDirection: 'row', alignItems: 'center', gap: metrics.statusDot.gap },
+  dot: { width: size.statusDot, height: size.statusDot, borderRadius: size.statusDot / 2 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.inline },
+  chip: { paddingHorizontal: metrics.filterChip.padX, paddingVertical: metrics.filterChip.padY, borderRadius: radii.pill, borderWidth: size.border },
+  itemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.rowGap, paddingVertical: metrics.listRow.padY },
+  strike: { textDecorationLine: 'line-through' },
 });

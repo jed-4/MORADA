@@ -1,21 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import {
-  View,
-  Text,
-  Modal,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  FlatList,
-  useColorScheme,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, Modal, Pressable, StyleSheet, ActivityIndicator, FlatList } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Bell, MessageSquare, Settings2, Sparkles } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '../services/api';
 import { usePolling } from '../lib/usePolling';
-import { timeAgo } from '../lib/format';
+import { compactAgo } from '../lib/format';
 
-import { useTheme } from '../theme';
+import { metrics, size, space, tabular, type, useColors } from '../theme';
+import { Card, FilterChips, SheetHeader, TextButton, UnreadBadge } from './kit';
 type Entry = {
   id: string;
   source: 'note' | 'change';
@@ -44,16 +37,8 @@ export function ScheduleActivityFeedButton({
   userId?: string | null;
   onSelectItem?: (id: string) => void;
 }) {
-  const isDark = useColorScheme() === 'dark';
-  const theme = useTheme();
-const colors = {
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    bg: theme.background,
-};
+  const k = useColors();
+  const insets = useSafeAreaInsets();
 
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
@@ -160,115 +145,89 @@ const colors = {
     return groups;
   }, [entries]);
 
+  const FILTERS: { key: Filter; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'notes', label: 'Notes' },
+    { key: 'changes', label: 'Changes' },
+  ];
+
   return (
     <>
-      <TouchableOpacity
+      {/* Header bell (P08): a plain icon like the other header actions; unread as the accent badge. */}
+      <Pressable
         onPress={handleOpen}
-        style={[styles.bellBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+        hitSlop={metrics.hitSlop}
+        style={styles.bellBtn}
+        accessibilityRole="button"
+        accessibilityLabel={unread > 0 ? `Schedule activity, ${unread} new` : 'Schedule activity'}
         testID="button-mobile-schedule-activity-feed"
       >
-        <Ionicons name="notifications-outline" size={18} color={colors.secondary} />
-        {unread > 0 && (
+        <Bell size={size.icon.header} color={k.icon} strokeWidth={metrics.iconStroke} />
+        {unread > 0 ? (
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>{unread > 9 ? '9+' : String(unread)}</Text>
+            <UnreadBadge count={unread > 9 ? 9 : unread} />
           </View>
-        )}
-      </TouchableOpacity>
+        ) : null}
+      </Pressable>
 
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
-        <View style={[styles.container, { backgroundColor: colors.bg }]}>
-          <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <Text style={[styles.title, { color: colors.text }]}>Schedule activity</Text>
-            <TouchableOpacity onPress={() => setOpen(false)}>
-              <Ionicons name="close" size={22} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-          <View style={[styles.filters, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            {(['all', 'notes', 'changes'] as Filter[]).map(f => (
-              <TouchableOpacity
-                key={f}
-                onPress={() => { setFilter(f); setPage(1); }}
-                style={[
-                  styles.filterPill,
-                  { borderColor: colors.border },
-                  filter === f && { backgroundColor: colors.accent, borderColor: colors.accent },
-                ]}
-              >
-                <Text style={{ color: filter === f ? '#fff' : colors.secondary, fontSize: 12, fontWeight: '600' }}>
-                  {f === 'all' ? 'All' : f === 'notes' ? 'Notes' : 'Changes'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        <View style={[styles.container, { backgroundColor: k.bg, paddingTop: insets.top }]}>
+          <View style={styles.header}>
+            <SheetHeader title="Schedule activity" cancelLabel="Close" onCancel={() => setOpen(false)} />
+            <FilterChips chips={FILTERS} value={filter} onChange={f => { setFilter(f); setPage(1); }} />
           </View>
           {loading && entries.length === 0 ? (
-            <View style={styles.center}><ActivityIndicator color={colors.accent} /></View>
+            <View style={styles.center}><ActivityIndicator color={k.accent} /></View>
           ) : entries.length === 0 ? (
             <View style={styles.center}>
-              <Text style={{ color: colors.secondary }}>No activity yet</Text>
+              <Text style={[type.body, { color: k.muted }]}>No activity yet</Text>
             </View>
           ) : (
             <FlatList
               data={grouped}
               keyExtractor={(g, idx) => `${g.day}-${idx}`}
               renderItem={({ item: g }) => (
-                <View style={{ marginBottom: 8 }}>
-                  <Text style={[styles.dayLabel, { color: colors.secondary }]}>{g.day.toUpperCase()}</Text>
-                  {g.items.map(e => {
-                    const clickable = !!e.scheduleItemId && !!onSelectItem;
-                    const inner = (
-                      <>
-                        <View style={styles.entryHeader}>
-                          <Ionicons
-                            name={
-                              e.authorType === 'ai' ? 'sparkles-outline'
-                              : e.source === 'change' || e.authorType === 'system' ? 'settings-outline'
-                              : 'chatbubble-outline'
-                            }
-                            size={14}
-                            color={colors.secondary}
-                          />
-                          <Text style={[styles.entryAuthor, { color: colors.text }]}>
-                            {e.authorType === 'ai' ? 'AI' : (e.userName || 'System')}
-                          </Text>
-                          <Text style={{ color: colors.secondary, fontSize: 11, marginLeft: 'auto' }}>
-                            {timeAgo(e.createdAt)}
-                          </Text>
-                        </View>
-                        <Text style={[styles.entryContent, { color: colors.text }]}>{e.content}</Text>
-                        {!!e.scheduleItemName && (
-                          <Text style={[styles.entryItem, { color: colors.secondary }]} numberOfLines={1}>
-                            on {e.scheduleItemName}
-                          </Text>
-                        )}
-                      </>
-                    );
-                    return clickable ? (
-                      <TouchableOpacity
-                        key={e.id}
-                        onPress={() => { onSelectItem!(e.scheduleItemId!); setOpen(false); }}
-                        style={[styles.entry, { backgroundColor: colors.card, borderColor: colors.border }]}
-                      >
-                        {inner}
-                      </TouchableOpacity>
-                    ) : (
-                      <View
-                        key={e.id}
-                        style={[styles.entry, { backgroundColor: colors.card, borderColor: colors.border }]}
-                      >
-                        {inner}
-                      </View>
-                    );
-                  })}
+                <View style={styles.day}>
+                  <Text style={[type.meta, { color: k.muted }]}>{g.day}</Text>
+                  <Card variant="list">
+                    {g.items.map(e => {
+                      const clickable = !!e.scheduleItemId && !!onSelectItem;
+                      const Glyph = e.authorType === 'ai' ? Sparkles : e.source === 'change' || e.authorType === 'system' ? Settings2 : MessageSquare;
+                      const inner = (
+                        <>
+                          <View style={styles.entryHead}>
+                            <Glyph size={size.icon.meta} color={k.muted} strokeWidth={metrics.iconStroke} />
+                            <Text style={[type.metaSemi, styles.flex, { color: k.text }]} numberOfLines={1}>
+                              {e.authorType === 'ai' ? 'AI' : (e.userName || 'System')}
+                            </Text>
+                            <Text style={[type.caption, tabular, { color: k.muted }]}>{compactAgo(e.createdAt)}</Text>
+                          </View>
+                          <Text style={[type.bodyPreview, { color: k.textBody }]}>{e.content}</Text>
+                          {e.scheduleItemName ? (
+                            <Text style={[type.caption, { color: k.muted }]} numberOfLines={1}>{`on ${e.scheduleItemName}`}</Text>
+                          ) : null}
+                        </>
+                      );
+                      return clickable ? (
+                        <Pressable
+                          key={e.id}
+                          onPress={() => { onSelectItem!(e.scheduleItemId!); setOpen(false); }}
+                          style={({ pressed }) => [styles.entry, { opacity: pressed ? metrics.pressedOpacity : 1 }]}
+                          accessibilityRole="button"
+                        >
+                          {inner}
+                        </Pressable>
+                      ) : (
+                        <View key={e.id} style={styles.entry}>{inner}</View>
+                      );
+                    })}
+                  </Card>
                 </View>
               )}
               ListFooterComponent={hasMore ? (
-                <TouchableOpacity onPress={() => setPage(p => p + 1)} style={styles.loadMore}>
-                  {loading ? <ActivityIndicator color={colors.accent} /> : (
-                    <Text style={{ color: colors.accent, fontWeight: '600' }}>Load more</Text>
-                  )}
-                </TouchableOpacity>
+                <TextButton label={loading ? 'Loading…' : 'Load more'} center onPress={() => setPage(p => p + 1)} disabled={loading} />
               ) : undefined}
-              contentContainerStyle={{ padding: 12 }}
+              contentContainerStyle={[styles.list, { paddingBottom: space.screenBottom + insets.bottom }]}
             />
           )}
         </View>
@@ -278,29 +237,14 @@ const colors = {
 }
 
 const styles = StyleSheet.create({
-  bellBtn: {
-    height: 36, width: 36, borderRadius: 8, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center', marginLeft: 6,
-  },
-  badge: {
-    position: 'absolute', top: -3, right: -3, minWidth: 16, height: 16, borderRadius: 8,
-    paddingHorizontal: 3, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center',
-  },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  flex: { flex: 1 },
+  bellBtn: { alignItems: 'center', justifyContent: 'center' },
+  badge: { position: 'absolute', top: -metrics.badge.height / 2, right: -metrics.badge.height / 2 },
   container: { flex: 1 },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1,
-  },
-  title: { fontSize: 16, fontWeight: '600' },
-  filters: { flexDirection: 'row', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 1 },
-  filterPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
+  header: { paddingHorizontal: space.screenX, gap: space.inline, paddingBottom: space.inline },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  dayLabel: { fontSize: 11, fontWeight: '700', marginBottom: 6, marginLeft: 2, letterSpacing: 0.5 },
-  entry: { padding: 10, borderRadius: 8, borderWidth: 1, marginBottom: 6 },
-  entryHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  entryAuthor: { fontSize: 12, fontWeight: '600' },
-  entryContent: { fontSize: 13, marginTop: 4 },
-  entryItem: { fontSize: 11, marginTop: 4 },
-  loadMore: { padding: 12, alignItems: 'center' },
+  list: { paddingHorizontal: space.screenX, paddingTop: space.inline, gap: metrics.sheet.gap },
+  day: { gap: space.groupHeaderToCard },
+  entry: { paddingVertical: metrics.listRow.padY, gap: metrics.listRow.bodyGap },
+  entryHead: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
 });

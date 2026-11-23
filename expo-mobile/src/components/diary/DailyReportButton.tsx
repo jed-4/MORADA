@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ActionSheetIOS, Alert, Modal, Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { ModalSheet } from '../kit';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import DocumentViewer, { type ViewableDocument } from '../DocumentViewer';
@@ -116,36 +117,28 @@ export default function DailyReportButton({
       </Pressable>
 
       {picking && Platform.OS === 'ios' && (
-        <Modal transparent animationType="fade" onRequestClose={() => setPicking(false)}>
-          <Pressable style={styles.backdrop} onPress={() => setPicking(false)}>
-            <Pressable style={[styles.sheet, { backgroundColor: theme.card }]} onPress={() => {}}>
-              <View style={[styles.sheetBar, { borderBottomColor: theme.border }]}>
-                <Pressable onPress={() => setPicking(false)} hitSlop={10}>
-                  <Text style={[styles.sheetAction, { color: theme.textSecondary }]}>Cancel</Text>
-                </Pressable>
-                <Text style={[styles.sheetTitle, { color: theme.textPrimary }]}>Daily report</Text>
-                <Pressable
-                  onPress={() => {
-                    setPicking(false);
-                    open(localDay(pickerDate));
-                  }}
-                  hitSlop={10}
-                >
-                  <Text style={[styles.sheetAction, { color: theme.primary, fontWeight: fontWeight.semibold }]}>Open</Text>
-                </Pressable>
-              </View>
-              <DateTimePicker
-                value={pickerDate}
-                mode="date"
-                display="inline"
-                maximumDate={new Date()}
-                onChange={(_e, d) => { if (d) setPickerDate(d); }}
-                themeVariant={isDark ? 'dark' : 'light'}
-                accentColor={theme.primary}
-              />
-            </Pressable>
-          </Pressable>
-        </Modal>
+        <ModalSheet
+          visible
+          onRequestClose={() => setPicking(false)}
+          title="Daily report"
+          cancelLabel="Cancel"
+          onCancel={() => setPicking(false)}
+          doneLabel="Open"
+          onDone={() => {
+            setPicking(false);
+            open(localDay(pickerDate));
+          }}
+        >
+          <DateTimePicker
+            value={pickerDate}
+            mode="date"
+            display="inline"
+            maximumDate={new Date()}
+            onChange={(_e, d) => { if (d) setPickerDate(d); }}
+            themeVariant={isDark ? 'dark' : 'light'}
+            accentColor={theme.primary}
+          />
+        </ModalSheet>
       )}
       {picking && Platform.OS !== 'ios' && (
         <DateTimePicker
@@ -179,30 +172,5 @@ const styles = StyleSheet.create({
   label: {
     fontSize: fontSize.sm,
     fontWeight: fontWeight.medium,
-  },
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-    paddingBottom: 28,
-  },
-  sheetBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  sheetTitle: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-  },
-  sheetAction: {
-    fontSize: fontSize.sm,
   },
 });

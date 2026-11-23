@@ -12,14 +12,12 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  FlatList,
   Image,
   Switch,
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BookOpen, Camera, Check, ChevronDown, Cloud, CloudLightning, CloudOff, CloudRain, CloudSun, Ellipsis, Search, Snowflake, Sun, Wind, X, type LucideIcon } from 'lucide-react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
@@ -40,8 +38,9 @@ import { useTheme, useColors, metrics, radii, size, space, tabular, type } from 
 import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import { SkeletonList } from '../components/ui/Skeleton';
 import { usePersistedState } from '../lib/usePersistedState';
-import { Card, DetailHeader, EmptyState, FAB, FAB_CLEARANCE, GroupHeader, ListRow, PageHeader, ProjectSquare, PropertyRow } from '../components/kit';
-import { sheetFrame } from '../components/ui/Sheet';
+import {
+  Card, DetailHeader, EmptyState, FAB, FAB_CLEARANCE, GroupHeader, ListRow, ModalSheet, PageHeader, ProjectSquare, PropertyRow, SheetHeader,
+} from '../components/kit';
 import { TwoPane } from '../components/ui/TwoPane';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { useLayout } from '../lib/useLayout';
@@ -293,17 +292,18 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
   const fullField = isWide ? styles.fullField : null;
 
   const theme = useTheme();
-const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    danger: theme.statusDanger,
-    success: theme.statusSuccess,
-    inputBg: theme.card,
-};
+  // Revamp tokens for the entry form's inline colours.
+  const colors = {
+    bg: k.bg,
+    card: k.surface,
+    text: k.text,
+    secondary: k.muted,
+    border: k.border,
+    accent: k.accent,
+    danger: k.danger,
+    success: k.status.done,
+    inputBg: k.surface,
+  };
 
   const offlineKey = `${DIARY_PROJECT_OFFLINE_KEY}_${projectId}`;
 
@@ -908,7 +908,7 @@ const colors = {
       case 'text':
         return (
           <View key={field.id} style={[styles.fieldContainer, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
@@ -918,7 +918,7 @@ const colors = {
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               autoCapitalize="sentences"
               autoCorrect
             />
@@ -931,7 +931,7 @@ const colors = {
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
             <View style={styles.voiceLabelRow}>
-              <Text style={[styles.fieldLabel, { color: colors.text, flexShrink: 1 }]}>
+              <Text style={[styles.fieldLabel, { color: colors.secondary, flexShrink: 1 }]}>
                 {field.title}{field.required ? ' *' : ''}
               </Text>
               <VoiceInputButton
@@ -947,7 +947,7 @@ const colors = {
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
@@ -960,7 +960,7 @@ const colors = {
       case 'number':
         return (
           <View key={field.id} style={[styles.fieldContainer, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
@@ -970,7 +970,7 @@ const colors = {
               value={value?.toString() || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               keyboardType="decimal-pad"
             />
           </View>
@@ -979,7 +979,7 @@ const colors = {
       case 'date':
         return (
           <View key={field.id} style={[styles.fieldContainer, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
@@ -989,7 +989,7 @@ const colors = {
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder="DD/MM/YYYY"
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               keyboardType="numbers-and-punctuation"
               autoCapitalize="none"
               autoCorrect={false}
@@ -1000,7 +1000,7 @@ const colors = {
       case 'select':
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
@@ -1012,13 +1012,13 @@ const colors = {
                     style={[
                       styles.chip,
                       {
-                        backgroundColor: selected ? colors.accent : colors.inputBg,
-                        borderColor: selected ? colors.accent : colors.border,
+                        backgroundColor: selected ? k.tint : k.surface,
+                        borderColor: selected ? k.accent : k.border,
                       },
                     ]}
                     onPress={() => setFormFieldValues(prev => ({ ...prev, [field.id]: opt.value }))}
                   >
-                    <Text style={[styles.chipText, { color: selected ? '#ffffff' : colors.text }]}>
+                    <Text style={[styles.chipText, { color: selected ? k.link : k.text }]}>
                       {opt.label}
                     </Text>
                   </TouchableOpacity>
@@ -1031,14 +1031,15 @@ const colors = {
       case 'checkbox':
         return (
           <View key={field.id} style={[styles.fieldContainer, styles.switchRow, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text, flex: 1, marginBottom: 0 }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary, flex: 1, marginBottom: 0 }]}>
               {field.title}
             </Text>
             <Switch
               value={!!value}
               onValueChange={val => setFormFieldValues(prev => ({ ...prev, [field.id]: val }))}
-              trackColor={{ false: colors.border, true: colors.accent }}
-              thumbColor="#ffffff"
+              trackColor={{ false: k.track, true: k.accent }}
+              thumbColor={k.surface}
+              ios_backgroundColor={k.track}
             />
           </View>
         );
@@ -1048,18 +1049,18 @@ const colors = {
         const maxPhotos = field.maxPhotos || 3;
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title} ({photos.length}/{maxPhotos})
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
               {photos.map((uri, idx) => renderFormPhoto(field.id, uri, idx))}
               {photos.length < maxPhotos && (
                 <TouchableOpacity
-                  style={[styles.addPhotoBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                  style={[styles.addPhotoBtn, { backgroundColor: k.surface, borderColor: k.dashedBorder }]}
                   onPress={() => pickPhoto(field.id)}
                   disabled={submitting}
                 >
-                  <Ionicons name="camera-outline" size={28} color={colors.accent} />
+                  <Camera size={metrics.diary.addPhotoIcon} color={k.accent} strokeWidth={metrics.iconStroke} />
                   <Text style={[styles.addPhotoText, { color: colors.secondary }]}>Add</Text>
                 </TouchableOpacity>
               )}
@@ -1418,34 +1419,15 @@ const colors = {
           style={[styles.modalContainer, { backgroundColor: colors.bg }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={cancelEntryModal}>
-              <Text style={[styles.modalHeaderBtn, { color: colors.secondary }]}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>
-              {isEditMode ? 'Edit Entry' : 'New Entry'}
-            </Text>
-            <TouchableOpacity onPress={handleSaveEntry} disabled={submitting}>
-              {submitting ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <Text style={[styles.modalHeaderBtn, { color: colors.accent, fontWeight: '600' }]}>Save</Text>
-              )}
-            </TouchableOpacity>
+          <View style={[styles.formHeader, { paddingTop: insets.top }]}>
+            <SheetHeader
+              title={isEditMode ? 'Edit entry' : 'New entry'}
+              onCancel={cancelEntryModal}
+              doneLabel="Save"
+              onDone={handleSaveEntry}
+              doneLoading={submitting}
+            />
           </View>
-
-          {allTemplates.length > 1 && (
-            <TouchableOpacity
-              style={[styles.templateBar, { backgroundColor: theme.nav, borderBottomColor: colors.border }]}
-              onPress={() => setShowTemplatePicker(true)}
-            >
-              <Ionicons name="document-text-outline" size={16} color={colors.accent} />
-              <Text style={[styles.templateBarText, { color: colors.text }]} numberOfLines={1}>
-                {activeTemplate?.name || 'Default Template'}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-            </TouchableOpacity>
-          )}
 
           {/* readableFrame keeps the full-screen form to a sensible column on
               the Duo unfolded; a phone is narrower than its cap. */}
@@ -1454,7 +1436,7 @@ const colors = {
                 the same place in the tree folded or unfolded. */}
             <View style={isWide ? styles.fieldGrid : undefined}>
             <View style={[styles.fieldContainer, halfField]}>
-              <Text style={[styles.fieldLabel, { color: colors.text }]}>Title *</Text>
+              <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Title *</Text>
               <TextInput
                 ref={focusChain.ref('title')}
                 onFocus={entryKb.onInputFocus}
@@ -1462,7 +1444,7 @@ const colors = {
                 value={formTitle}
                 onChangeText={setFormTitle}
                 placeholder="Entry title"
-                placeholderTextColor={colors.secondary}
+                placeholderTextColor={k.faint}
                 autoCapitalize="sentences"
                 autoCorrect
                 returnKeyType={focusChain.isLast('title') ? 'done' : 'next'}
@@ -1472,17 +1454,25 @@ const colors = {
             </View>
 
             <View style={[styles.fieldContainer, halfField]}>
-              <Text style={[styles.fieldLabel, { color: colors.text }]}>Date / Time</Text>
-              <View style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, justifyContent: 'center' }]}>
-                <Text style={{ color: colors.text }}>{formatDateTime(formDateTime)}</Text>
-              </View>
+              <Card variant="list">
+                {allTemplates.length > 1 ? (
+                  <PropertyRow
+                    key="template"
+                    form
+                    label="Type"
+                    value={activeTemplate?.name || 'Default template'}
+                    onPress={() => setShowTemplatePicker(true)}
+                  />
+                ) : null}
+                <PropertyRow key="when" label="Date / time" value={formatDateTime(formDateTime)} />
+              </Card>
             </View>
             </View>
 
             {activeTemplate && activeTemplate.fields.length > 0 && (
               <>
                 <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                  <Text style={[styles.sectionTitle, { color: colors.secondary }]}>
                     {activeTemplate.name || 'Template Fields'}
                   </Text>
                 </View>
@@ -1495,17 +1485,17 @@ const colors = {
             )}
 
             <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Overall Photos</Text>
+              <Text style={[styles.sectionTitle, { color: colors.secondary }]}>Overall Photos</Text>
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
               {formOverallPhotos.map((uri, idx) => renderFormPhoto(null, uri, idx))}
               <TouchableOpacity
-                style={[styles.addPhotoBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                style={[styles.addPhotoBtn, { backgroundColor: k.surface, borderColor: k.dashedBorder }]}
                 onPress={() => pickPhoto()}
                 disabled={submitting}
               >
-                <Ionicons name="camera-outline" size={28} color={colors.accent} />
+                <Camera size={metrics.diary.addPhotoIcon} color={k.accent} strokeWidth={metrics.iconStroke} />
                 <Text style={[styles.addPhotoText, { color: colors.secondary }]}>Add</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -1538,44 +1528,26 @@ const colors = {
 
       {renderViewer(isWide)}
 
-      <Modal visible={showTemplatePicker} transparent animationType="slide">
-        <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.tpSheet, sheetFrame, { backgroundColor: colors.card }]}>
-            <View style={[styles.tpHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.tpHeaderTitle, { color: colors.text }]}>
-                Select Template
-              </Text>
-              <TouchableOpacity onPress={() => setShowTemplatePicker(false)}>
-                <Ionicons name="close" size={24} color={colors.secondary} />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={[...allTemplates].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))}
-              keyExtractor={item => item.id}
-              contentContainerStyle={{ paddingBottom: 40 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.tpRow, { borderBottomColor: colors.border }]}
+      <ModalSheet visible={showTemplatePicker} onRequestClose={() => setShowTemplatePicker(false)} title="Entry type" doneLabel="Done" onDone={() => setShowTemplatePicker(false)}>
+        <ScrollView contentContainerStyle={styles.tpList}>
+          <Card variant="list">
+            {[...allTemplates].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(item => {
+              const active = activeTemplate?.id === item.id;
+              return (
+                <ListRow
+                  key={item.id}
+                  title={item.name}
+                  titleLines={1}
+                  subtitle={item.isDefault ? 'Default' : undefined}
+                  selected={active}
+                  trailing={active ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
                   onPress={() => switchTemplate(item)}
-                >
-                  <Ionicons name="document-text-outline" size={18} color={colors.accent} />
-                  <View style={styles.tpRowContent}>
-                    <Text style={[styles.tpRowName, { color: colors.text }]} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    {item.isDefault && (
-                      <Text style={[styles.tpRowBadge, { color: colors.accent }]}>Default</Text>
-                    )}
-                  </View>
-                  {activeTemplate?.id === item.id && (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
+                />
+              );
+            })}
+          </Card>
+        </ScrollView>
+      </ModalSheet>
     </View>
   );
 }
@@ -1620,31 +1592,10 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 56 : 16,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  modalHeaderBtn: {
-    fontSize: 16,
-  },
-  modalHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'center',
-    marginHorizontal: 8,
-  },
-  formContent: {
-    padding: 16,
-  },
-  fieldContainer: {
-    marginBottom: 16,
-  },
+  formHeader: { paddingHorizontal: space.screenX },
+  tpList: { paddingHorizontal: space.screenX, paddingBottom: space.screenBottom },
+  formContent: { padding: space.screenX },
+  fieldContainer: { marginBottom: metrics.sheet.gap },
   // Duo unfolded only: short fields two per row. A short field followed by a
   // long one grows to the full row, so nothing is left half-empty.
   fieldGrid: {
@@ -1661,36 +1612,14 @@ const styles = StyleSheet.create({
   },
   // Field label with the dictation mic on the right (#56).
   voiceLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 6,
-  },
-  input: {
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-  },
-  textArea: {
-    minHeight: 100,
-    paddingTop: 10,
-  },
+  fieldLabel: { ...type.meta, marginBottom: metrics.form.labelGap },
+  input: { ...type.rowTitle, borderRadius: radii.lg, borderWidth: size.border, paddingHorizontal: metrics.form.inputPadX, paddingVertical: metrics.form.inputPadY, minHeight: metrics.form.inputHeight },
+  textArea: { minHeight: metrics.form.multilineHeight, paddingTop: metrics.form.inputPadY },
   chipScroll: {
     flexDirection: 'row',
   },
-  chip: {
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1,
-    marginRight: 8,
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  chip: { borderRadius: radii.pill, paddingHorizontal: metrics.filterChip.padX, paddingVertical: metrics.filterChip.padY, borderWidth: size.border, marginRight: space.inline },
+  chipText: { ...type.meta },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1703,83 +1632,14 @@ const styles = StyleSheet.create({
     width: DIARY_FORM_THUMB,
     height: DIARY_FORM_THUMB,
     marginTop: 6,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 10,
   },
-  addPhotoText: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  sectionDivider: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingBottom: 8,
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  templateBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-    borderBottomWidth: 1,
-  },
-  templateBarText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  tpOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  tpSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '60%',
-    minHeight: 200,
-  },
-  tpHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-  },
-  tpHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  tpRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    gap: 12,
-  },
-  tpRowContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  tpRowName: {
-    fontSize: 15,
-    fontWeight: '500',
-    flexShrink: 1,
-  },
-  tpRowBadge: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  addPhotoText: { ...type.caption, marginTop: metrics.listRow.bodyGap },
+  sectionDivider: { paddingTop: space.inline, paddingBottom: metrics.form.labelGap },
+  sectionTitle: { ...type.meta },
 });

@@ -8,12 +8,13 @@ import {
   Alert,
   StyleSheet,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Activity, Pencil, Trash2 } from 'lucide-react-native';
 import { SheetTextInput } from './ui/Sheet';
 import { VoiceInputButton } from './VoiceInputButton';
 import { apiFetch, apiRequest } from '../services/api';
-import { timeAgo, getInitials } from '../lib/format';
-import { useTheme } from '../theme';
+import { compactAgo } from '../lib/format';
+import { fonts, metrics, radii, size, space, type, useColors } from '../theme';
+import { Avatar, PrimaryButton, TextButton } from './kit';
 
 interface TaskComment {
   id: string;
@@ -119,17 +120,17 @@ function renderContent(content: string, accent: string, textColor: string) {
       parts.push(content.slice(lastIndex, match.index));
     }
     parts.push(
-      <Text key={`m-${key++}`} style={{ color: accent, fontWeight: '600' }}>
+      <Text key={`m-${key++}`} style={{ color: accent, fontFamily: fonts.semibold }}>
         @{match[1]}
       </Text>,
     );
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < content.length) parts.push(content.slice(lastIndex));
-  return <Text style={{ color: textColor, fontSize: 14, lineHeight: 20 }}>{parts}</Text>;
+  return <Text style={[type.bodyPreview, { color: textColor }]}>{parts}</Text>;
 }
 
-export default function TaskComments({ taskId, currentUserId, colors, isDark, inSheet }: TaskCommentsProps) {
+export default function TaskComments({ taskId, currentUserId, inSheet }: TaskCommentsProps) {
   const Input = inSheet ? SheetTextInput : TextInput;
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [activity, setActivity] = useState<TaskActivityItem[]>([]);
@@ -146,9 +147,11 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionStart, setMentionStart] = useState(-1);
 
-  const theme = useTheme();
-  const inputBg = theme.background;
-  const danger = theme.statusDanger;
+  // Revamp tokens (the `colors` prop is kept for callers but no longer read).
+  const k = useColors();
+  const colors = { bg: k.bg, card: k.surface, text: k.textBody, secondary: k.muted, border: k.border, accent: k.accent, muted: k.muted };
+  const inputBg = k.surface;
+  const danger = k.danger;
 
   const loadComments = useCallback(async () => {
     try {
@@ -267,7 +270,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionLabel, { color: colors.secondary }]}>
-          Activity & Comments{comments.length > 0 ? ` (${comments.length})` : ''}
+          {comments.length > 0 ? `Activity · ${comments.length}` : 'Activity'}
         </Text>
         {activity.length > 0 && (
           <TouchableOpacity
@@ -275,7 +278,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
             style={styles.activityToggle}
             hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
           >
-            <Ionicons name="pulse-outline" size={14} color={colors.secondary} />
+            <Activity size={size.icon.meta} color={colors.secondary} strokeWidth={metrics.iconStroke} />
             <Text style={[styles.activityToggleText, { color: colors.secondary }]}>
               {showActivity ? 'Hide activity' : 'Show activity'}
             </Text>
@@ -286,7 +289,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
       {loading ? (
         <ActivityIndicator color={colors.accent} style={{ marginVertical: 12 }} />
       ) : feed.length === 0 ? (
-        <Text style={{ color: colors.muted, fontSize: 14, marginBottom: 8 }}>
+        <Text style={[type.meta, { color: colors.muted }]}>
           No comments yet. Start the conversation.
         </Text>
       ) : (
@@ -295,11 +298,11 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
             const a = entry.activity;
             return (
               <View key={`a-${a.id}`} style={styles.activityRow}>
-                <Ionicons name="pulse-outline" size={14} color={colors.muted} style={{ marginTop: 2 }} />
+                <Activity size={size.icon.meta} color={colors.muted} strokeWidth={metrics.iconStroke} />
                 <Text style={[styles.activityText, { color: colors.muted }]}>
-                  <Text style={{ fontWeight: '600', color: colors.secondary }}>{a.actorName}</Text>
+                  <Text style={{ fontFamily: fonts.semibold, color: colors.secondary }}>{a.actorName}</Text>
                   {' '}{a.summary}
-                  <Text style={{ color: colors.muted }}>{'  ·  '}{timeAgo(a.createdAt)}</Text>
+                  <Text style={{ color: colors.muted }}>{'  ·  '}{compactAgo(a.createdAt)}</Text>
                 </Text>
               </View>
             );
@@ -309,15 +312,13 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
           const isEditing = editingId === c.id;
           return (
             <View key={c.id} style={styles.commentRow}>
-              <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
-                <Text style={styles.avatarText}>{getInitials(c.createdByName)}</Text>
-              </View>
+              <Avatar name={c.createdByName} />
               <View style={{ flex: 1 }}>
                 <View style={styles.commentHeader}>
                   <Text style={[styles.commentAuthor, { color: colors.text }]}>{c.createdByName}</Text>
                   <Text style={[styles.commentTime, { color: colors.muted }]}>
-                    {timeAgo(c.createdAt)}
-                    {c.editedAt ? ' (edited)' : ''}
+                    {compactAgo(c.createdAt)}
+                    {c.editedAt ? ' · edited' : ''}
                   </Text>
                 </View>
 
@@ -334,19 +335,16 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
                       placeholderTextColor={colors.muted}
                     />
                     <View style={styles.editActions}>
-                      <TouchableOpacity onPress={() => saveEdit(c.id)} style={[styles.btn, { backgroundColor: colors.accent }]}>
-                        <Text style={styles.btnText}>Save</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
+                      <PrimaryButton inline label="Save" onPress={() => saveEdit(c.id)} />
+                      <TextButton
+                        label="Cancel"
+                        tone="muted"
                         onPress={() => {
                           setEditingId(null);
                           setEditValue('');
                           setEditMentions([]);
                         }}
-                        style={styles.btnGhost}
-                      >
-                        <Text style={{ color: colors.secondary, fontWeight: '600' }}>Cancel</Text>
-                      </TouchableOpacity>
+                      />
                     </View>
                   </View>
                 ) : (
@@ -367,11 +365,11 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
                       style={styles.iconAction}
                       hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
                     >
-                      <Ionicons name="pencil" size={14} color={colors.secondary} />
+                      <Pencil size={size.icon.meta} color={colors.secondary} strokeWidth={metrics.iconStroke} />
                       <Text style={[styles.iconActionText, { color: colors.secondary }]}>Edit</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => remove(c.id)} style={styles.iconAction} hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}>
-                      <Ionicons name="trash-outline" size={14} color={danger} />
+                      <Trash2 size={size.icon.meta} color={danger} strokeWidth={metrics.iconStroke} />
                       <Text style={[styles.iconActionText, { color: danger }]}>Delete</Text>
                     </TouchableOpacity>
                   </View>
@@ -388,10 +386,8 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
           <View style={[styles.mentionList, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {filteredMentions.map((u) => (
               <TouchableOpacity key={u.id} style={styles.mentionItem} onPress={() => pickMention(u)}>
-                <View style={[styles.mentionAvatar, { backgroundColor: colors.accent }]}>
-                  <Text style={styles.avatarText}>{getInitials(displayName(u))}</Text>
-                </View>
-                <Text style={{ color: colors.text, fontSize: 14 }}>{displayName(u)}</Text>
+                <Avatar name={displayName(u)} size="chip" />
+                <Text style={[type.body, { color: colors.text }]}>{displayName(u)}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -407,16 +403,7 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
         <View style={styles.composerActions}>
           {/* Dictate a comment (#56). */}
           <VoiceInputButton value={input} onChangeText={onChangeInput} label="Dictate a comment" />
-          <TouchableOpacity
-            onPress={submit}
-            disabled={!input.trim() || posting}
-            style={[
-              styles.postBtn,
-              { backgroundColor: colors.accent, opacity: !input.trim() || posting ? 0.5 : 1 },
-            ]}
-          >
-            <Text style={styles.btnText}>{posting ? 'Posting…' : 'Comment'}</Text>
-          </TouchableOpacity>
+          <PrimaryButton inline label="Comment" onPress={submit} loading={posting} disabled={!input.trim()} />
         </View>
       </View>
     </View>
@@ -424,30 +411,30 @@ export default function TaskComments({ taskId, currentUserId, colors, isDark, in
 }
 
 const styles = StyleSheet.create({
-  section: { marginTop: 20 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  activityToggle: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  activityToggleText: { fontSize: 12, fontWeight: '500' },
-  activityRow: { flexDirection: 'row', gap: 8, marginBottom: 12, paddingLeft: 2 },
-  activityText: { flex: 1, fontSize: 12, lineHeight: 17 },
-  commentRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  avatar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  commentHeader: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 2 },
-  commentAuthor: { fontSize: 14, fontWeight: '600' },
-  commentTime: { fontSize: 12 },
-  input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, minHeight: 40 },
-  editActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  ownActions: { flexDirection: 'row', gap: 16, marginTop: 6 },
-  iconAction: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  iconActionText: { fontSize: 13, fontWeight: '500' },
-  btn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  btnGhost: { paddingHorizontal: 16, paddingVertical: 8 },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  postBtn: { alignSelf: 'flex-end', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
-  composerActions: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  mentionList: { borderWidth: 1, borderRadius: 8, marginBottom: 6, overflow: 'hidden' },
-  mentionItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
-  mentionAvatar: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  section: { gap: space.inline },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: space.inline },
+  sectionLabel: { ...type.meta },
+  activityToggle: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  activityToggleText: { ...type.caption },
+  activityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.inline, paddingVertical: space.inlineSm },
+  activityText: { ...type.caption, flex: 1 },
+  commentRow: { flexDirection: 'row', gap: space.rowGap, paddingVertical: space.inline },
+  commentHeader: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: space.inline, marginBottom: metrics.listRow.bodyGap },
+  commentAuthor: { ...type.metaSemi },
+  commentTime: { ...type.caption },
+  input: {
+    ...type.body,
+    borderWidth: size.border,
+    borderRadius: radii.lg,
+    paddingHorizontal: metrics.form.inputPadX,
+    paddingVertical: metrics.form.inputPadY,
+    minHeight: metrics.form.inputHeight,
+  },
+  editActions: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, marginTop: space.inline },
+  ownActions: { flexDirection: 'row', gap: space.section, marginTop: space.inlineSm },
+  iconAction: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  iconActionText: { ...type.caption },
+  composerActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.inline },
+  mentionList: { borderWidth: size.border, borderRadius: radii.lg, marginBottom: space.inline, overflow: 'hidden' },
+  mentionItem: { flexDirection: 'row', alignItems: 'center', gap: space.inline, paddingHorizontal: metrics.form.inputPadX, paddingVertical: space.inline },
 });

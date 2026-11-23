@@ -640,6 +640,7 @@ export const metrics = {
     fieldGap: 8,
   },
   diary: {
+    addPhotoIcon: 24,
     propLabel: 104,
     metaTop: 2,
     blockGap: 18,
@@ -647,6 +648,7 @@ export const metrics = {
     photoGap: 8,
   },
   checklists: {
+    menuListMax: 220,
     rowPadY: 12,
     rowGap: 7,
     checkOffset: 1,
