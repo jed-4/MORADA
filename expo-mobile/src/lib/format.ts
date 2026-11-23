@@ -46,3 +46,24 @@ export function formatShortCents(cents: number | null | undefined): string | nul
   if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}k`;
   return `${sign}$${Math.round(abs)}`;
 }
+
+/**
+ * Messages list times: 2m, 14m, 1h, 3h, Yesterday, Thu, Mon, 12 Nov, 27 Oct.
+ * Under a minute reads "now"; older than a week shows the date.
+ */
+export function shortWhen(value: string | Date | null | undefined): string {
+  if (!value) return '';
+  const d = new Date(value);
+  const t = d.getTime();
+  if (Number.isNaN(t)) return '';
+  const now = new Date();
+  const mins = Math.floor((now.getTime() - t) / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOf(now) - startOf(d)) / 86400000);
+  if (days === 0) return `${Math.floor(mins / 60)}h`;
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return d.toLocaleDateString('en-AU', { weekday: 'short' });
+  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+}

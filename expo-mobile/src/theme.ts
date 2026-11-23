@@ -461,6 +461,8 @@ export const metrics = {
   disabledOpacity: 0.5,
   pressedOpacity: 0.6,
   solidPressedOpacity: 0.9,
+  /** Wait for one sheet to close before presenting the next. */
+  sheetSwapMs: 350,
   inlineGap: 6,
   hitSlop: 10,
   longPressMs: 450,
@@ -653,6 +655,14 @@ export const metrics = {
     rowInnerGap: 10,
     codeWidth: 28,
     barIndent: 38,
+  },
+  messages: {
+    top: 8,
+    gap: 22,
+    topGap: 12,
+    rowMin: 60,
+    lead: 28,
+    seedPadX: 24,
   },
   labourDetail: {
     titleGap: 4,
