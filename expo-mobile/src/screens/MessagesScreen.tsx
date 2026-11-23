@@ -7,10 +7,8 @@ import {
   ActivityIndicator,
   TextInput,
   RefreshControl,
-  Switch,
   Pressable,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch, apiRequest, ApiError } from '../services/api';
@@ -18,19 +16,18 @@ import { onSocketEvent, useSocketConnected } from '../services/socket';
 import { useAuth } from '../contexts/AuthContext';
 import { usePolling } from '../lib/usePolling';
 import { usePresence } from '../lib/usePresence';
-import { getInitials, shortWhen } from '../lib/format';
+import { shortWhen } from '../lib/format';
 import { usePersistedState } from '../lib/usePersistedState';
-import { Eye, Hash, MessagesSquare, Search, SquarePen, User, X } from 'lucide-react-native';
-import { Avatar, Card, EmptyState, GroupHeader, ListRow, ProjectSquare, RootTitle, UnreadBadge } from '../components/kit';
+import { Eye, Hash, Lock, MessagesSquare, Search, SquarePen, User, X } from 'lucide-react-native';
+import { Avatar, ButtonRow, Card, EmptyState, FieldHint, FieldLabel, GroupHeader, ListRow, PrimaryButton, ProjectSquare, RootTitle, SheetBody, TextField, ToggleRow, UnreadBadge } from '../components/kit';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { haptic } from '../lib/haptics';
-import { PressableScale } from '../components/ui/PressableScale';
 import { PresenceDot } from '../components/messages/PresenceDot';
 import { markupToDisplay } from '../components/messages/mentions';
-import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
+import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import { SkeletonRow } from '../components/ui/Skeleton';
 import { useToast } from '../components/ui/Toast';
-import { useTheme, useColors, MAX_FONT_SCALE, metrics, radii, size, space, tabular, type } from '../theme';
+import { useTheme, useColors, metrics, radii, size, space, tabular, type } from '../theme';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 interface Channel {
@@ -66,16 +63,6 @@ export default function MessagesScreen({ navigation, route }: Props) {
   const { user } = useAuth();
   const theme = useTheme();
   const toast = useToast();
-  const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    muted: theme.textMuted,
-    input: theme.background,
-  };
 
   const [channels, setChannels] = useState<Channel[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
@@ -430,7 +417,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
 
       {/* Compose: choose a direct message or a new channel. */}
       <Sheet ref={composeSheetRef} title="New">
-        <View style={styles.sheetBody}>
+        <SheetBody>
           <Card variant="list">
             <ListRow
               key="dm"
@@ -456,13 +443,13 @@ export default function MessagesScreen({ navigation, route }: Props) {
               }}
             />
           </Card>
-        </View>
+        </SheetBody>
       </Sheet>
 
-      {/* New Channel Sheet */}
+      {/* New channel */}
       <Sheet
         ref={newChannelSheetRef}
-        title="New Channel"
+        title="New channel"
         // Client-facing is a consequential default — never let it carry over
         // from a previous open. Covers both cancel and post-create dismiss.
         onDismiss={() => {
@@ -470,105 +457,70 @@ export default function MessagesScreen({ navigation, route }: Props) {
           setNewChannelClientFacing(false);
         }}
       >
-        <View style={styles.sheetBody}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sheetLabel, { color: colors.secondary }]}>Channel name</Text>
-          <SheetTextInput
-            style={[styles.sheetInput, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
-            placeholder="e.g. site-updates"
-            placeholderTextColor={colors.muted}
-            value={newChannelName}
-            returnKeyType="done"
-            onChangeText={setNewChannelName}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+        <SheetBody>
+          <View style={mx.field}>
+            <FieldLabel>Channel name</FieldLabel>
+            <TextField
+              inSheet
+              placeholder="e.g. site-updates"
+              value={newChannelName}
+              returnKeyType="done"
+              onChangeText={setNewChannelName}
+              autoCapitalize="none"
+              autoCorrect={false}
+              accessibilityLabel="Channel name"
+            />
+          </View>
 
-          {/* Client-facing toggle. Amber accent only when ON, so the row reads
-              as a consequence rather than a permanent warning. */}
-          <View
-            style={[
-              styles.clientToggleRow,
-              {
-                borderColor: newChannelClientFacing ? theme.statusWarning : colors.border,
-                backgroundColor: newChannelClientFacing ? theme.statusWarningBg : 'transparent',
-              },
-            ]}
-          >
-            <View style={styles.clientToggleTextWrap}>
-              <View style={styles.clientToggleTitleRow}>
-                <Ionicons
-                  name={newChannelClientFacing ? 'eye' : 'lock-closed'}
-                  size={14}
-                  color={newChannelClientFacing ? theme.statusWarning : colors.muted}
-                />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clientToggleTitle, { color: colors.text }]}>
-                  Client-facing channel
-                </Text>
-              </View>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-                style={[
-                  styles.clientToggleHint,
-                  { color: newChannelClientFacing ? theme.statusWarning : colors.secondary },
-                ]}
-              >
-                {newChannelClientFacing
-                  ? 'The client can see this channel'
-                  : 'Only your team can see this channel'}
-              </Text>
-            </View>
-            <Switch
+          {/* Client-facing: a consequence, so its helper turns amber when on. */}
+          <Card variant="list">
+            <ToggleRow
+              key="client"
+              icon={newChannelClientFacing ? Eye : Lock}
+              label="Client-facing channel"
+              helper={newChannelClientFacing ? 'The client can see this channel' : 'Only your team can see this channel'}
               value={newChannelClientFacing}
               onValueChange={v => {
                 haptic.select();
                 setNewChannelClientFacing(v);
               }}
-              trackColor={{ false: colors.border, true: theme.statusWarning }}
-              thumbColor="#ffffff"
-              ios_backgroundColor={colors.border}
             />
-          </View>
+          </Card>
+          {newChannelClientFacing ? <FieldHint tone="warning">Anything posted here is visible to the client.</FieldHint> : null}
 
-          <PressableScale
-            style={[styles.sheetBtn, { backgroundColor: colors.accent, opacity: creatingChannel || !newChannelName.trim() ? 0.6 : 1 }]}
-            onPress={handleCreateChannel}
-            disabled={creatingChannel || !newChannelName.trim()}
-          >
-            {creatingChannel ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.sheetBtnText}>Create Channel</Text>
-            )}
-          </PressableScale>
-        </View>
+          <ButtonRow>
+            <PrimaryButton
+              label="Create channel"
+              onPress={handleCreateChannel}
+              loading={creatingChannel}
+              disabled={!newChannelName.trim()}
+            />
+          </ButtonRow>
+        </SheetBody>
       </Sheet>
 
-      {/* New DM Sheet */}
-      <Sheet ref={newDmSheetRef} title="New Message" scrollable>
-        <View style={styles.sheetBody}>
+      {/* New message: pick a team member */}
+      <Sheet ref={newDmSheetRef} title="New message" scrollable>
+        <SheetBody>
           {teamUsers.length === 0 ? (
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noUsersText, { color: colors.secondary }]}>No other team members found.</Text>
+            <Text style={[type.body, mx.center, { color: k.muted }]}>No other team members found.</Text>
           ) : (
-            teamUsers.map(u => {
-              const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email;
-              return (
-                <PressableScale
-                  key={u.id}
-                  haptics
-                  style={[styles.dmUserRow, { borderBottomColor: colors.border }]}
-                  onPress={() => handleOpenDm(u.id)}
-                  disabled={creatingDm}
-                >
-                  <View style={[styles.dmUserAvatar, { backgroundColor: colors.accent + '30' }]}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dmUserInitials, { color: colors.accent }]}>
-                      {getInitials(name)}
-                    </Text>
-                  </View>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dmUserName, { color: colors.text }]}>{name}</Text>
-                </PressableScale>
-              );
-            })
+            <Card variant="list">
+              {teamUsers.map(u => {
+                const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email;
+                return (
+                  <ListRow
+                    key={u.id}
+                    lead={<Avatar name={name} />}
+                    title={name}
+                    titleLines={1}
+                    onPress={creatingDm ? undefined : () => { haptic.light(); handleOpenDm(u.id); }}
+                  />
+                );
+              })}
+            </Card>
           )}
-        </View>
+        </SheetBody>
       </Sheet>
     </View>
   );
@@ -576,31 +528,6 @@ export default function MessagesScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  sheetBody: { paddingHorizontal: 20, paddingTop: 4 },
-  sheetLabel: { fontSize: 13, marginBottom: 6 },
-  sheetInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, marginBottom: 16 },
-  clientToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 16,
-  },
-  clientToggleTextWrap: { flex: 1, gap: 2 },
-  clientToggleTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  clientToggleTitle: { fontSize: 14, fontWeight: '600' },
-  clientToggleHint: { fontSize: 12 },
-  sheetBtn: { paddingVertical: 13, borderRadius: 8, alignItems: 'center' },
-  sheetBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
-  noUsersText: { textAlign: 'center', paddingVertical: 20, fontSize: 14 },
-  dmUserRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 12 },
-  dmUserAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  dmUserInitials: { fontSize: 14, fontWeight: '700' },
-  dmUserName: { fontSize: 15, fontWeight: '500' },
 });
 
 const M = metrics.messages;
@@ -622,6 +549,8 @@ const mx = StyleSheet.create({
     paddingHorizontal: metrics.projects.cardPad,
   },
   searchInput: { flex: 1, paddingVertical: 0 },
+  field: { gap: metrics.form.labelGap },
+  center: { textAlign: 'center', paddingVertical: space.screenBottom },
   skeleton: { gap: M.gap, paddingTop: M.topGap },
   row: { flexDirection: 'row', alignItems: 'center', gap: metrics.listRow.gap, paddingVertical: metrics.listRow.padY, minHeight: M.rowMin },
   lead: { width: M.lead, alignItems: 'center', justifyContent: 'center' },

@@ -1,15 +1,15 @@
 import { forwardRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { apiRequest } from '../../services/api';
-import { useTheme, fontSize, fontWeight, radius, MAX_FONT_SCALE } from '../../theme';
+import { metrics, radii, size, type, useColors } from '../../theme';
+import { ButtonRow, FieldLabel, PrimaryButton, SheetBody, TextField } from '../kit';
 import { haptic } from '../../lib/haptics';
-import { Sheet, SheetTextInput, type SheetRef } from '../ui/Sheet';
+import { Sheet, type SheetRef } from '../ui/Sheet';
 import { useToast } from '../ui/Toast';
-import { PressableScale } from '../ui/PressableScale';
 import { SUGGESTION_SECTIONS } from './items';
 
-// "Suggest an Idea" flow — presented from the Dashboard avatar menu.
+// "Help & feedback" (suggest an idea) — from the Workspace initials menu and More.
 // Self-contained: present via ref, drafts survive dismissal, resets on send.
 
 interface SuggestionSheetProps {
@@ -19,7 +19,7 @@ interface SuggestionSheetProps {
 
 export const SuggestionSheet = forwardRef<SheetRef, SuggestionSheetProps>(
   function SuggestionSheet({ sourcePage }, ref) {
-    const theme = useTheme();
+    const c = useColors();
     const toast = useToast();
 
     const [section, setSection] = useState('');
@@ -58,107 +58,59 @@ export const SuggestionSheet = forwardRef<SheetRef, SuggestionSheetProps>(
     };
 
     return (
-      <Sheet ref={ref} title="Suggest an Idea" scrollable>
-        <View style={styles.form}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: theme.textSecondary }]}>Which area?</Text>
-          <View style={styles.chipWrap}>
-            {SUGGESTION_SECTIONS.map((s) => {
-              const selected = section === s.value;
-              return (
-                <PressableScale
-                  key={s.value}
-                  haptics
-                  onPress={() => setSection(s.value)}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor: selected ? theme.primary : theme.subtle,
-                      borderColor: selected ? theme.primary : theme.border,
-                    },
-                  ]}
-                >
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.chipText, { color: selected ? '#FFFFFF' : theme.textPrimary }]}>
-                    {s.label}
-                  </Text>
-                </PressableScale>
-              );
-            })}
+      <Sheet ref={ref} title="Help & feedback" scrollable>
+        <SheetBody>
+          <View style={styles.group}>
+            <FieldLabel>Which area?</FieldLabel>
+            <View style={styles.chipWrap}>
+              {SUGGESTION_SECTIONS.map((s) => {
+                const selected = section === s.value;
+                return (
+                  <Pressable
+                    key={s.value}
+                    onPress={() => { haptic.select(); setSection(s.value); }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    style={({ pressed }) => [
+                      styles.chip,
+                      {
+                        backgroundColor: selected ? c.tint : c.surface,
+                        borderColor: selected ? c.accent : c.border,
+                        opacity: pressed ? metrics.pressedOpacity : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={[type.meta, { color: selected ? c.link : c.text }]}>{s.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
-          <SheetTextInput
-            style={[
-              styles.textArea,
-              { backgroundColor: theme.background, color: theme.textPrimary, borderColor: theme.border },
-            ]}
+          <TextField
+            inSheet
+            multilineBox
             value={message}
             autoCapitalize="sentences"
             onChangeText={setMessage}
             placeholder="What would make Morada better?"
-            placeholderTextColor={theme.textMuted}
-            multiline
-            textAlignVertical="top"
+            accessibilityLabel="Your suggestion"
           />
-          <PressableScale
-            haptics
-            disabled={saving}
-            onPress={save}
-            style={[styles.submitBtn, { backgroundColor: theme.primary, opacity: saving ? 0.7 : 1 }]}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.submitText}>Send Suggestion</Text>
-            )}
-          </PressableScale>
-        </View>
+          <ButtonRow>
+            <PrimaryButton label="Send" onPress={save} loading={saving} disabled={!section || !message.trim()} />
+          </ButtonRow>
+        </SheetBody>
       </Sheet>
     );
   },
 );
 
 const styles = StyleSheet.create({
-  form: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-  },
-  fieldLabel: {
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-    marginBottom: 8,
-  },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
+  group: { gap: metrics.form.labelGap },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: metrics.filterChip.gap + metrics.form.labelGap / 2 },
   chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radius.full,
-    borderWidth: 1,
-  },
-  chipText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
-  },
-  textArea: {
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: fontSize.base,
-    height: 120,
-  },
-  submitBtn: {
-    marginTop: 16,
-    borderRadius: radius.xl,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.base,
-    fontWeight: fontWeight.semibold,
+    paddingHorizontal: metrics.filterChip.padX,
+    paddingVertical: metrics.filterChip.padY,
+    borderRadius: radii.pill,
+    borderWidth: size.border,
   },
 });

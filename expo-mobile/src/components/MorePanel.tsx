@@ -1,16 +1,15 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChevronRight, CircleQuestionMark, LogOut, Palette, Settings, type LucideIcon } from 'lucide-react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest } from '../services/api';
-import { useTheme, useColors, fontSize, fontWeight, radius, metrics, size, space, tabular, type } from '../theme';
-import { Avatar, CaptureChip, Card } from './kit';
+import { useColors, metrics, size, space, tabular, type } from '../theme';
+import { Avatar, CaptureChip, Card, PrimaryButton, SheetBody, TextField } from './kit';
 import { SuggestionSheet } from './more/SuggestionSheet';
 import { haptic } from '../lib/haptics';
 import { DESIGN_PREVIEW } from '../lib/designPreview';
-import { Sheet, SheetTextInput, type SheetRef } from './ui/Sheet';
+import { Sheet, type SheetRef } from './ui/Sheet';
 import { useToast } from './ui/Toast';
-import { PressableScale } from './ui/PressableScale';
 import { usePermission } from '../lib/usePermission';
 import { workspaceItems, createItems, type MoreTile } from './more/items';
 
@@ -55,7 +54,6 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
   onVisibilityChange,
   messagesUnread = 0,
 }, ref) {
-  const theme = useTheme();
   const toast = useToast();
   const { user, logout } = useAuth();
   const k = useColors();
@@ -150,12 +148,6 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
 
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email;
 
-  const inputStyle = {
-    backgroundColor: theme.background,
-    color: theme.textPrimary,
-    borderColor: theme.border,
-  };
-
   return (
     <>
       <Sheet ref={sheetRef} scrollable onDismiss={() => onVisibilityChange?.(false)}>
@@ -212,49 +204,35 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
 
       <Sheet
         ref={taskSheetRef}
-        title="New Task"
+        title="New task"
         stackBehavior="push"
         // Create button pinned at the bottom, above the keyboard.
-        footer={
-          <PressableScale
-            haptics
-            disabled={saving}
-            onPress={saveTask}
-            style={[styles.submitBtn, { backgroundColor: theme.primary, opacity: saving ? 0.7 : 1 }]}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.submitText} maxFontSizeMultiplier={1.4}>Create Task</Text>
-            )}
-          </PressableScale>
-        }
+        footer={<PrimaryButton label="Create task" onPress={saveTask} loading={saving} disabled={!taskTitle.trim()} />}
       >
-        <View style={styles.form}>
-          <SheetTextInput
-            style={[styles.input, inputStyle]}
+        <SheetBody>
+          <TextField
+            inSheet
             value={taskTitle}
             onChangeText={setTaskTitle}
             placeholder="Task title"
-            placeholderTextColor={theme.textMuted}
             autoFocus
             autoCapitalize="sentences"
             returnKeyType="next"
             submitBehavior="submit"
             onSubmitEditing={() => descRef.current?.focus()}
+            accessibilityLabel="Task title"
           />
-          <SheetTextInput
+          <TextField
+            inSheet
+            multilineBox
             ref={descRef}
             autoCapitalize="sentences"
-            style={[styles.textArea, inputStyle]}
             value={taskDescription}
             onChangeText={setTaskDescription}
             placeholder="Description (optional)"
-            placeholderTextColor={theme.textMuted}
-            multiline
-            textAlignVertical="top"
+            accessibilityLabel="Description"
           />
-        </View>
+        </SheetBody>
       </Sheet>
 
       <SuggestionSheet ref={suggestionSheetRef} sourcePage="more-sheet" />
@@ -264,41 +242,6 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
 
 export default MorePanel;
 
-const styles = StyleSheet.create({
-  form: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: fontSize.base,
-    marginBottom: 12,
-  },
-  textArea: {
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: fontSize.base,
-    height: 120,
-  },
-  submitBtn: {
-    flex: 1,
-    minHeight: 50,
-    borderRadius: radius.xl,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.base,
-    fontWeight: fontWeight.semibold,
-  },
-});
 
 const M = metrics.more;
 

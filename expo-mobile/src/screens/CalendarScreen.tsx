@@ -5,15 +5,12 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
   Alert,
   Platform,
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
 import { fetchCached, clearCache } from '../services/cache';
@@ -23,10 +20,13 @@ import { haptic } from '../lib/haptics';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, useColors, fontSize, fontWeight, radius, MAX_FONT_SCALE, metrics, size, space, type } from '../theme';
-import { ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react-native';
-import { FAB, Segmented } from '../components/kit';
-import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
+import { useTheme, useColors, radius, metrics, size, space, type } from '../theme';
+import { Check, ChevronLeft, ChevronRight, Layers, Plus, SlidersHorizontal, Trash2 } from 'lucide-react-native';
+import {
+  ButtonRow, Card, FAB, FieldHint, FieldLabel, ListRow, PrimaryButton, ProjectSquare, PropertyRow, SecondaryButton, Segmented,
+  SheetBody, TextButton, TextField,
+} from '../components/kit';
+import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import { useToast } from '../components/ui/Toast';
 import { Skeleton } from '../components/ui/Skeleton';
 import { isInStack } from '../navigation/back';
@@ -39,6 +39,7 @@ import {
   getMondayOfWeek,
   isSameDay,
   isEventAllDay,
+  formatClock,
   type CalendarEvent,
   type EventsByDay,
 } from '../components/calendar/shared';
@@ -1118,93 +1119,67 @@ export default function CalendarScreen({ navigation }: Props) {
 
       <FAB onPress={handleHeaderCreate} label="New task" />
 
-      {/* ── Views sheet ──────────────────────────────────────────────────── */}
-      <Sheet ref={viewsSheetRef} title="Views" scrollable>
-        <View style={styles.sheetBody}>
-          {views.map(view => {
-            const isActive = view.id === selectedViewId;
-            return (
-              <TouchableOpacity
-                key={view.id}
-                style={[
-                  styles.viewRow,
-                  { borderColor: theme.border },
-                  isActive && { backgroundColor: theme.primary + '15', borderColor: theme.primary + '40' },
-                ]}
-                onPress={() => handleSelectView(view)}
-                onLongPress={() => handleDeleteView(view)}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="layers-outline" size={18} color={isActive ? theme.primary : theme.textSecondary} />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewRowText, { color: isActive ? theme.textPrimary : theme.textSecondary }]}>
-                  {view.name}
-                </Text>
-                {isActive && (
-                  <Ionicons name="checkmark-circle" size={18} color={theme.primary} style={{ marginLeft: 'auto' }} />
-                )}
-                {!view.isDefault && !isActive && (
-                  <TouchableOpacity hitSlop={10} onPress={() => handleDeleteView(view)} style={{ marginLeft: 'auto', padding: 4 }}>
-                    <Ionicons name="trash-outline" size={16} color={theme.textMuted} />
-                  </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-          <TouchableOpacity
-            style={[styles.newViewBtn, { borderColor: theme.border }]}
+      {/* ── Saved views ──────────────────────────────────────────────────── */}
+      <Sheet ref={viewsSheetRef} title="Saved views" scrollable>
+        <SheetBody>
+          <Card variant="list">
+            {views.map(view => {
+              const isActive = view.id === selectedViewId;
+              return (
+                <ListRow
+                  key={view.id}
+                  lead={<Layers size={size.icon.row} color={isActive ? k.accent : k.icon} strokeWidth={metrics.iconStroke} />}
+                  title={view.name}
+                  titleLines={1}
+                  selected={isActive}
+                  trailing={
+                    isActive ? (
+                      <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} />
+                    ) : !view.isDefault ? (
+                      <Pressable hitSlop={metrics.hitSlop} onPress={() => handleDeleteView(view)} accessibilityRole="button" accessibilityLabel={`Delete ${view.name}`}>
+                        <Trash2 size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />
+                      </Pressable>
+                    ) : undefined
+                  }
+                  onPress={() => handleSelectView(view)}
+                  onLongPress={() => handleDeleteView(view)}
+                />
+              );
+            })}
+          </Card>
+          <TextButton
+            label="New view"
+            icon={Plus}
             onPress={() => { haptic.light(); setNewViewName(''); createViewSheetRef.current?.present(); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="add-circle-outline" size={18} color={theme.textSecondary} />
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.newViewBtnText, { color: theme.textSecondary }]}>New View</Text>
-          </TouchableOpacity>
-        </View>
+          />
+        </SheetBody>
       </Sheet>
 
-      {/* ── Create-view sheet (stacks over the views sheet) ─────────────── */}
-      <Sheet ref={createViewSheetRef} title="Save View" stackBehavior="push">
-        <View style={styles.sheetBody}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sheetSubtitle, { color: theme.textSecondary }]}>
-            Save your current filters and view mode as a named view.
-          </Text>
-          <SheetTextInput
-            style={[styles.viewNameInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.textPrimary }]}
-            placeholder="View name (e.g. My Tasks)"
-            placeholderTextColor={theme.textMuted}
+      {/* ── Save view (stacks over Saved views) ─────────────────────────── */}
+      <Sheet ref={createViewSheetRef} title="Save view" stackBehavior="push">
+        <SheetBody>
+          <FieldHint>Saves your current filters and view (List, Week or Month) under a name.</FieldHint>
+          <TextField
+            inSheet
+            placeholder="View name (e.g. My tasks)"
             value={newViewName}
             autoCapitalize="words"
             onChangeText={setNewViewName}
             autoFocus
             returnKeyType="done"
             onSubmitEditing={handleCreateView}
+            accessibilityLabel="View name"
           />
-          <View style={styles.sheetActions}>
-            <TouchableOpacity
-              style={[styles.secondaryBtn, { borderColor: theme.border }]}
-              onPress={() => { setNewViewName(''); createViewSheetRef.current?.dismiss(); }}
-              activeOpacity={0.7}
-            >
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.secondaryBtnText, { color: theme.textSecondary }]}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.primaryBtn, { backgroundColor: newViewName.trim() ? theme.primary : theme.textMuted }]}
-              onPress={handleCreateView}
-              disabled={!newViewName.trim() || savingView}
-              activeOpacity={0.8}
-            >
-              {savingView
-                ? <ActivityIndicator size="small" color="#FFFFFF" />
-                : <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.primaryBtnText}>Save View</Text>
-              }
-            </TouchableOpacity>
-          </View>
-        </View>
+          <ButtonRow>
+            <SecondaryButton label="Cancel" onPress={() => { setNewViewName(''); createViewSheetRef.current?.dismiss(); }} />
+            <PrimaryButton label="Save view" onPress={handleCreateView} loading={savingView} disabled={!newViewName.trim()} />
+          </ButtonRow>
+        </SheetBody>
       </Sheet>
 
       {/* ── Filters sheet ────────────────────────────────────────────────── */}
       <FilterSheet
         sheetRef={filterSheetRef}
-        theme={theme}
         activeFilters={activeFilters}
         setActiveFilters={setActiveFilters}
         activeFilterCount={activeFilterCount}
@@ -1224,187 +1199,134 @@ export default function CalendarScreen({ navigation }: Props) {
       {/* ── Event peek sheet ─────────────────────────────────────────────── */}
       <EventPeekSheet
         sheetRef={eventSheetRef}
-        theme={theme}
         event={selectedEvent}
         onDismiss={() => setSelectedEvent(null)}
         taskIsDone={selectedTaskIsDone}
         onToggleTaskComplete={handleToggleTaskComplete}
         onOpenMoreScreen={navigateToMoreScreen}
       />
-      {/* ── Create-task sheet ────────────────────────────────────────────── */}
-      <Sheet ref={createTaskSheetRef} title="New Task" scrollable snapPoints={['70%', '92%']}>
-        <View style={styles.eventSheetBody}>
-          <View style={styles.editField}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: theme.textSecondary }]}>Title</Text>
-            <SheetTextInput
-              style={[styles.editInput, { backgroundColor: theme.background, color: theme.textPrimary, borderColor: theme.border }]}
-              value={createTitle}
-              autoCapitalize="sentences"
-              returnKeyType="done"
-              onChangeText={setCreateTitle}
-              placeholder="Task title"
-              placeholderTextColor={theme.textMuted}
-            />
-          </View>
+      {/* ── New task ─────────────────────────────────────────────────────── */}
+      <Sheet
+        ref={createTaskSheetRef}
+        title="New task"
+        scrollable
+        snapPoints={['70%', '92%']}
+        footer={<PrimaryButton label="Create task" onPress={handleCreateTask} loading={creatingTask} disabled={!createTitle.trim()} />}
+      >
+        <SheetBody>
+          <TextField
+            inSheet
+            value={createTitle}
+            autoCapitalize="sentences"
+            returnKeyType="done"
+            onChangeText={setCreateTitle}
+            placeholder="Task title"
+            accessibilityLabel="Task title"
+          />
 
-          <View style={styles.editField}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: theme.textSecondary }]}>Project</Text>
-            <TouchableOpacity
-              style={[styles.editSelect, { backgroundColor: theme.background, borderColor: theme.border }]}
+          <Card variant="list">
+            <PropertyRow
+              key="project"
+              form
+              label="Project"
+              value={createProject?.name}
+              placeholder="No project"
               onPress={() => { haptic.select(); projectPickerSheetRef.current?.present(); }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="briefcase-outline" size={16} color={theme.textSecondary} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: createProject ? theme.textPrimary : theme.textMuted }]}>
-                {createProject?.name || 'No project'}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={theme.textSecondary} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.editField}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: theme.textSecondary }]}>Due Date</Text>
-            <TouchableOpacity
-              style={[styles.editSelect, { backgroundColor: theme.background, borderColor: showCreateDatePicker ? theme.primary : theme.border }]}
+            />
+            <PropertyRow
+              key="date"
+              form
+              label="Due date"
+              value={createDate ? fromLocalDateStr(createDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : undefined}
+              placeholder="Pick a date"
               onPress={() => { setShowCreateTimePicker(false); setShowCreateDatePicker(v => !v); }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: theme.textPrimary }]}>
-                {createDate ? fromLocalDateStr(createDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'Pick a date'}
-              </Text>
-              <Ionicons name={showCreateDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
-            </TouchableOpacity>
-            {showCreateDatePicker && (
+            />
+            {showCreateDatePicker ? (
               <DateTimePicker
+                key="datePicker"
                 value={createDate ? fromLocalDateStr(createDate) : new Date()}
                 mode="date"
                 display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                accentColor={k.accent}
                 onChange={(_event, date) => {
                   if (Platform.OS === 'android') setShowCreateDatePicker(false);
                   if (date) setCreateDate(toLocalDateStr(date));
                 }}
-                style={{ marginTop: 4 }}
               />
-            )}
-          </View>
-
-          <View style={styles.editField}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: theme.textSecondary }]}>Time (optional)</Text>
-            <TouchableOpacity
-              style={[styles.editSelect, { backgroundColor: theme.background, borderColor: showCreateTimePicker ? theme.primary : theme.border }]}
+            ) : null}
+            <PropertyRow
+              key="time"
+              form
+              label="Time"
+              value={createTime ? formatClock(createTime) : undefined}
+              placeholder="No time"
               onPress={() => { setShowCreateDatePicker(false); setShowCreateTimePicker(v => !v); }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="time-outline" size={16} color={theme.textSecondary} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: createTime ? theme.textPrimary : theme.textMuted }]}>
-                {createTime || 'No time'}
-              </Text>
-              {createTime ? (
-                <TouchableOpacity
-                  onPress={() => { setCreateTime(''); setShowCreateTimePicker(false); }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons name="close-circle" size={16} color={theme.textMuted} />
-                </TouchableOpacity>
-              ) : (
-                <Ionicons name={showCreateTimePicker ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
-              )}
-            </TouchableOpacity>
-            {showCreateTimePicker && (
-              <DateTimePicker
-                value={(() => {
-                  const d = new Date();
-                  if (createTime) {
-                    const [h, m] = createTime.split(':').map(Number);
-                    d.setHours(h || 0, m || 0, 0, 0);
-                  }
-                  return d;
-                })()}
-                mode="time"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_event, date) => {
-                  if (Platform.OS === 'android') setShowCreateTimePicker(false);
-                  if (date) {
-                    setCreateTime(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                  }
-                }}
-                style={{ marginTop: 4 }}
-              />
-            )}
-          </View>
+            />
+            {showCreateTimePicker ? (
+              <View key="timePicker">
+                <DateTimePicker
+                  value={(() => {
+                    const d = new Date();
+                    if (createTime) {
+                      const [h, m] = createTime.split(':').map(Number);
+                      d.setHours(h || 0, m || 0, 0, 0);
+                    }
+                    return d;
+                  })()}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(_event, date) => {
+                    if (Platform.OS === 'android') setShowCreateTimePicker(false);
+                    if (date) {
+                      setCreateTime(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                    }
+                  }}
+                />
+                {createTime ? (
+                  <TextButton label="Clear time" tone="muted" center onPress={() => { setCreateTime(''); setShowCreateTimePicker(false); }} />
+                ) : null}
+              </View>
+            ) : null}
+          </Card>
 
-          <View style={styles.editField}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: theme.textSecondary }]}>Priority</Text>
-            <View style={styles.priorityRow}>
-              {PRIORITY_OPTIONS.map(p => {
-                const active = createPriority === p.key;
-                return (
-                  <TouchableOpacity hitSlop={{ top: 6, bottom: 6 }}
-                    key={p.key}
-                    style={[
-                      styles.priorityChip,
-                      { borderColor: active ? theme.primary : theme.border, backgroundColor: active ? theme.primary + '20' : 'transparent' },
-                    ]}
-                    onPress={() => { haptic.select(); setCreatePriority(p.key); }}
-                    activeOpacity={0.7}
-                  >
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.priorityChipText, { color: active ? theme.primary : theme.textSecondary }]}>
-                      {p.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+          <View style={cx.field}>
+            <FieldLabel>Priority</FieldLabel>
+            <Segmented
+              options={PRIORITY_OPTIONS.map(p => ({ key: p.key, label: p.label }))}
+              value={createPriority}
+              onChange={key => { haptic.select(); setCreatePriority(key); }}
+            />
           </View>
-
-          <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: createTitle.trim() ? theme.primary : theme.textMuted, marginTop: 8 }]}
-            onPress={handleCreateTask}
-            disabled={!createTitle.trim() || creatingTask}
-            activeOpacity={0.8}
-          >
-            {creatingTask
-              ? <ActivityIndicator size="small" color="#FFFFFF" />
-              : <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.primaryBtnText}>Create Task</Text>
-            }
-          </TouchableOpacity>
-        </View>
+        </SheetBody>
       </Sheet>
 
-      {/* ── Project picker (stacks over the create sheet) ────────────────── */}
+      {/* ── Project picker (stacks over New task) ───────────────────────── */}
       <Sheet ref={projectPickerSheetRef} title="Project" stackBehavior="push" scrollable snapPoints={['60%']}>
-        <View style={styles.sheetBody}>
-          <TouchableOpacity
-            style={[styles.pickerOption, !createProjectId && { backgroundColor: theme.primary + '15' }]}
-            onPress={() => { haptic.select(); setCreateProjectId(null); projectPickerSheetRef.current?.dismiss(); }}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.filterColorDot, { backgroundColor: theme.textMuted }]} />
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerOptionText, { color: !createProjectId ? theme.primary : theme.textPrimary }]}>
-              No project
-            </Text>
-            {!createProjectId && <Ionicons name="checkmark" size={20} color={theme.primary} />}
-          </TouchableOpacity>
-          {projects.map(proj => {
-            const active = createProjectId === proj.id;
-            const projColor = getProjectEventColor(proj.id, proj.color, EVENT_COLORS.task, brandColor);
-            return (
-              <TouchableOpacity
-                key={proj.id}
-                style={[styles.pickerOption, active && { backgroundColor: theme.primary + '15' }]}
-                onPress={() => { haptic.select(); setCreateProjectId(proj.id); projectPickerSheetRef.current?.dismiss(); }}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.filterColorDot, { backgroundColor: projColor }]} />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerOptionText, { color: active ? theme.primary : theme.textPrimary }]}>
-                  {proj.name}
-                </Text>
-                {active && <Ionicons name="checkmark" size={20} color={theme.primary} />}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <SheetBody>
+          <Card variant="list">
+            <ListRow
+              key="__none"
+              title="No project"
+              selected={!createProjectId}
+              trailing={!createProjectId ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
+              onPress={() => { haptic.select(); setCreateProjectId(null); projectPickerSheetRef.current?.dismiss(); }}
+            />
+            {projects.map(proj => {
+              const active = createProjectId === proj.id;
+              return (
+                <ListRow
+                  key={proj.id}
+                  lead={<ProjectSquare color={proj.color} fallbackKey={proj.id} />}
+                  title={proj.name}
+                  titleLines={1}
+                  selected={active}
+                  trailing={active ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
+                  onPress={() => { haptic.select(); setCreateProjectId(proj.id); projectPickerSheetRef.current?.dismiss(); }}
+                />
+              );
+            })}
+          </Card>
+        </SheetBody>
       </Sheet>
     </View>
   );
@@ -1412,139 +1334,6 @@ export default function CalendarScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-
-  // Sheets
-  sheetBody: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
-  },
-  sheetSubtitle: {
-    fontSize: fontSize.bodySm,
-    lineHeight: 18,
-  },
-  sheetActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 20,
-  },
-  primaryBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: radius.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryBtnText: { color: '#FFFFFF', fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  secondaryBtn: {
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryBtnText: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
-
-  viewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 13,
-    paddingHorizontal: 14,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    marginBottom: 6,
-    marginTop: 2,
-  },
-  viewRowText: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.medium },
-  newViewBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 13,
-    paddingHorizontal: 14,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    marginTop: 8,
-  },
-  newViewBtnText: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.medium },
-  viewNameInput: {
-    marginTop: 16,
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: fontSize.bodyLg,
-  },
-
-  filterColorDot: { width: 8, height: 8, borderRadius: radius.sm },
-
-  // Create/picker sheet bodies
-  eventSheetBody: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
-  },
-
-  // Create-task form
-  editField: { marginBottom: 16 },
-  editLabel: {
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-    marginBottom: 6,
-  },
-  editInput: {
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: fontSize.bodyLg,
-  },
-  editSelect: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  editSelectText: {
-    fontSize: fontSize.bodyLg,
-    flex: 1,
-  },
-  priorityRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  priorityChip: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  priorityChipText: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-  },
-  pickerOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: radius.lg,
-    marginBottom: 2,
-  },
-  pickerOptionText: {
-    fontSize: fontSize.bodyLg,
-    fontWeight: fontWeight.medium,
-    flex: 1,
-  },
 });
 
 const cx = StyleSheet.create({
@@ -1564,4 +1353,5 @@ const cx = StyleSheet.create({
     borderWidth: size.border,
   },
   body: { flex: 1 },
+  field: { gap: metrics.form.labelGap },
 });
