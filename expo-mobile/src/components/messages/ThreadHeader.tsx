@@ -1,10 +1,8 @@
-import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { PressableScale } from '../ui/PressableScale';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { ChevronLeft, Eye, Hash } from 'lucide-react-native';
 import { PresenceDot } from './PresenceDot';
-import { ClientBadge } from './ClientBadge';
-import { getInitials } from '../../lib/format';
-import type { Theme } from '../../theme';
+import { Avatar } from '../kit';
+import { metrics, radii, size, space, type, useColors, type Theme } from '../../theme';
 
 // Thread header: back button + channel/DM title, with a presence dot on the
 // counterpart's avatar for DMs. Channels get no dot — presence is per-person.
@@ -40,28 +38,27 @@ export function ThreadHeader({
   paddingTop,
   onBack,
 }: ThreadHeaderProps) {
+  const c = useColors();
+  const title = formatThreadTitle(channelName, isDm).replace(/^#/, '');
   return (
-    <View style={[styles.header, { paddingTop }]}>
-      <PressableScale haptics onPress={onBack} style={styles.backBtn}>
-        <Ionicons name="chevron-back" size={24} color={theme.primary} />
-      </PressableScale>
-      <View style={styles.headerCenter}>
-        {isDm && (
-          <View style={styles.avatarWrap}>
-            <View style={[styles.avatar, { backgroundColor: theme.primary + '30' }]}>
-              <Text style={[styles.avatarText, { color: theme.primary }]}>
-                {getInitials(formatThreadTitle(channelName, isDm))}
-              </Text>
-            </View>
-            {showPresence && <PresenceDot theme={theme} ringColor={theme.card} size={9} />}
-          </View>
-        )}
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]} numberOfLines={1}>
-          {formatThreadTitle(channelName, isDm)}
-        </Text>
-        {isClientFacing && !isDm && <ClientBadge theme={theme} showIcon />}
-      </View>
-      <View style={{ width: 40 }} />
+    <View style={[styles.header, { paddingTop, borderBottomColor: c.border }]}>
+      <Pressable onPress={onBack} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
+        <ChevronLeft size={metrics.pageHeader.back} color={c.accent} strokeWidth={metrics.iconStroke} />
+      </Pressable>
+      {isDm ? (
+        <View>
+          <Avatar name={title} />
+          {showPresence ? <PresenceDot theme={theme} ringColor={c.bg} size={9} /> : null}
+        </View>
+      ) : (
+        <View style={[styles.hash, { backgroundColor: c.greyFill }]}>
+          <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />
+        </View>
+      )}
+      <Text style={[type.sectionTitle, styles.title, { color: c.text }]} numberOfLines={1} accessibilityRole="header">
+        {title}
+      </Text>
+      {isClientFacing && !isDm ? <Eye size={size.icon.row} color={c.muted} strokeWidth={metrics.iconStroke} /> : null}
     </View>
   );
 }
@@ -70,13 +67,17 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: 12,
-    paddingHorizontal: 8,
+    gap: metrics.messages.threadHeaderGap,
+    paddingHorizontal: space.screenX,
+    paddingBottom: space.inline + space.inlineSm,
+    borderBottomWidth: size.border,
   },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  avatarWrap: { width: 26, height: 26 },
-  avatar: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 10, fontWeight: '700' },
-  headerTitle: { fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  hash: {
+    width: metrics.avatar.row.size,
+    height: metrics.avatar.row.size,
+    borderRadius: radii.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: { flex: 1 },
 });

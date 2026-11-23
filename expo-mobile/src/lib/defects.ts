@@ -1,3 +1,4 @@
+import type { DotStatus } from '../components/kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch, apiRequest } from '../services/api';
 import { toLocalDateStr } from './dates';
@@ -431,3 +432,13 @@ export function mentionIdsInText(text: string, picked: TeamUser[]): string[] {
   for (const u of picked) if (text.includes(`@${userName(u)}`)) ids.add(u.id);
   return Array.from(ids);
 }
+
+/** Defect stage → status dot (list rows, detail). The word comes from STAGE_LABEL. */
+export const DEFECT_DOT: Record<DefectStage, DotStatus> = {
+  open: 'pending',
+  sent: 'sent',
+  accepted: 'done',
+  fixed: 'inProgress',
+  closed: 'done',
+  rejected: 'rejected',
+};

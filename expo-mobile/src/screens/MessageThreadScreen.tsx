@@ -10,7 +10,8 @@ import {
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { CheckCheck, Eye } from 'lucide-react-native';
+import { Card, DayDivider, SheetBody } from '../components/kit';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -45,7 +46,7 @@ import type {
   MessageReaction,
   ChannelMember,
 } from '../components/messages/types';
-import { useTheme } from '../theme';
+import { metrics, space, size, type, useColors, useTheme } from '../theme';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { readableFrame } from '../components/ui/ReadableColumn';
 
@@ -110,15 +111,17 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
   const isClient = user?.userCategory === 'client';
   const theme = useTheme();
   const toast = useToast();
+  const k = useColors();
+  // Revamp tokens for the thread's inline colours.
   const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    muted: theme.textMuted,
-    input: theme.background,
+    bg: k.bg,
+    card: k.surface,
+    text: k.text,
+    secondary: k.muted,
+    border: k.border,
+    accent: k.accent,
+    muted: k.muted,
+    input: k.surface,
   };
 
   const [mentionUsers, setMentionUsers] = useState<MentionUser[]>([]);
@@ -546,11 +549,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
     if (item.kind === 'divider') {
       return (
         <View style={styles.dividerRow}>
-          <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          <Text style={[styles.dividerText, { color: colors.secondary, backgroundColor: colors.bg }]}>
-            {formatDateDivider(item.date)}
-          </Text>
-          <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          <DayDivider label={formatDateDivider(item.date)} />
         </View>
       );
     }
@@ -558,8 +557,8 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
     if (item.kind === 'seen') {
       return (
         <View style={styles.seenRow}>
-          <Ionicons name="checkmark-done" size={12} color={colors.muted} />
-          <Text style={[styles.seenText, { color: colors.muted }]}>{item.label}</Text>
+          <CheckCheck size={size.icon.caret} color={colors.muted} strokeWidth={metrics.iconStroke} />
+          <Text style={[type.caption, { color: colors.muted }]}>{item.label}</Text>
         </View>
       );
     }
@@ -677,7 +676,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
             }
             ListEmptyComponent={
               <View style={styles.emptyThread}>
-                <Text style={[styles.emptyThreadText, { color: colors.secondary }]}>
+                <Text style={[type.body, { color: colors.secondary }]}>
                   No messages yet. Say hello!
                 </Text>
               </View>
@@ -714,9 +713,9 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
           Safe next to the typing overlay — that overlay is absolutely positioned
           within listWrap, so this sibling row stacks under it, never over it. */}
       {clientFacingChannel && !loading && (
-        <View style={[styles.clientHint, { backgroundColor: theme.statusWarningBg }]}>
-          <Ionicons name="eye" size={12} color={theme.statusWarning} />
-          <Text style={[styles.clientHintText, { color: theme.statusWarning }]} numberOfLines={1}>
+        <View style={styles.clientHint}>
+          <Eye size={size.icon.caret} color={k.status.pendingText} strokeWidth={metrics.iconStroke} />
+          <Text style={[type.caption, { color: k.status.pendingText }]} numberOfLines={1}>
             The client can see this channel
           </Text>
         </View>
@@ -758,16 +757,14 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
 
       {/* Pinned message preview (when the message isn't in the loaded window) */}
       <Sheet ref={pinnedSheetRef} title="Pinned message" scrollable onDismiss={() => setPinnedPreview(null)}>
-        <View style={styles.pinnedSheetBody}>
+        <SheetBody>
           {pinnedPreview && (
-            <>
-              <Text style={[styles.pinnedSheetSender, { color: colors.secondary }]}>
-                {getSenderName(pinnedPreview)}
-              </Text>
+            <Card variant="notes">
+              <Text style={[type.metaSemi, { color: k.text }]}>{getSenderName(pinnedPreview)}</Text>
               <MessageContent content={pinnedPreview.content} isOwn={false} theme={theme} />
-            </>
+            </Card>
           )}
-        </View>
+        </SheetBody>
       </Sheet>
 
       {/* Full-screen attachment viewer */}
@@ -779,26 +776,19 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  skeletonThread: { flex: 1, paddingHorizontal: 16, paddingTop: 24, gap: 14 },
+  skeletonThread: { flex: 1, paddingHorizontal: space.screenX, paddingTop: space.screenBottom, gap: metrics.sheet.gap },
   listWrap: { flex: 1 },
-  messageList: { paddingHorizontal: 12, paddingVertical: 12, gap: 4 },
-  olderSpinner: { paddingVertical: 14, alignItems: 'center' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 12, gap: 8 },
-  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
-  dividerText: { fontSize: 12, fontWeight: '500', paddingHorizontal: 8 },
-  seenRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 3, marginTop: 1, marginBottom: 2 },
-  seenText: { fontSize: 11, fontWeight: '500' },
-  emptyThread: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyThreadText: { fontSize: 14 },
-  pinnedSheetBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, gap: 6 },
+  messageList: { paddingHorizontal: space.screenX, paddingVertical: metrics.sheet.gap },
+  olderSpinner: { paddingVertical: metrics.sheet.gap, alignItems: 'center' },
+  dividerRow: { paddingVertical: metrics.messages.msgGap },
+  seenRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: space.inlineSm, paddingTop: space.inlineSm },
+  emptyThread: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: space.screenBottom * 2 },
   clientHint: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    gap: space.inlineSm,
+    paddingHorizontal: space.screenX,
+    paddingVertical: space.inlineSm,
   },
-  clientHintText: { fontSize: 11, fontWeight: '600' },
-  pinnedSheetSender: { fontSize: 12, fontWeight: '600' },
 });

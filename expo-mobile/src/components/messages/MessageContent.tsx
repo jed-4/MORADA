@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Text, type StyleProp, type TextStyle } from 'react-native';
-import type { Theme } from '../../theme';
+import { fonts, type, useColors, type Theme } from '../../theme';
 import { MENTION_MARKUP } from './mentions';
 
 // Renders message content, converting @[Name](userId:x) markup into styled
@@ -46,14 +46,12 @@ export function MessageContent({
   isOwn: boolean;
   theme: Theme;
 }) {
-  const baseStyle: StyleProp<TextStyle> = {
-    color: isOwn ? '#FFFFFF' : theme.textPrimary,
-    fontSize: 15,
-    lineHeight: 20,
-  };
-  const mentionStyle: StyleProp<TextStyle> = isOwn
-    ? { color: '#EFE6F9', fontWeight: '700' }
-    : { color: theme.primary, fontWeight: '600' };
+  // Revamp: messages are flat rows (no purple bubble), so own and others read the same.
+  const c = useColors();
+  void isOwn;
+  void theme;
+  const baseStyle: StyleProp<TextStyle> = [type.bodyPreview, { color: c.textBody }];
+  const mentionStyle: StyleProp<TextStyle> = { color: c.link, fontFamily: fonts.semibold };
   const style: SegmentStyle = { base: baseStyle, mention: mentionStyle };
 
   const parts: ReactNode[] = [];

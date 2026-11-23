@@ -50,8 +50,7 @@ import {
   type DefectListResponse,
   type DefectStage,
   type JobStage,
-  type StageCounts,
-} from '../lib/defects';
+  type StageCounts, DEFECT_DOT } from '../lib/defects';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -508,15 +507,6 @@ export default function DefectsListScreen({ navigation, route }: Props) {
 
 const NO_LOCATION = 'No location';
 
-/** Defect stage → the design's dot colour (word drawn beside it). */
-const DEFECT_DOT: Record<DefectStage, DotStatus> = {
-  open: 'pending',
-  sent: 'sent',
-  accepted: 'done',
-  fixed: 'inProgress',
-  closed: 'done',
-  rejected: 'rejected',
-};
 
 function shortDate(dateStr: string): string {
   return fromLocalDateStr(dateStr).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });

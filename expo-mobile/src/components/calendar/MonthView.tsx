@@ -1,24 +1,19 @@
 import { memo, useMemo } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
-import { fontSize, fontWeight, radius, type Theme } from '../../theme';
+import { metrics, projectTint, radii, size, space, tabular, type, useColors, type Theme } from '../../theme';
+import { CalendarBlock, Card, FAB_CLEARANCE } from '../kit';
 import { toLocalDateStr } from '../../lib/dates';
 import { useLayout } from '../../lib/useLayout';
 import {
   DAY_NAMES,
-  EventCard,
+  eventBlockColor,
+  formatClock,
+  formatClockRange,
+  isEventAllDay,
   isSameDay,
   isToday,
-  MONTHS_SHORT,
   SCHEDULE_STATUS_LABELS,
   type CalendarEvent,
   type EventsByDay,
@@ -78,8 +73,11 @@ function MonthViewInner({
   showStatusChips,
   taskStatusOptions,
 }: MonthViewProps) {
+  const c = useColors();
+  const isDark = useColorScheme() === 'dark';
+  void theme;
   const { width: screenWidth, isWide } = useLayout();
-  const cellWidth = (screenWidth - 32) / 7;
+  const cellWidth = (screenWidth - space.screenX * 2) / 7;
   const maxChips = isWide ? MAX_CELL_CHIPS_WIDE : MAX_CELL_CHIPS;
   const selectedKey = toLocalDateStr(selectedDate);
   const selectedEvents = eventsByDay[selectedKey] || [];
@@ -99,37 +97,42 @@ function MonthViewInner({
     [onNavigateMonth],
   );
 
-  const statusChipFor = (event: CalendarEvent): { label: string; color: string } | null => {
+  /** Status word for the agenda line, when "Show status chips" is on. */
+  const statusWord = (event: CalendarEvent): string | null => {
     if (!showStatusChips) return null;
     if (event.type === 'task') {
-      const opt = taskStatusOptions.find(o => o.value === (event.status || 'todo'));
-      return opt ? { label: opt.label, color: opt.color } : null;
+      return taskStatusOptions.find(o => o.value === (event.status || 'todo'))?.label ?? null;
     }
-    if (event.type === 'schedule' && event.statusColor && event.status) {
-      return { label: SCHEDULE_STATUS_LABELS[event.status] || event.status, color: event.statusColor };
-    }
+    if (event.type === 'schedule' && event.status) return SCHEDULE_STATUS_LABELS[event.status] || event.status;
     return null;
   };
+  const chipFill = (event: CalendarEvent) => {
+    const color = eventBlockColor(event);
+    return color ? projectTint(color, isDark ? metrics.calendarBlock.tintDark : metrics.calendarBlock.tint, c.bg) : c.internalFill;
+  };
+  const dayTitle = isToday(selectedDate)
+    ? `Today · ${selectedDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '')}`
+    : selectedDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '');
 
   return (
     <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, paddingTop: 8 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
+      style={mx.flex}
+      contentContainerStyle={mx.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
       showsVerticalScrollIndicator={false}
     >
       <GestureDetector gesture={swipeGesture}>
         <View>
-          <View style={styles.dayNamesRow}>
+          <View style={mx.row}>
             {DAY_NAMES.map(name => (
-              <View key={name} style={[styles.dayNameCell, { width: cellWidth }]}>
-                <Text style={[styles.dayNameText, { color: theme.textSecondary }]}>{name}</Text>
+              <View key={name} style={[mx.dayName, { width: cellWidth }]}>
+                <Text style={[type.micro, { color: c.muted }]}>{name.toUpperCase()}</Text>
               </View>
             ))}
           </View>
 
           {calendarGrid.map((row, rowIdx) => (
-            <View key={rowIdx} style={styles.calendarRow}>
+            <View key={rowIdx} style={[mx.row, { borderTopColor: c.hairline }, mx.weekRow]}>
               {row.map((cell, cellIdx) => {
                 const cellDate = new Date(cell.year, cell.month, cell.day);
                 const cellKey = toLocalDateStr(cellDate);
@@ -143,49 +146,37 @@ function MonthViewInner({
                   <Pressable
                     key={cellIdx}
                     style={[
-                      styles.dayCell,
-                      { width: cellWidth, borderColor: theme.border + '60' },
-                      isWide && styles.dayCellWide,
-                      isSelected && { backgroundColor: theme.primary + '18', borderColor: theme.primary + '60' },
+                      mx.cell,
+                      { width: cellWidth },
+                      isWide && mx.cellWide,
+                      isSelected && { backgroundColor: c.tint },
                     ]}
                     onPress={() => onSelectDay(cellDate)}
                     onLongPress={() => onDayLongPress(cellKey)}
+                    delayLongPress={metrics.longPressMs}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={`${cellDate.toDateString()}, ${cellEvents.length} events`}
                   >
-                    <View style={styles.dayNumWrap}>
+                    <View style={mx.dayNumWrap}>
                       {isCurrentDay ? (
-                        <View style={[styles.todayBubble, { backgroundColor: theme.primary }]}>
-                          <Text style={styles.todayBubbleText}>{cell.day}</Text>
+                        <View style={[mx.today, { backgroundColor: c.accent }]}>
+                          <Text style={[type.metaSemi, tabular, { color: c.onAccent }]}>{cell.day}</Text>
                         </View>
                       ) : (
-                        <Text style={[
-                          styles.dayNumber,
-                          { color: cell.isCurrentMonth ? theme.textPrimary : theme.textMuted },
-                          isSelected && { color: theme.primary, fontWeight: fontWeight.bold },
-                        ]}>
+                        <Text style={[type.meta, tabular, mx.dayNum, { color: isSelected ? c.accent : cell.isCurrentMonth ? c.text : c.faint }]}>
                           {cell.day}
                         </Text>
                       )}
                     </View>
                     {visible.map(event => (
-                      <View
-                        key={event.id}
-                        style={[
-                          styles.cellChip,
-                          { backgroundColor: (event.color || theme.textMuted) + '30' },
-                          isWide && { borderLeftWidth: 3, borderLeftColor: event.color || theme.textMuted },
-                        ]}
-                      >
-                        <Text
-                          style={[styles.cellChipText, { color: theme.textPrimary }, isWide && styles.cellChipTextWide]}
-                          numberOfLines={1}
-                        >
+                      <View key={event.id} style={[mx.chip, { backgroundColor: chipFill(event) }]}>
+                        <Text style={[isWide ? type.caption : type.tiny, { color: c.textBody }]} numberOfLines={1}>
                           {event.title}
                         </Text>
                       </View>
                     ))}
-                    {overflow > 0 && (
-                      <Text style={[styles.cellOverflow, { color: theme.textSecondary }]}>+{overflow}</Text>
-                    )}
+                    {overflow > 0 ? <Text style={[type.tiny, tabular, mx.overflow, { color: c.muted }]}>+{overflow}</Text> : null}
                   </Pressable>
                 );
               })}
@@ -194,99 +185,67 @@ function MonthViewInner({
         </View>
       </GestureDetector>
 
-      <View style={[styles.selectedDateHeader, { borderTopColor: theme.border }]}>
-        <Text style={[styles.selectedDateText, { color: theme.textPrimary }]}>
-          {isToday(selectedDate) ? 'Today' : `${DAY_NAMES[(selectedDate.getDay() + 6) % 7]}, ${selectedDate.getDate()} ${MONTHS_SHORT[selectedDate.getMonth()]}`}
-        </Text>
-        <Text style={[styles.selectedEventCount, { color: theme.textSecondary }]}>
-          {selectedEvents.length} {selectedEvents.length === 1 ? 'event' : 'events'}
-        </Text>
-      </View>
-
-      {selectedEvents.length === 0 ? (
-        <View style={[styles.emptySection, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Ionicons name="calendar-outline" size={28} color={theme.textMuted} />
-          <Text style={[styles.emptySectionText, { color: theme.textSecondary }]}>No events on this day</Text>
+      {/* The selected day's agenda, in the same style as List view. */}
+      <View style={mx.agenda}>
+        <View style={mx.agendaHead}>
+          <Text style={[type.meta, { color: c.muted }]}>{dayTitle}</Text>
+          <Text style={[type.meta, tabular, { color: c.muted }]}>
+            {selectedEvents.length} {selectedEvents.length === 1 ? 'event' : 'events'}
+          </Text>
         </View>
-      ) : (
-        selectedEvents.map(event => (
-          <EventCard
-            key={event.id}
-            event={event}
-            theme={theme}
-            onPress={onEventPress}
-            statusChip={statusChipFor(event)}
-          />
-        ))
-      )}
+        {selectedEvents.length === 0 ? (
+          <Text style={[type.body, mx.none, { color: c.muted }]}>Nothing on this day</Text>
+        ) : (
+          <Card variant="list">
+            {selectedEvents.map(event => {
+              const sub = [
+                event.startTime ? formatClockRange(event.startTime, event.endTime) : null,
+                event.projectName && !event.title.includes(event.projectName) ? event.projectName : null,
+                statusWord(event),
+              ].filter(Boolean).join(' · ');
+              return (
+                <Pressable
+                  key={event.id}
+                  onPress={() => onEventPress(event)}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [mx.eventRow, { opacity: pressed ? metrics.pressedOpacity : 1 }]}
+                >
+                  <Text style={[type.meta, tabular, mx.eventTime, { color: c.muted }]}>
+                    {isEventAllDay(event) ? 'All day' : formatClock(event.startTime)}
+                  </Text>
+                  <View style={mx.flex}>
+                    <CalendarBlock variant="list" title={event.title} time={sub || null} color={eventBlockColor(event)} />
+                  </View>
+                </Pressable>
+              );
+            })}
+          </Card>
+        )}
+      </View>
     </ScrollView>
   );
 }
 
 export const MonthView = memo(MonthViewInner);
 
-const styles = StyleSheet.create({
-  dayNamesRow: { flexDirection: 'row', marginBottom: 4 },
-  dayNameCell: { alignItems: 'center', paddingVertical: 6 },
-  dayNameText: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold },
-  calendarRow: { flexDirection: 'row' },
-  dayCell: {
-    minHeight: 64,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.md,
-    paddingHorizontal: 2,
-    paddingBottom: 2,
-    gap: 2,
-  },
-  dayNumWrap: {
-    alignItems: 'center',
-    paddingTop: 3,
-    paddingBottom: 1,
-  },
-  dayNumber: { fontSize: fontSize.bodySm },
-  todayBubble: {
-    width: 22,
-    height: 22,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayBubbleText: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
-    color: '#FFFFFF',
-  },
-  cellChip: {
-    borderRadius: radius.sm,
-    paddingHorizontal: 3,
-    paddingVertical: 1.5,
-  },
-  cellChipText: { fontSize: fontSize.label, fontWeight: fontWeight.medium },
-  dayCellWide: { minHeight: WIDE_CELL_MIN_HEIGHT, paddingHorizontal: 3 },
-  cellChipTextWide: { fontSize: fontSize.xs },
-  cellOverflow: {
-    fontSize: fontSize.label,
-    fontWeight: fontWeight.semibold,
-    textAlign: 'center',
-  },
-  selectedDateHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 14,
-    paddingBottom: 8,
-    marginTop: 8,
-    borderTopWidth: 1,
-  },
-  selectedDateText: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
-  selectedEventCount: { fontSize: fontSize.bodySm },
-  emptySection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 28,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    gap: 8,
-  },
-  emptySectionText: { fontSize: fontSize.sm },
+const L = metrics.calendar.list;
+
+const mx = StyleSheet.create({
+  flex: { flex: 1 },
+  content: { paddingHorizontal: space.screenX, paddingBottom: space.screenBottom + FAB_CLEARANCE },
+  row: { flexDirection: 'row' },
+  weekRow: { borderTopWidth: size.border },
+  dayName: { alignItems: 'center', paddingBottom: space.inline },
+  cell: { minHeight: metrics.calendar.monthCell, paddingHorizontal: metrics.calendar.colPad / 2, paddingBottom: metrics.calendar.colPad, gap: metrics.calendar.colPad / 2 },
+  cellWide: { minHeight: WIDE_CELL_MIN_HEIGHT },
+  dayNumWrap: { alignItems: 'center', paddingTop: space.inlineSm, paddingBottom: space.inlineSm / 2 },
+  dayNum: { lineHeight: metrics.calendar.monthToday },
+  today: { width: metrics.calendar.monthToday, height: metrics.calendar.monthToday, borderRadius: metrics.calendar.monthToday / 2, alignItems: 'center', justifyContent: 'center' },
+  chip: { borderRadius: radii.xs, paddingHorizontal: metrics.calendar.colPad, paddingVertical: 1 },
+  overflow: { textAlign: 'center' },
+  agenda: { gap: L.dayGap, paddingTop: metrics.sheet.gap },
+  agendaHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  none: { paddingVertical: space.inline },
+  eventRow: { flexDirection: 'row', alignItems: 'flex-start', gap: L.rowGap, paddingVertical: L.rowPadY },
+  eventTime: { width: L.timeCol, paddingTop: metrics.calendarBlock.listPad.y },
 });

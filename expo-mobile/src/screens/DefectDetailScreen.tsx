@@ -2,16 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -20,8 +17,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { apiFetch, apiRequest, getAuthedImageSource, uploadFileFromUri } from '../services/api';
-import { useTheme, fontSize, fontWeight, radius } from '../theme';
+import { apiFetch, apiRequest, uploadFileFromUri } from '../services/api';
+import { metrics, radii, size, space, tabular, type, useColors } from '../theme';
+import { Camera, ChevronLeft, CircleAlert, Eye, EyeOff, Pencil, Send } from 'lucide-react-native';
+import {
+  ButtonRow, Card, CommentComposer, EmptyState, FieldHint, FieldLabel, ModalSheet, PhotoTile, PrimaryButton, PropertyRow,
+  SecondaryButton, StatusDot, TextButton, TextField,
+} from '../components/kit';
 import { haptic } from '../lib/haptics';
 import { usePermission } from '../lib/usePermission';
 import { useReturnToTwoPane } from '../lib/twoPane';
@@ -31,7 +33,6 @@ import { Skeleton } from '../components/ui/Skeleton';
 import { useToast } from '../components/ui/Toast';
 import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
 import { fromLocalDateStr, dateStrOf } from '../lib/dates';
-import { StageChip } from '../components/defects/StageChip';
 import { DefectPhotoViewer } from '../components/defects/DefectPhotoViewer';
 import { DefectEditModal } from '../components/defects/DefectEditModal';
 import { PickerSheet, type PickerOption } from '../components/defects/PickerSheet';
@@ -40,6 +41,7 @@ import {
   JOB_STAGE_LABEL,
   SENDABLE_STAGES,
   STAGE_LABEL,
+  DEFECT_DOT,
   activeMentionQuery,
   insertMention,
   loadTradeContacts,
@@ -159,7 +161,7 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
     projectId?: string;
     listRoute?: string;
   };
-  const theme = useTheme();
+  const k = useColors();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { heldOnFold } = useTwoPaneDetail();
@@ -455,7 +457,7 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
 
   if (loading && !defect) {
     return (
-      <View style={[styles.screen, { backgroundColor: theme.background, paddingTop: topPad + 40, paddingHorizontal: 16, gap: 12 }]}>
+      <View style={[styles.screen, styles.loading, { backgroundColor: k.bg, paddingTop: topPad + space.screenBottom }]}>
         <Skeleton width="40%" height={14} />
         <Skeleton width="80%" height={22} />
         <Skeleton height={200} borderRadius={16} />
@@ -466,22 +468,14 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
 
   if (!defect) {
     return (
-      <View style={[styles.centre, { backgroundColor: theme.background }]}>
-        <Ionicons name="alert-circle-outline" size={34} color={theme.textMuted} />
-        <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
-          {failed ? "Couldn't load this defect" : 'Defect unavailable'}
-        </Text>
-        <Text style={[styles.emptyBody, { color: theme.textSecondary }]}>
-          It may have been removed, you may not have access, or there's no signal.
-        </Text>
-        <Pressable onPress={() => { setLoading(true); load(); }} style={styles.linkBtn} accessibilityRole="button">
-          <Text style={[styles.linkText, { color: theme.primary }]}>Try again</Text>
-        </Pressable>
-        {!embedded && (
-          <Pressable onPress={goBack} style={styles.linkBtn} accessibilityRole="button">
-            <Text style={[styles.linkText, { color: theme.primary }]}>Go back</Text>
-          </Pressable>
-        )}
+      <View style={[styles.centre, { backgroundColor: k.bg }]}>
+        <EmptyState
+          icon={CircleAlert}
+          title={failed ? "Couldn't load this defect" : 'Defect unavailable'}
+          helper="It may have been removed, you may not have access, or there's no signal."
+        />
+        <TextButton label="Try again" center onPress={() => { setLoading(true); load(); }} />
+        {!embedded ? <TextButton label="Go back" tone="muted" center onPress={goBack} /> : null}
       </View>
     );
   }
@@ -495,266 +489,201 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
     },
     { label: 'Job stage', value: JOB_STAGE_LABEL[defect.jobStage] ?? defect.jobStage ?? '' },
     { label: 'Owner', value: defect.ownerName || '' },
-    { label: 'Due', value: fmtDate(defect.dueDate) + (dueOverdue ? ' · overdue' : ''), tone: dueOverdue ? theme.statusDanger : undefined },
+    { label: 'Due', value: fmtDate(defect.dueDate) + (dueOverdue ? ' · overdue' : ''), tone: dueOverdue ? k.danger : undefined },
     { label: 'Raised', value: [fmtDate(defect.dateIdentified || defect.createdAt), defect.createdByName].filter(Boolean).join(' · ') },
     ...(defect.closedAt ? [{ label: 'Closed', value: [fmtDate(defect.closedAt), defect.closedByName].filter(Boolean).join(' · ') }] : []),
   ].filter((r) => r.value);
 
-  const photoStrip = (label: string, list: DefectAttachment[]) =>
-    list.length ? (
-      <View style={styles.photoGroup}>
-        <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>{label}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRow}>
-          {list.map((p, i) => (
-            <Pressable
-              key={`${p.url}-${i}`}
-              onPress={() => setViewer({ photos: list, index: i })}
-              style={[styles.photo, { backgroundColor: theme.subtle }]}
-              accessibilityRole="imagebutton"
-              accessibilityLabel={`${label} photo ${i + 1}`}
-            >
-              <Image source={getAuthedImageSource(p.url)} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            </Pressable>
-          ))}
-        </ScrollView>
-      </View>
-    ) : null;
 
   return (
     <KeyboardAvoidingView
-      style={[styles.screen, { backgroundColor: theme.background }]}
+      style={[styles.screen, { backgroundColor: k.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Top bar */}
-      <View style={[styles.topBar, { paddingTop: topPad, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-        {!embedded && (
-          <Pressable onPress={goBack} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Back">
-            <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
+      {/* Header: back · "D-12 · project" · watch · edit */}
+      <View style={[styles.topBar, { paddingTop: topPad }]}>
+        {!embedded ? (
+          <Pressable onPress={goBack} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
+            <ChevronLeft size={metrics.pageHeader.back} color={k.accent} strokeWidth={metrics.iconStroke} />
           </Pressable>
-        )}
-        <View style={styles.topText}>
-          <Text style={[styles.ref, { color: theme.textMuted }]} numberOfLines={1}>
-            {defectRef(defect)}
-            {defect.projectName ? ` · ${defect.projectName}` : ''}
-          </Text>
-        </View>
+        ) : null}
+        <Text style={[type.meta, tabular, styles.topText, { color: k.muted }]} numberOfLines={1}>
+          {defectRef(defect)}
+          {defect.projectName ? ` · ${defect.projectName}` : ''}
+        </Text>
         <Pressable
           onPress={toggleWatch}
-          style={styles.iconBtn}
+          hitSlop={metrics.hitSlop}
           accessibilityRole="switch"
           accessibilityState={{ checked: !!defect.isWatching }}
           accessibilityLabel={defect.isWatching ? 'Stop watching' : 'Watch'}
         >
-          <Ionicons name={defect.isWatching ? 'eye' : 'eye-outline'} size={22} color={defect.isWatching ? theme.primary : theme.textSecondary} />
+          {defect.isWatching
+            ? <Eye size={size.icon.header} color={k.accent} strokeWidth={metrics.iconStrokeActive} />
+            : <EyeOff size={size.icon.header} color={k.icon} strokeWidth={metrics.iconStroke} />}
         </Pressable>
-        {canEdit && (
-          <Pressable onPress={() => { haptic.light(); setEditing(true); }} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Edit">
-            <Ionicons name="create-outline" size={22} color={theme.textSecondary} />
+        {canEdit ? (
+          <Pressable onPress={() => { haptic.light(); setEditing(true); }} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Edit">
+            <Pencil size={size.icon.header} color={k.icon} strokeWidth={metrics.iconStroke} />
           </Pressable>
-        )}
+        ) : null}
       </View>
 
       <ScrollView
         {...kb.scrollProps}
         contentContainerStyle={[styles.content, readableFrame]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
       >
-        <Text style={[styles.title, { color: theme.textPrimary }]}>{defect.title}</Text>
-        <View style={styles.chipRow}>
-          <StageChip stage={defect.stage} />
-          {dueOverdue && (
-            <View style={[styles.overdue, { backgroundColor: theme.statusDangerBg }]}>
-              <Text style={[styles.overdueText, { color: theme.statusDanger }]}>Overdue</Text>
-            </View>
-          )}
-          {defect.watcherCount ? (
-            <Text style={[styles.watchers, { color: theme.textMuted }]}>
-              {defect.watcherCount} watching
+        <View style={styles.titleBlock}>
+          <Text style={[type.headingSemi, { color: k.text }]}>{defect.title}</Text>
+          <View style={styles.statusLine}>
+            <StatusDot status={DEFECT_DOT[defect.stage] ?? 'pending'} label={STAGE_LABEL[defect.stage] ?? defect.stage} />
+            {dueOverdue ? <Text style={[type.meta, { color: k.danger }]}>· Overdue</Text> : null}
+            {defect.watcherCount ? <Text style={[type.meta, tabular, { color: k.muted }]}>{`· ${defect.watcherCount} watching`}</Text> : null}
+          </View>
+          {tradeStatusLine(defect) ? (
+            <Text style={[type.meta, { color: k.muted }]}>
+              {[defect.assignedContactName, tradeStatusLine(defect)].filter(Boolean).join(' · ')}
             </Text>
           ) : null}
         </View>
 
-        {tradeStatusLine(defect) && (
-          <View style={styles.tradeStatus}>
-            <Ionicons name="paper-plane-outline" size={13} color={theme.textMuted} />
-            <Text style={[styles.tradeStatusText, { color: theme.textSecondary }]}>
-              {[defect.assignedContactName, tradeStatusLine(defect)].filter(Boolean).join(' · ')}
-            </Text>
-          </View>
-        )}
-
-        {canSendToTrade && (
-          <Pressable
-            onPress={startSendToTrade}
-            disabled={busy !== null}
-            style={[styles.sendTradeBtn, { borderColor: theme.primary, opacity: busy !== null ? 0.6 : 1 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Send to trade"
-          >
-            {busy === 'send' ? (
-              <ActivityIndicator color={theme.primary} />
-            ) : (
-              <>
-                <Ionicons name="paper-plane-outline" size={17} color={theme.primary} />
-                <Text style={[styles.actionText, { color: theme.primary }]}>
-                  {defect.stage === 'open' ? 'Send to trade' : 'Send to trade again'}
-                </Text>
-              </>
-            )}
-          </Pressable>
-        )}
-
-        {/* Actions — only transitions this person may make from here. */}
-        {actions.length > 0 && (
+        {canSendToTrade || actions.length > 0 ? (
           <View style={styles.actions}>
             {actions.map((to, i) => {
-              const primary = i === 0;
-              return (
-                <Pressable
-                  key={to}
-                  onPress={() => onAction(to)}
-                  disabled={busy !== null}
-                  style={[
-                    styles.actionBtn,
-                    primary
-                      ? { backgroundColor: to === 'rejected' ? theme.statusDangerSolid : theme.primary, borderColor: 'transparent' }
-                      : { backgroundColor: theme.card, borderColor: to === 'rejected' ? theme.statusDanger : theme.border },
-                    busy !== null && { opacity: 0.6 },
-                  ]}
-                  accessibilityRole="button"
-                >
-                  {busy === to ? (
-                    <ActivityIndicator color={primary ? '#fff' : theme.primary} />
-                  ) : (
-                    <Text
-                      style={[
-                        styles.actionText,
-                        { color: primary ? '#fff' : to === 'rejected' ? theme.statusDanger : theme.textPrimary },
-                      ]}
-                    >
-                      {transitionLabel(defect.stage, to)}
-                    </Text>
-                  )}
-                </Pressable>
+              const label = transitionLabel(defect.stage, to);
+              if (to === 'rejected') {
+                return <TextButton key={to} label={busy === to ? 'Working…' : label} tone="danger" center disabled={busy !== null} onPress={() => onAction(to)} />;
+              }
+              return i === 0 ? (
+                <ButtonRow key={to}>
+                  <PrimaryButton label={label} onPress={() => onAction(to)} loading={busy === to} disabled={busy !== null && busy !== to} />
+                </ButtonRow>
+              ) : (
+                <ButtonRow key={to}>
+                  <SecondaryButton label={label} onPress={() => onAction(to)} loading={busy === to} disabled={busy !== null && busy !== to} />
+                </ButtonRow>
               );
             })}
+            {canSendToTrade ? (
+              <ButtonRow>
+                <SecondaryButton
+                  label={defect.stage === 'open' ? 'Send to trade' : 'Send to trade again'}
+                  icon={Send}
+                  onPress={startSendToTrade}
+                  loading={busy === 'send'}
+                  disabled={busy !== null && busy !== 'send'}
+                />
+              </ButtonRow>
+            ) : null}
           </View>
-        )}
+        ) : null}
 
         {/* Photos */}
-        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          {photoStrip('Before', photos.before)}
-          {photoStrip('After', photos.after)}
-          {photoStrip('From trade', photos.trade)}
-          {!photos.before.length && !photos.after.length && !photos.trade.length && (
-            <Text style={[styles.muted, { color: theme.textMuted }]}>No photos yet.</Text>
-          )}
-          {canEdit && (
-            <Pressable onPress={addPhoto} disabled={busy !== null} style={styles.addPhoto} accessibilityRole="button">
-              {busy === 'photo' ? (
-                <ActivityIndicator color={theme.primary} />
-              ) : (
-                <>
-                  <Ionicons name="camera-outline" size={18} color={theme.primary} />
-                  <Text style={[styles.linkText, { color: theme.primary }]}>Add photo</Text>
-                </>
-              )}
-            </Pressable>
-          )}
-        </View>
+        <Card>
+          <View style={styles.photos}>
+            {([['Before', photos.before], ['After', photos.after], ['From trade', photos.trade]] as const).map(([label, list]) =>
+              list.length ? (
+                <View key={label} style={styles.group}>
+                  <FieldLabel>{label}</FieldLabel>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRow}>
+                    {list.map((p, i) => (
+                      <Pressable
+                        key={`${p.url}-${i}`}
+                        onPress={() => setViewer({ photos: list as DefectAttachment[], index: i })}
+                        accessibilityRole="imagebutton"
+                        accessibilityLabel={`${label} photo ${i + 1}`}
+                      >
+                        <PhotoTile uri={p.url} />
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null,
+            )}
+            {!photos.before.length && !photos.after.length && !photos.trade.length ? (
+              <Text style={[type.meta, { color: k.muted }]}>No photos yet</Text>
+            ) : null}
+            {canEdit ? (
+              busy === 'photo'
+                ? <ActivityIndicator color={k.accent} style={styles.start} />
+                : <TextButton label="Add photo" icon={Camera} onPress={addPhoto} disabled={busy !== null} />
+            ) : null}
+          </View>
+        </Card>
 
         {/* Fields */}
-        <View style={[styles.card, styles.cardFlush, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          {fieldRows.map((r, i) => (
-            <View
-              key={r.label}
-              style={[styles.fieldRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border }]}
-            >
-              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>{r.label}</Text>
-              <Text style={[styles.fieldValue, { color: r.tone ?? theme.textPrimary }]}>{r.value}</Text>
-            </View>
+        <Card variant="list">
+          {fieldRows.map((r) => (
+            <PropertyRow key={r.label} label={r.label} labelWidth={metrics.defects.propLabel}>
+              <Text style={[type.body, styles.flex, { color: r.tone ?? k.text }]}>{r.value}</Text>
+            </PropertyRow>
           ))}
-        </View>
+        </Card>
 
         {defect.description ? (
-          <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>Notes</Text>
-            <Text style={[styles.body, { color: theme.textPrimary }]}>{defect.description}</Text>
+          <View style={styles.group}>
+            <FieldLabel>Notes</FieldLabel>
+            <Card variant="notes">
+              <Text style={[type.bodyRead, { color: k.textLong }]}>{defect.description}</Text>
+            </Card>
           </View>
         ) : null}
 
         {/* History */}
-        <Text style={[styles.sectionHeading, { color: theme.textPrimary }]}>History</Text>
-        <View style={styles.timeline}>
-          {events.length === 0 && <Text style={[styles.muted, { color: theme.textMuted }]}>Nothing yet.</Text>}
-          {events.map((e) => {
-            const d = describeEvent(e);
-            const isComment = e.type === 'comment';
-            return (
-              <View key={e.id} style={styles.event}>
-                <View style={[styles.eventDot, { backgroundColor: isComment ? theme.primaryLight : theme.subtle }]}>
-                  <Ionicons name={d.icon} size={14} color={isComment ? theme.primary : theme.textSecondary} />
-                </View>
-                <View style={styles.eventText}>
-                  <Text style={[styles.eventTitle, { color: theme.textPrimary }]}>
-                    {d.text}
-                    <Text style={{ color: theme.textMuted, fontWeight: fontWeight.regular }}>  {fmtWhen(e.createdAt)}</Text>
-                  </Text>
-                  {d.body ? (
-                    <Text
-                      style={[
-                        styles.eventBody,
-                        { color: theme.textPrimary },
-                        isComment && { backgroundColor: theme.card, borderColor: theme.border, borderWidth: StyleSheet.hairlineWidth },
-                      ]}
-                    >
-                      {d.body}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-            );
-          })}
+        <View style={styles.group}>
+          <FieldLabel>History</FieldLabel>
+          {events.length === 0 ? (
+            <Text style={[type.meta, { color: k.muted }]}>Nothing yet</Text>
+          ) : (
+            <Card variant="list">
+              {events.map((e) => {
+                const d = describeEvent(e);
+                return (
+                  <View key={e.id} style={styles.event}>
+                    <View style={[styles.eventIcon, { backgroundColor: k.greyFill }]}>
+                      <Ionicons name={d.icon} size={size.icon.meta} color={k.icon} />
+                    </View>
+                    <View style={styles.eventText}>
+                      <Text style={[type.body, { color: k.text }]}>
+                        {d.text}
+                        <Text style={[type.caption, { color: k.muted }]}>{`  ${fmtWhen(e.createdAt)}`}</Text>
+                      </Text>
+                      {d.body ? <Text style={[type.bodyPreview, { color: k.textBody }]}>{d.body}</Text> : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </Card>
+          )}
         </View>
       </ScrollView>
 
       {/* Comment box */}
-      <View style={[styles.composer, { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: embedded ? 10 : insets.bottom + 8 }]}>
-        {suggestions.length > 0 && (
+      <View style={[styles.composer, { backgroundColor: k.bg, borderTopColor: k.border, paddingBottom: embedded ? metrics.actionBar.padY : insets.bottom + space.inline }]}>
+        {suggestions.length > 0 ? (
           <View style={[styles.mentionList, readableFrame]}>
             {suggestions.map((u) => (
               <Pressable
                 key={u.id}
                 onPress={() => pickMention(u)}
-                style={[styles.mentionChip, { backgroundColor: theme.primaryLight }]}
+                style={[styles.mentionChip, { backgroundColor: k.tint }]}
                 accessibilityRole="button"
                 accessibilityLabel={`Mention ${userName(u)}`}
               >
-                <Text style={[styles.mentionText, { color: theme.primary }]}>@{userName(u)}</Text>
+                <Text style={[type.meta, { color: k.link }]}>@{userName(u)}</Text>
               </Pressable>
             ))}
           </View>
-        )}
-        <View style={[styles.composerInner, readableFrame]}>
-          <TextInput
+        ) : null}
+        <View style={readableFrame}>
+          <CommentComposer
             value={comment}
             onChangeText={setComment}
-            onFocus={kb.onInputFocus}
-            placeholder="Add a comment — @ to mention"
-            placeholderTextColor={theme.textMuted}
-            multiline
-            style={[styles.composerInput, { color: theme.textPrimary, backgroundColor: theme.background, borderColor: theme.border }]}
-            accessibilityLabel="Comment"
+            onSend={sendComment}
+            sending={sending}
+            placeholder="Add a comment, @ to mention"
           />
-          <Pressable
-            onPress={sendComment}
-            disabled={sending || !comment.trim()}
-            style={[styles.sendBtn, { backgroundColor: theme.primary, opacity: sending || !comment.trim() ? 0.4 : 1 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Send comment"
-          >
-            {sending ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="arrow-up" size={20} color="#fff" />}
-          </Pressable>
         </View>
       </View>
 
@@ -788,149 +717,62 @@ export default function DefectDetailScreen({ navigation, route, embedded = false
         onSelect={(o) => {
           const c = o ? (tradePicker ?? []).find((x) => x.id === o.value) : null;
           setTradePicker(null);
-          if (c) setTimeout(() => sendTo(c), 350);
+          if (c) setTimeout(() => sendTo(c), metrics.sheetSwapMs);
         }}
         onClose={() => setTradePicker(null)}
       />
 
       {/* Reject needs a note: what's still wrong. */}
-      <Modal
+      <ModalSheet
         visible={rejecting}
-        transparent
-        animationType="fade"
         onRequestClose={() => setRejecting(false)}
-        supportedOrientations={['portrait', 'portrait-upside-down', 'landscape', 'landscape-left', 'landscape-right']}
+        title="Reject"
+        cancelLabel="Cancel"
+        onCancel={() => setRejecting(false)}
       >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.dialogBackdrop}>
-          <View style={[styles.dialog, { backgroundColor: theme.card }]}>
-            <Text style={[styles.dialogTitle, { color: theme.textPrimary }]}>Reject — what's still wrong?</Text>
-            <Text style={[styles.muted, { color: theme.textSecondary }]}>
-              It goes back to the trade with this note.
-            </Text>
-            <TextInput
-              value={rejectNote}
-              onChangeText={setRejectNote}
-              autoFocus
-              multiline
-              placeholder="e.g. Paint still patchy behind the door"
-              placeholderTextColor={theme.textMuted}
-              style={[styles.dialogInput, { color: theme.textPrimary, borderColor: theme.border, backgroundColor: theme.background }]}
-            />
-            <View style={styles.dialogButtons}>
-              <Pressable onPress={() => setRejecting(false)} style={styles.dialogBtn} accessibilityRole="button">
-                <Text style={[styles.dialogBtnText, { color: theme.textSecondary }]}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={submitReject}
-                disabled={!rejectNote.trim()}
-                style={[styles.dialogBtn, { opacity: rejectNote.trim() ? 1 : 0.4 }]}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.dialogBtnText, { color: theme.statusDanger, fontWeight: fontWeight.semibold }]}>Reject</Text>
-              </Pressable>
+        <View style={styles.dialog}>
+          <FieldHint>What's still wrong? It goes back to the trade with this note.</FieldHint>
+          <TextField
+            value={rejectNote}
+            onChangeText={setRejectNote}
+            autoFocus
+            multilineBox
+            placeholder="e.g. Paint still patchy behind the door"
+            accessibilityLabel="Reject note"
+          />
+          <ButtonRow>
+            <SecondaryButton label="Cancel" onPress={() => setRejecting(false)} />
+            <View style={styles.rejectBtn}>
+              <TextButton label="Reject" tone="danger" center disabled={!rejectNote.trim()} onPress={submitReject} />
             </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+          </ButtonRow>
+        </View>
+      </ModalSheet>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  tradeStatus: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-  tradeStatusText: { fontSize: fontSize.sm, flexShrink: 1 },
-  sendTradeBtn: {
-    marginTop: 12,
-    minHeight: 46,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  mentionList: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 12, paddingBottom: 6 },
-  mentionChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
-  mentionText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   screen: { flex: 1 },
-  centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 40 },
-  emptyTitle: { fontSize: fontSize.base, fontWeight: fontWeight.semibold, textAlign: 'center' },
-  emptyBody: { fontSize: fontSize.bodySm, textAlign: 'center', lineHeight: 19 },
-  linkBtn: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12 },
-  linkText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  topText: { flex: 1, minWidth: 0, paddingHorizontal: 6 },
-  ref: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold, fontVariant: ['tabular-nums'] },
-  content: { padding: 16, gap: 12, paddingBottom: 32 },
-  title: { fontSize: fontSize.xl, fontWeight: fontWeight.bold, letterSpacing: -0.2 },
-  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  overdue: { borderRadius: radius.full, paddingHorizontal: 10, paddingVertical: 4 },
-  overdueText: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold },
-  watchers: { fontSize: fontSize.xs },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  actionBtn: {
-    flexGrow: 1,
-    minWidth: 130,
-    minHeight: 48,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-  },
-  actionText: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
-  card: { borderRadius: radius.xxl, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 10 },
-  cardFlush: { padding: 0, gap: 0, overflow: 'hidden' },
-  photoGroup: { gap: 6 },
-  sectionLabel: { fontSize: fontSize.xs, fontWeight: fontWeight.bold, letterSpacing: 0.6, textTransform: 'uppercase' },
-  photoRow: { gap: 8 },
-  photo: { width: 120, height: 120, borderRadius: radius.xl, overflow: 'hidden' },
-  addPhoto: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, alignSelf: 'flex-start' },
-  muted: { fontSize: fontSize.sm },
-  fieldRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 44 },
-  fieldLabel: { width: 84, fontSize: fontSize.sm },
-  fieldValue: { flex: 1, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
-  body: { fontSize: fontSize.bodyLg, lineHeight: 22 },
-  sectionHeading: { fontSize: fontSize.base, fontWeight: fontWeight.semibold, marginTop: 8 },
-  timeline: { gap: 12 },
-  event: { flexDirection: 'row', gap: 10 },
-  eventDot: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  eventText: { flex: 1, gap: 4, paddingTop: 4 },
-  eventTitle: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  eventBody: { fontSize: fontSize.sm, lineHeight: 20, borderRadius: radius.lg, padding: 8 },
-  composer: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, paddingHorizontal: 12 },
-  composerInner: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  composerInput: {
-    flex: 1,
-    minHeight: 44,
-    maxHeight: 120,
-    borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    paddingTop: 11,
-    paddingBottom: 11,
-    fontSize: fontSize.base,
-  },
-  sendBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  dialogBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 24 },
-  dialog: { borderRadius: radius.xxl, padding: 18, gap: 10, width: '100%', maxWidth: 480, alignSelf: 'center' },
-  dialogTitle: { fontSize: fontSize.lg, fontWeight: fontWeight.semibold },
-  dialogInput: {
-    minHeight: 90,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.xl,
-    padding: 12,
-    fontSize: fontSize.base,
-    textAlignVertical: 'top',
-  },
-  dialogButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
-  dialogBtn: { minHeight: 44, minWidth: 64, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
-  dialogBtnText: { fontSize: fontSize.base },
+  flex: { flex: 1 },
+  start: { alignSelf: 'flex-start' },
+  loading: { paddingHorizontal: space.screenX, gap: space.rowGap },
+  centre: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.screenBottom },
+  topBar: { flexDirection: 'row', alignItems: 'center', gap: metrics.pageHeader.actionGap, paddingHorizontal: space.screenX, paddingBottom: space.inline },
+  topText: { flex: 1, minWidth: 0 },
+  content: { paddingHorizontal: space.screenX, paddingTop: space.inline, paddingBottom: space.screenBottom, gap: metrics.sheet.gap },
+  titleBlock: { gap: metrics.form.labelGap },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: metrics.statusDot.gap, flexWrap: 'wrap' },
+  actions: { gap: space.inline },
+  photos: { gap: space.rowGap },
+  group: { gap: metrics.form.labelGap },
+  photoRow: { gap: space.inline },
+  event: { flexDirection: 'row', alignItems: 'flex-start', gap: space.rowGap, paddingVertical: metrics.listRow.padY },
+  eventIcon: { width: metrics.avatar.row.size, height: metrics.avatar.row.size, borderRadius: metrics.avatar.row.size / 2, alignItems: 'center', justifyContent: 'center' },
+  eventText: { flex: 1, gap: metrics.listRow.bodyGap },
+  composer: { borderTopWidth: size.border, paddingTop: space.inline, paddingHorizontal: space.screenX, gap: space.inline },
+  mentionList: { flexDirection: 'row', flexWrap: 'wrap', gap: space.inline },
+  mentionChip: { paddingHorizontal: metrics.filterChip.padX, paddingVertical: metrics.filterChip.padY, borderRadius: radii.pill },
+  dialog: { paddingHorizontal: space.screenX, paddingTop: space.inline, paddingBottom: space.screenBottom, gap: metrics.sheet.gap },
+  rejectBtn: { flex: 1, justifyContent: 'center' },
 });

@@ -630,6 +630,7 @@ export const metrics = {
     fileIcon: 32,
   },
   defects: {
+    propLabel: 84,
     rowPadY: 10,
     rowGap: 4,
     groupGap: 14,
@@ -684,6 +685,8 @@ export const metrics = {
     stackOffset: 10,
     nowLabelClear: 18,
     filterDot: 8,
+    monthCell: 64,
+    monthToday: 22,
     filterDotOffset: 2,
     list: { padX: 16, gap: 16, dayGap: 8, timeCol: 52, rowPadY: 10, rowGap: 12, nowGap: 8, nowDot: 6 },
   },
@@ -698,6 +701,10 @@ export const metrics = {
     chipGap: 8,
   },
   messages: {
+    threadHeaderGap: 10,
+    msgGap: 12,
+    attachW: 220,
+    attachH: 160,
     top: 8,
     gap: 22,
     topGap: 12,
@@ -719,5 +726,5 @@ export const metrics = {
     entryMin: 60,
     entryBodyGap: 3,
   },
-  composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18 },
+  composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18, inputMax: 120, mentionMax: 240, previewSize: 56 },
 } as const;
