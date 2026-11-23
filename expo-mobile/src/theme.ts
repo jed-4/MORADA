@@ -586,6 +586,7 @@ export const metrics = {
     listPaneWidth: 300,
   },
   schedule: {
+    duoPadX: 24,
     top: 4,
     gapList: 14,
     gapOther: 12,
@@ -593,14 +594,14 @@ export const metrics = {
     dayGroupGap: 14,
     gantt: {
       nameCol: 124,
-      nameColWide: 220,
+      nameColWide: 230,
       rowHeight: 38,
       headerHeight: 48,
       todayCircle: 22,
       todayLine: 2,
       barInset: 2,
       visibleDays: 7,
-      visibleDaysWide: 14,
+      visibleDaysWide: 18,
       depArrow: 4,
     },
     calendar: {

@@ -855,8 +855,10 @@ const colors = {
   const nameColWidth = showNamesCol ? (isWide ? g.nameColWide : g.nameCol) : 0;
   const visibleDays = isWide ? g.visibleDaysWide : g.visibleDays;
   // Day columns size so a week (two on a big screen) fills the width.
+  // Duo (D04): main padding 24 each side.
+  const padX = isWide ? S.duoPadX : space.screenX;
   const dayW = Math.max(
-    (screenWidth - 2 * space.screenX - nameColWidth) / visibleDays,
+    (screenWidth - 2 * padX - nameColWidth) / visibleDays,
     metrics.minHit * 0.6,
   );
 
@@ -941,7 +943,7 @@ const colors = {
     return (
       <View style={styles.flex1}>
         {/* Date header: month in the corner, weekday + date per column */}
-        <View style={[ss.ganttHeader, { borderBottomColor: k.border }]}>
+        <View style={[ss.ganttHeader, { borderBottomColor: k.border, marginHorizontal: padX }]}>
           {showNamesCol && (
             <View style={[ss.ganttCorner, { width: nameColWidth }]}>
               <Text style={[type.meta, { color: k.text }]}>{ganttMonth}</Text>
@@ -965,7 +967,7 @@ const colors = {
           contentContainerStyle={{ paddingBottom: FAB_CLEARANCE + space.screenBottom }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
         >
-          <View style={ss.ganttContainer}>
+          <View style={[ss.ganttContainer, { marginHorizontal: padX }]}>
             {showNamesCol && (
               <View style={{ width: nameColWidth }}>
                 {sortedItems.map(item => (
@@ -1633,7 +1635,7 @@ const colors = {
         : null;
 
   const header = (
-    <View style={[ss.top, { paddingTop: insets.top + sc.top, gap: viewMode === 'list' ? sc.gapList : sc.gapOther }]}>
+    <View style={[ss.top, { paddingTop: insets.top + sc.top, gap: viewMode === 'list' ? sc.gapList : sc.gapOther }, isWide && { paddingHorizontal: S.duoPadX }]}>
       <PageHeader
         title="Schedule"
         project={headerProject}
