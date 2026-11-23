@@ -103,6 +103,7 @@ import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
+import { linesForApply } from "@/components/estimates/templateGroupTree";
 import {
   renderEstimateItemWithSubItems,
   type EstimateGridCtx,
@@ -840,11 +841,14 @@ export default function EstimateDetail() {
       const template = estimateTemplates.find(t => t.id === templateId);
       if (!template) throw new Error("Template not found");
       const templateData = (template.templateData as any[]) || [];
-      const lineItems = templateData
-        .filter((item: any) => !item.isGroup)
-        .map((item: any) => ({
+      // Each line's group goes as a PATH ("Kitchen > Joinery"), which the
+      // import route turns into nested sections, so a template's subgroups
+      // arrive as subgroups instead of being flattened. Lines go in the
+      // template's own order: the route creates sections as it meets them.
+      const lineItems = linesForApply(templateData as any[])
+        .map(({ line: item, groupPath }: { line: any; groupPath: string }) => ({
           name: item.name,
-          group: item.groupName || item.parentGroupName || "",
+          group: groupPath || item.parentGroupName || "",
           description: item.description || "",
           unitType: item.unit || "ea",
           // The quantity the template shows, not 1. A template line with no
