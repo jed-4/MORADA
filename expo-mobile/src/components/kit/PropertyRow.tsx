@@ -27,7 +27,7 @@ export function PropertyRow({ label, value, children, placeholder, link, onCopy,
   const valueNode =
     children ??
     (hasValue ? (
-      <Text style={[form ? type.rowTitle : type.body, { color: link ? c.link : c.text }]}>{value}</Text>
+      <Text style={[form ? type.rowTitle : type.body, { color: link ? c.link : c.text, flexShrink: 1 }]} numberOfLines={form ? 1 : undefined}>{value}</Text>
     ) : placeholder ? (
       <Text style={[form ? type.rowTitle : type.body, { color: c.muted }]}>{placeholder}</Text>
     ) : null);
@@ -37,7 +37,8 @@ export function PropertyRow({ label, value, children, placeholder, link, onCopy,
       <Text style={[form ? type.rowTitle : type.body, { color: form ? c.text : c.muted, width: form ? undefined : labelWidth, flex: form ? 1 : undefined }]}>
         {label}
       </Text>
-      <View style={{ flex: form ? undefined : 1, flexDirection: 'row', alignItems: 'center', gap: metrics.propertyRow.gap, justifyContent: form ? 'flex-end' : 'flex-start' }}>
+      {/* Long values (a location path, a product code) shrink instead of pushing the › or Copy off the row. */}
+      <View style={{ flex: form ? undefined : 1, flexShrink: 1, maxWidth: form ? metrics.propertyRow.formValueMax : undefined, flexDirection: 'row', alignItems: 'center', gap: metrics.propertyRow.gap, justifyContent: form ? 'flex-end' : 'flex-start' }}>
         {valueNode}
         {onCopy && hasValue ? (
           <Pressable onPress={onCopy} hitSlop={metrics.hitSlop} accessibilityLabel={`Copy ${label}`}>

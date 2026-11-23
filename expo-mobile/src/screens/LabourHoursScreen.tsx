@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
+import { useState, useCallback, useLayoutEffect, useMemo } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Clock } from 'lucide-react-native';
@@ -81,7 +82,10 @@ export default function LabourHoursScreen({ navigation, route }: Props) {
   }, [navigation]);
 
   const fetchData = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
     try {
       const [hours, codes, cats] = await Promise.all([
         apiFetch<LabourHoursRow[]>(`/api/projects/${projectId}/labour-hours-budget`).catch(() => []),
@@ -96,9 +100,12 @@ export default function LabourHoursScreen({ navigation, route }: Props) {
     }
   }, [projectId]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  // Refetch on focus: coming back from Log Hours or the code detail shows fresh figures.
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -214,7 +221,7 @@ export default function LabourHoursScreen({ navigation, route }: Props) {
         accessibilityLabel={`${item.code ? `${item.code} ` : ''}${item.title}, ${fmt(item.used)} of ${fmt(item.budgeted)} hours${over ? `, ${fmt(item.used - item.budgeted)} hours over` : ''}`}
       >
         <View style={lx.rowTop}>
-          <Text style={[type.meta, tabular, lx.code, { color: c.muted }]} numberOfLines={1}>
+          <Text style={[type.meta, tabular, lx.code, { color: c.muted }]}>
             {item.code}
           </Text>
           <Text style={[type.rowTitle, lx.title, { color: c.text }]} numberOfLines={2}>
@@ -291,7 +298,7 @@ const lx = StyleSheet.create({
   empty: { paddingTop: space.screenBottom },
   row: { paddingTop: L.rowPadTop, paddingBottom: L.rowPadBottom, gap: L.rowGap },
   rowTop: { flexDirection: 'row', alignItems: 'flex-start', gap: L.rowInnerGap },
-  code: { width: L.codeWidth },
+  code: { minWidth: L.codeWidth },
   title: { flex: 1 },
   barRow: { flexDirection: 'row', alignItems: 'center', gap: L.rowGap, paddingLeft: L.barIndent },
   bar: { flex: 1 },

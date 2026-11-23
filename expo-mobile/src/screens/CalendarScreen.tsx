@@ -38,10 +38,11 @@ import {
   getProjectEventColor,
   getMondayOfWeek,
   isSameDay,
+  isEventAllDay,
   type CalendarEvent,
   type EventsByDay,
 } from '../components/calendar/shared';
-import { FeedView } from '../components/calendar/FeedView';
+import { FeedView, type FeedViewHandle } from '../components/calendar/FeedView';
 import { WeekView, useWeekColWidth, useWeekVisibleDays, HOUR_HEIGHT, WEEK_TOTAL_DAYS, WEEK_VISIBLE_DAYS_WIDE } from '../components/calendar/WeekView';
 import { MonthView, type MonthCell } from '../components/calendar/MonthView';
 import { FilterSheet } from '../components/calendar/FilterSheet';
@@ -189,6 +190,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const [showCreateTimePicker, setShowCreateTimePicker] = useState(false);
 
   const viewsSheetRef = useRef<SheetRef>(null);
+  const feedRef = useRef<FeedViewHandle>(null);
   const filterSheetRef = useRef<SheetRef>(null);
   const createViewSheetRef = useRef<SheetRef>(null);
   const eventSheetRef = useRef<SheetRef>(null);
@@ -582,13 +584,10 @@ export default function CalendarScreen({ navigation }: Props) {
     return map;
   }, [filteredEvents]);
 
+  // The All day row only takes space when a day in the grid has something all-day.
   const anyAllDayEvents = useMemo(
-    () => allEvents.some(e => {
-      if (e.type === 'task' || e.type === 'site_diary') return true;
-      if (e.type === 'google_cal' && !e.startTime) return true;
-      return false;
-    }),
-    [allEvents],
+    () => weekDays.some(d => (eventsByDay[toLocalDateStr(d)] || []).some(isEventAllDay)),
+    [weekDays, eventsByDay],
   );
 
   const weekIsEmpty = useMemo(
@@ -730,6 +729,8 @@ export default function CalendarScreen({ navigation }: Props) {
     if (viewMode === 'week') {
       const x = Math.max(0, todayLeftIndex(WEEK_VISIBLE) * GRID_COL_WIDTH);
       scrollWeekTo(x);
+    } else if (viewMode === 'list') {
+      feedRef.current?.scrollToToday();
     }
   };
 
@@ -969,7 +970,10 @@ export default function CalendarScreen({ navigation }: Props) {
   const todayDate = new Date();
   const headerMonth = viewMode === 'month'
     ? `${MONTHS[currentMonth]} ${currentYear}`
-    : `${MONTHS[weekStartDate.getMonth()]} ${weekStartDate.getFullYear()}`;
+    : viewMode === 'list'
+      // The list opens at today, so name today's month.
+      ? `${MONTHS[todayDate.getMonth()]} ${todayDate.getFullYear()}`
+      : `${MONTHS[weekStartDate.getMonth()]} ${weekStartDate.getFullYear()}`;
   const createProject = projects.find(p => p.id === createProjectId);
 
   const renderSkeleton = () => {
@@ -1064,6 +1068,7 @@ export default function CalendarScreen({ navigation }: Props) {
           <>
             {viewMode === 'list' && (
               <FeedView
+                ref={feedRef}
                 eventsByDay={eventsByDay}
                 nowMinutes={nowMinutes}
                 refreshing={refreshing}
@@ -1549,6 +1554,14 @@ const cx = StyleSheet.create({
   arrows: { flexDirection: 'row', alignItems: 'center', gap: metrics.calendar.headerArrowGap, marginLeft: metrics.calendar.headerArrowGap },
   spacer: { flex: 1 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: metrics.calendar.headerActionGap },
-  filterDot: { position: 'absolute', top: -2, right: -2, width: space.inline + 2, height: space.inline + 2, borderRadius: space.inline, borderWidth: size.border },
+  filterDot: {
+    position: 'absolute',
+    top: -metrics.calendar.filterDotOffset,
+    right: -metrics.calendar.filterDotOffset,
+    width: metrics.calendar.filterDot,
+    height: metrics.calendar.filterDot,
+    borderRadius: metrics.calendar.filterDot / 2,
+    borderWidth: size.border,
+  },
   body: { flex: 1 },
 });

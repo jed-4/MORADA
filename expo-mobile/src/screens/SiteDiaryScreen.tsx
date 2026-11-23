@@ -181,7 +181,9 @@ function mondayOf(d: Date): Date {
 /** Entries (newest first) → week groups: This week, Last week, then "Week of 2 Nov". */
 function groupByWeek<T extends SiteDiaryEntry>(entries: T[]) {
   const thisWeek = mondayOf(new Date()).getTime();
-  const lastWeek = thisWeek - 7 * 86400000;
+  // Calendar arithmetic (not ms) so a daylight-saving week still lines up.
+  const lastWeek = mondayOf(new Date(Date.now() - 7 * 86400000)).getTime();
+  const nextWeek = mondayOf(new Date(Date.now() + 7 * 86400000)).getTime();
   const groups: { key: string; title: string; range: string; entries: T[] }[] = [];
   for (const e of entries) {
     const mon = mondayOf(new Date(e.entryDateTime));
@@ -197,8 +199,8 @@ function groupByWeek<T extends SiteDiaryEntry>(entries: T[]) {
         ? 'This week'
         : mon.getTime() === lastWeek
           ? 'Last week'
-          : mon.getTime() > thisWeek
-            ? 'Upcoming'
+          : mon.getTime() === nextWeek
+            ? 'Next week'
             : `Week of ${mon.getDate()} ${MONTHS[mon.getMonth()]}${mon.getFullYear() !== new Date().getFullYear() ? ` ${mon.getFullYear()}` : ''}`;
       g = { key, title, range, entries: [] };
       groups.push(g);
@@ -206,6 +208,11 @@ function groupByWeek<T extends SiteDiaryEntry>(entries: T[]) {
     g.entries.push(e);
   }
   return groups;
+}
+
+/** True for the title the app builds by default: "[Project - ]Template - dd/mm". */
+function isAutoTitle(title: string, tplName?: string | null): boolean {
+  return /\b\d{2}\/\d{2}$/.test(title.trim()) && (!tplName || title.includes(tplName));
 }
 
 export default function SiteDiaryScreen({ navigation, route }: Props) {
@@ -1107,9 +1114,9 @@ const colors = {
     const tplName = selectedEntry.templateName || detailTemplate?.name;
     const weather = selectedEntry.weather;
     const W = weatherIcon(weather?.condition);
-    const hasWeather = !!weather && (!!weather.condition || weather.temp !== undefined);
+    const hasWeather = !!weather && (!!weather.condition || weather.temp != null);
     return (
-      <ScrollView contentContainerStyle={[dd.content, readableFrame]}>
+      <ScrollView contentContainerStyle={[dd.content, readableFrame, { paddingBottom: space.screenBottom + insets.bottom }]}>
         <DetailHeader
           onBack={closeDetail}
           actions={[{ icon: Ellipsis, label: 'Entry actions', onPress: entryActions }]}
@@ -1135,7 +1142,8 @@ const colors = {
               </View>
             ) : null}
           </View>
-          {!!selectedEntry.title && selectedEntry.title !== tplName && (
+          {/* Hide the auto title ("Project - Template - dd/mm"): it repeats the line above. */}
+          {!!selectedEntry.title && selectedEntry.title !== tplName && !isAutoTitle(selectedEntry.title, tplName) && (
             <Text style={[type.body, { color: k.textPreview }]}>{selectedEntry.title}</Text>
           )}
         </View>
@@ -1146,7 +1154,7 @@ const colors = {
               <PropertyRow key="weather" label="Weather" labelWidth={metrics.diary.propLabel}>
                 <W size={metrics.propertyRow.valueIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
                 <Text style={[type.body, { color: k.text }]}>
-                  {[weather?.condition, weather?.temp !== undefined ? `${weather?.temp}°` : null].filter(Boolean).join(', ')}
+                  {[weather?.condition, weather?.temp != null ? `${weather?.temp}°` : null].filter(Boolean).join(', ')}
                 </Text>
               </PropertyRow>
             ) : null}
@@ -1278,7 +1286,7 @@ const colors = {
     const preview = previewOf(item, tpl ?? (item.templateId === template?.id ? template : null));
     const photoCount = countPhotos(item);
     const W = weatherIcon(item.weather?.condition);
-    const hasWeather = !!item.weather && (!!item.weather.condition || item.weather.temp !== undefined);
+    const hasWeather = !!item.weather && (!!item.weather.condition || item.weather.temp != null);
     // Wide only: tint the entry that's open in the right pane.
     const isOpen = isWide && showDetailModal && selectedEntry?.id === item.id;
     const metaIcon = { size: size.icon.meta, color: k.muted, strokeWidth: metrics.iconStroke };
@@ -1298,7 +1306,7 @@ const colors = {
             <Text style={[type.caption, { color: k.status.pendingText }]}>Offline</Text>
           ) : null}
           {tplName ? (
-            <Text style={[type.caption, { color: tpl?.isDefault === false ? k.accent : k.muted }]} numberOfLines={1}>{tplName}</Text>
+            <Text style={[type.caption, { color: tpl?.isDefault === false ? k.accent : k.muted, flexShrink: 1 }]} numberOfLines={1}>{tplName}</Text>
           ) : null}
         </View>
         {preview ? (
@@ -1309,7 +1317,7 @@ const colors = {
             {hasWeather ? (
               <View style={dd.metaItem}>
                 <W {...metaIcon} />
-                {item.weather?.temp !== undefined ? <Text style={[type.caption, tabular, { color: k.muted }]}>{`${item.weather.temp}°`}</Text> : null}
+                {item.weather?.temp != null ? <Text style={[type.caption, tabular, { color: k.muted }]}>{`${item.weather.temp}°`}</Text> : null}
               </View>
             ) : null}
             {photoCount > 0 ? (
@@ -1519,7 +1527,7 @@ const colors = {
       </Modal>
 
       {/* Hidden while wide: the right pane shows the entry instead. */}
-      <Modal visible={showDetailModal && !isWide} animationType="slide" presentationStyle="fullScreen">
+      <Modal visible={showDetailModal && !isWide} animationType="slide" presentationStyle="fullScreen" onRequestClose={closeDetail}>
         <View style={[styles.modalContainer, { backgroundColor: k.bg, paddingTop: insets.top }]}>
           {renderDetailBody()}
           {/* Phone-side copy of the viewer: iOS can't present a root-level

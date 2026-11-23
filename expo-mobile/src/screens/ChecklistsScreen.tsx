@@ -22,6 +22,7 @@ import { Check, ChevronRight, ClipboardList, MessageSquare, Paperclip, Search, X
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, apiRequest, uploadFileFromUri } from '../services/api';
 import { addToQueue, isOnline } from '../services/offlineQueue';
+import { usePersistedState } from '../lib/usePersistedState';
 import { useAuth } from '../contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -43,6 +44,7 @@ import { useLayout } from '../lib/useLayout';
 interface Project {
   id: string;
   name: string;
+  color?: string | null;
 }
 
 interface ChecklistInstance {
@@ -147,7 +149,8 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [itemsByInstance, setItemsByInstance] = useState<Record<string, ChecklistItem[]>>({});
   const [loadingItems, setLoadingItems] = useState<Record<string, boolean>>({});
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  // Folded phases (keyed instanceId:phase) and open list sections, remembered (GOTCHAS #15).
+  const [collapsedGroups, setCollapsedGroups] = usePersistedState<Record<string, boolean>>('checklists.collapsed', {});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('');
   const [refreshing, setRefreshing] = useState(false);
@@ -167,7 +170,7 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
   const projectSheetRef = useRef<SheetRef>(null);
   const [search, setSearch] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
-  const [openSections, setOpenSections] = useState<string[]>(['active']);
+  const [openSections, setOpenSections] = usePersistedState<string[]>('checklists.sections', ['active']);
 
   // The screen draws its own one-row header.
   useLayoutEffect(() => {
@@ -563,7 +566,8 @@ const colors = {
               <View style={ck.itemMeta}>
                 {item.assigneeName ? <Text style={[type.caption, { color: k.muted }]}>{initialsOf(item.assigneeName)}</Text> : null}
                 {na ? <Text style={[type.caption, { color: k.muted }]}>N/A</Text> : null}
-                {item.isRequired && !done && !na ? <Text style={[type.caption, { color: k.danger }]}>Required</Text> : null}
+                {/* Red is kept for over budget / rejected (§3.12); required reads as pending. */}
+                {item.isRequired && !done && !na ? <Text style={[type.caption, { color: k.status.pendingText }]}>Required</Text> : null}
                 {item.notes ? <MessageSquare size={size.icon.caret} color={k.muted} strokeWidth={metrics.iconStroke} /> : null}
                 {attachCount > 0 ? (
                   <View style={ck.attach}>
@@ -580,7 +584,7 @@ const colors = {
   };
 
   const toggleGroup = (groupKey: string) => {
-    setCollapsedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
+    setCollapsedGroups({ ...collapsedGroups, [groupKey]: !collapsedGroups[groupKey] });
   };
 
   // Expand/Collapse All for one checklist's groups.
@@ -593,11 +597,9 @@ const colors = {
 
     const toggleAllInstanceGroups = () => {
       const newState = !allGroupsCollapsed;
-      setCollapsedGroups(prev => {
-        const updated = { ...prev };
-        groupKeys.forEach(key => { updated[key] = newState; });
-        return updated;
-      });
+      const updated = { ...collapsedGroups };
+      groupKeys.forEach(key => { updated[key] = newState; });
+      setCollapsedGroups(updated);
     };
     return { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups };
   };
@@ -661,7 +663,7 @@ const colors = {
     const { allGroupsCollapsed, hasGroups, toggleAllInstanceGroups } = groupCollapseFor(instance.id);
     return (
       <ScrollView
-        contentContainerStyle={[ck.detail, readableFrame, { paddingTop: (isWide ? 0 : insets.top) + metrics.schedule.top }]}
+        contentContainerStyle={[ck.detail, readableFrame, { paddingTop: (isWide ? 0 : insets.top) + metrics.schedule.top, paddingBottom: space.screenBottom + insets.bottom }]}
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
@@ -676,7 +678,7 @@ const colors = {
             </Text>
             {pName ? (
               <View style={ck.project}>
-                <ProjectSquare color={projectId ? projectColor ?? null : null} fallbackKey={instance.projectId} size="header" />
+                <ProjectSquare color={(projectId ? projectColor : null) ?? projects.find(pr => pr.id === instance.projectId)?.color ?? null} fallbackKey={instance.projectId} size="header" />
                 <Text style={[type.meta, { color: k.muted }]} numberOfLines={1}>{pName}</Text>
               </View>
             ) : null}
@@ -863,7 +865,7 @@ const colors = {
                 key={p.id}
                 title={p.name}
                 titleLines={1}
-                lead={<ProjectSquare fallbackKey={p.id} />}
+                lead={<ProjectSquare color={p.color} fallbackKey={p.id} />}
                 trailing={selectedProjectId === p.id ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
                 onPress={() => { setSelectedProjectId(p.id); projectSheetRef.current?.dismiss(); }}
               />

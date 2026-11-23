@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo } from 'react';
+import { Fragment, forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { CalendarDays } from 'lucide-react-native';
 import { metrics, space, tabular, type, useColors } from '../../theme';
@@ -49,8 +49,18 @@ function subLine(event: CalendarEvent): string | null {
   return parts.length ? parts.join(' · ') : null;
 }
 
-function FeedViewInner({ eventsByDay, nowMinutes, refreshing, onRefresh, onEventPress, onDayLongPress }: FeedViewProps) {
+export interface FeedViewHandle {
+  /** Scroll to today, or the next day with events. */
+  scrollToToday: (animated?: boolean) => void;
+}
+
+const FeedViewInner = forwardRef<FeedViewHandle, FeedViewProps>(function FeedViewInner(
+  { eventsByDay, nowMinutes, refreshing, onRefresh, onEventPress, onDayLongPress },
+  ref,
+) {
   const c = useColors();
+  const listRef = useRef<FlatList<DayGroup>>(null);
+  const landed = useRef(false);
 
   const days = useMemo(() => {
     const now = new Date();
@@ -80,6 +90,21 @@ function FeedViewInner({ eventsByDay, nowMinutes, refreshing, onRefresh, onEvent
       });
     return list;
   }, [eventsByDay]);
+
+  const todayIndex = useMemo(() => {
+    const key = toLocalDateStr(new Date());
+    const i = days.findIndex(d => d.dateKey >= key);
+    return i === -1 ? Math.max(0, days.length - 1) : i;
+  }, [days]);
+
+  const scrollToToday = useCallback(
+    (animated = true) => {
+      if (days.length === 0) return;
+      listRef.current?.scrollToIndex({ index: todayIndex, animated, viewPosition: 0 });
+    },
+    [days.length, todayIndex],
+  );
+  useImperativeHandle(ref, () => ({ scrollToToday }), [scrollToToday]);
 
   const renderDay = ({ item }: { item: DayGroup }) => {
     const d = new Date(item.dateKey + 'T12:00:00');
@@ -134,7 +159,19 @@ function FeedViewInner({ eventsByDay, nowMinutes, refreshing, onRefresh, onEvent
 
   return (
     <FlatList
+      ref={listRef}
       style={s.flex}
+      // The list keeps 30 days of history above; open at today, once.
+      onContentSizeChange={() => {
+        if (landed.current || days.length === 0) return;
+        landed.current = true;
+        scrollToToday(false);
+      }}
+      onScrollToIndexFailed={info => {
+        // Rows are variable height: jump near it, then try again once laid out.
+        listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
+        setTimeout(() => listRef.current?.scrollToIndex({ index: info.index, animated: false }), 50);
+      }}
       contentContainerStyle={[s.list, days.length === 0 && s.grow]}
       data={days}
       keyExtractor={item => item.dateKey}
@@ -145,7 +182,7 @@ function FeedViewInner({ eventsByDay, nowMinutes, refreshing, onRefresh, onEvent
       renderItem={renderDay}
     />
   );
-}
+});
 
 export const FeedView = memo(FeedViewInner);
 

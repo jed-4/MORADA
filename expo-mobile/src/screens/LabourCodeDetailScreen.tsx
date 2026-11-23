@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
+import { useState, useCallback, useLayoutEffect, useMemo } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Clock } from 'lucide-react-native';
@@ -23,6 +24,13 @@ interface Timesheet {
   status: 'draft' | 'submitted' | 'approved' | 'rejected';
   costCodeId: string | null;
   costCodeSplits?: { costCodeId: string; duration: string }[];
+}
+
+interface BudgetRow {
+  costCodeId?: string | null;
+  budgetedHours?: string;
+  pendingHours?: string;
+  approvedHours?: string;
 }
 
 interface TeamUser {
@@ -64,7 +72,9 @@ function shortName(u?: TeamUser): string {
 
 /** "Mon 9 Nov". */
 function dayLabel(value: string): string {
-  const d = fromLocalDateStr(dateStrOf(value));
+  const key = dateStrOf(value);
+  if (!key) return '';
+  const d = fromLocalDateStr(key);
   return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '');
 }
 
@@ -98,6 +108,8 @@ export default function LabourCodeDetailScreen({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [person, setPerson] = useState<string | null>(null);
+  // Starts from the list's figures, then refreshes with the code's own row.
+  const [totals, setTotals] = useState({ used: p.used, budgeted: p.budgeted });
 
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false });
@@ -105,20 +117,31 @@ export default function LabourCodeDetailScreen({
 
   const fetchData = useCallback(async () => {
     try {
-      const [ts, team] = await Promise.all([
+      const [ts, team, budget] = await Promise.all([
         apiFetch<Timesheet[]>(`/api/projects/${p.projectId}/timesheets`).catch(() => []),
         apiFetch<TeamUser[]>('/api/users/assignable').catch(() => []),
+        apiFetch<BudgetRow[]>(`/api/projects/${p.projectId}/labour-hours-budget`).catch(() => null),
       ]);
       setTimesheets(ts || []);
       setUsers(team || []);
+      const row = budget?.find(r => r.costCodeId === p.costCodeId);
+      if (row) {
+        setTotals({
+          used: hoursNum(row.pendingHours) + hoursNum(row.approvedHours),
+          budgeted: hoursNum(row.budgetedHours),
+        });
+      }
     } finally {
       setLoading(false);
     }
-  }, [p.projectId]);
+  }, [p.projectId, p.costCodeId]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  // Refetch on focus: coming back from Log Hours shows the new entry.
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -156,7 +179,7 @@ export default function LabourCodeDetailScreen({
   const shown = person ? entries.filter(e => e.userId === person) : entries;
   const listedHours = entries.reduce((s, e) => s + e.hours, 0);
   // Timesheet view scope can hide other people's time from this user.
-  const hiddenSome = !loading && listedHours + 0.05 < p.used;
+  const hiddenSome = !loading && listedHours + 0.05 < totals.used;
 
   const subtitle = [p.code, p.categoryTitle].filter(Boolean).join(' · ');
 
@@ -183,7 +206,7 @@ export default function LabourCodeDetailScreen({
             ) : null}
             {p.projectName ? (
               <>
-                <ProjectSquare color={p.projectColor} fallbackKey={p.projectId} />
+                <ProjectSquare color={p.projectColor} fallbackKey={p.projectId} size="header" />
                 <Text style={[type.meta, dx.shrink, { color: c.muted }]} numberOfLines={1}>
                   {p.projectName}
                 </Text>
@@ -192,7 +215,7 @@ export default function LabourCodeDetailScreen({
           </View>
         </View>
 
-        <LabourSummary used={p.used} budgeted={p.budgeted} />
+        <LabourSummary used={totals.used} budgeted={totals.budgeted} />
 
         {loading ? (
           <SkeletonList />
@@ -253,7 +276,7 @@ export default function LabourCodeDetailScreen({
                         <Text style={[type.rowTitle, dx.shrink, { color: c.text }]} numberOfLines={1}>
                           {shortName(userById.get(e.userId))}
                         </Text>
-                        <Text style={[type.meta, { color: c.muted }]}>
+                        <Text style={[type.meta, tabular, { color: c.muted }]}>
                           {dayLabel(e.date)}
                           {e.pending ? ' · Pending' : ''}
                         </Text>

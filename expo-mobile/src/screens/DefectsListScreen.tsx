@@ -18,7 +18,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../services/api';
 import { addSyncListener } from '../services/offlineQueue';
-import { metrics, radii, size, space, type, useColors } from '../theme';
+import { metrics, radii, size, space, tabular, type, useColors } from '../theme';
 import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import {
   Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, FilterChips, GroupHeader, ListRow, PageHeader, PropertyRow, SmartImage,
@@ -89,7 +89,8 @@ export default function DefectsListScreen({ navigation, route }: Props) {
   const canAdd = usePermission('projects.defects', 'add');
 
   const [filters, setFilters] = usePersistedState<DefectFilters>(
-    isMine ? 'defects:filters:mine' : 'defects:filters',
+    // v2: the single-select chips; old multi-select saves could leave "All" lit while filtered.
+    isMine ? 'defects:filters:mine:v2' : 'defects:filters:v2',
     EMPTY_FILTERS,
   );
   const [query, setQuery] = useState('');
@@ -315,9 +316,10 @@ export default function DefectsListScreen({ navigation, route }: Props) {
     const overdue = !!item.overdue && !closed;
     const dot = DEFECT_DOT[item.stage] ?? DEFECT_DOT.open;
     const trade = item.assignedContactName || (item.trade ? tradeNames[item.trade] ?? item.trade : null);
-    const when = closed && item.closedAt
-      ? `Closed ${shortDate(dateStrOf(item.closedAt) ?? '')}`
-      : due
+    const closedKey = closed && item.closedAt ? dateStrOf(item.closedAt) : '';
+    const when = closedKey
+      ? `Closed ${shortDate(closedKey)}`
+      : !closed && due
         ? `${overdue ? 'Overdue' : 'Due'} ${shortDate(due)}`
         : null;
     const sep = <Text style={{ color: c.faint }}>{' · '}</Text>;
@@ -335,7 +337,7 @@ export default function DefectsListScreen({ navigation, route }: Props) {
         <SmartImage uri={thumb?.url ?? null} width={size.thumb} height={size.thumb} radius={radii.md} fallbackIcon={Camera} />
         <View style={dl.rowText}>
           <Text style={[type.rowTitle, { color: closed ? c.muted : c.text }]} numberOfLines={2}>
-            <Text style={[type.body, { color: c.muted }]}>{`${defectRef(item)}  `}</Text>
+            <Text style={[type.body, tabular, { color: c.muted }]}>{`${defectRef(item)}  `}</Text>
             {item.title}
           </Text>
           <View style={dl.meta}>
@@ -343,8 +345,9 @@ export default function DefectsListScreen({ navigation, route }: Props) {
             <Text style={[type.caption, { color: dot === 'rejected' ? c.danger : dot === 'pending' ? c.status.pendingText : c.muted, flexShrink: 1 }]} numberOfLines={1}>
               {STAGE_LABEL[item.stage] ?? item.stage}
               {isMine && item.projectName ? <>{sep}{item.projectName}</> : null}
-              {trade ? <>{sep}<Text style={{ color: c.muted }}>{trade}</Text></> : null}
+              {/* The date matters most, so it comes before trade and survives truncation. */}
               {when ? <>{sep}<Text style={{ color: overdue ? c.danger : c.muted }}>{when}</Text></> : null}
+              {trade ? <>{sep}<Text style={{ color: c.muted }}>{trade}</Text></> : null}
             </Text>
           </View>
         </View>

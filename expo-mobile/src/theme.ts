@@ -478,7 +478,7 @@ export const metrics = {
   segmented: { height: 32, pad: 2, gap: 2, segPadY: 5, segPadX: 12 },
   groupHeader: { height: 18, gap: 8, toggleGap: 4, collapsedRowPad: 11, sectionCardPad: 12, sectionIcon: 16 },
   listRow: { padY: 11, gap: 12, bodyGap: 2 },
-  propertyRow: { padY: 9, gap: 10, labelWidth: 116, formPadY: 12, copyIcon: 15, swatch: 12, avatar: 20, valueIcon: 15 },
+  propertyRow: { padY: 9, gap: 10, labelWidth: 116, formValueMax: '62%' as const, formPadY: 12, copyIcon: 15, swatch: 12, avatar: 20, valueIcon: 15 },
   statusDot: { gap: 5 },
   checkbox: { borderWidth: 1.5, check: 12 },
   progress: { labelGap: 6, inlineLabelWidth: 56, inlineGap: 10 },
@@ -679,6 +679,8 @@ export const metrics = {
     minEvent: 22,
     stackOffset: 10,
     nowLabelClear: 18,
+    filterDot: 8,
+    filterDotOffset: 2,
     list: { padX: 16, gap: 16, dayGap: 8, timeCol: 52, rowPadY: 10, rowGap: 12, nowGap: 8, nowDot: 6 },
   },
   more: {

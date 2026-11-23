@@ -83,6 +83,9 @@ export default function MessagesScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  // Set when the channel list couldn't be fetched (offline, server error), so an
+  // empty list isn't mistaken for "no channels" — that offers to create samples.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [pinnedOpen, setPinnedOpen] = usePersistedState<boolean>('messages.pinnedOpen', true);
   const [search, setSearch] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
@@ -112,8 +115,10 @@ export default function MessagesScreen({ navigation, route }: Props) {
       ]);
       setChannels(chs || []);
       setUnreadCounts(counts || {});
+      setLoadFailed(false);
     } catch {
-      // silently fail on poll
+      // Polls fail quietly; only an empty screen needs to say so.
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -370,7 +375,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
     return (
       <View style={[styles.container, { backgroundColor: k.bg }]}>
         <View style={[mx.frame, pad]}>{header}</View>
-        <View style={styles.skeletonList}>
+        <View style={[mx.frame, mx.skeleton]}>
           {Array.from({ length: 7 }).map((_, i) => (
             <SkeletonRow key={i} />
           ))}
@@ -387,7 +392,11 @@ export default function MessagesScreen({ navigation, route }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
       >
         {header}
-        {channels.length === 0 ? (
+        {channels.length === 0 && loadFailed ? (
+          <View style={mx.empty}>
+            <EmptyState icon={MessagesSquare} title="Couldn't load messages" helper="Check your connection, then pull down to try again." />
+          </View>
+        ) : channels.length === 0 ? (
           <View style={mx.empty}>
             <EmptyState icon={MessagesSquare} title="No channels yet" helper="Set up your team channels to start communicating." />
             <Pressable
@@ -567,7 +576,6 @@ export default function MessagesScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  skeletonList: { padding: 16, gap: 16 },
   sheetBody: { paddingHorizontal: 20, paddingTop: 4 },
   sheetLabel: { fontSize: 13, marginBottom: 6 },
   sheetInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, marginBottom: 16 },
@@ -614,6 +622,7 @@ const mx = StyleSheet.create({
     paddingHorizontal: metrics.projects.cardPad,
   },
   searchInput: { flex: 1, paddingVertical: 0 },
+  skeleton: { gap: M.gap, paddingTop: M.topGap },
   row: { flexDirection: 'row', alignItems: 'center', gap: metrics.listRow.gap, paddingVertical: metrics.listRow.padY, minHeight: M.rowMin },
   lead: { width: M.lead, alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, minWidth: 0, gap: metrics.listRow.bodyGap },

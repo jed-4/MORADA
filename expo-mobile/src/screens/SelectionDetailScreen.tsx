@@ -32,7 +32,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
 import { readCachedSelections, selectionPhotoSource } from '../services/selectionsOffline';
 import { usePermission } from '../lib/usePermission';
-import { useColors, fontSize, fontWeight, metrics, radii, size, space, type } from '../theme';
+import { useColors, fontSize, fontWeight, metrics, radii, size, space, tabular, type } from '../theme';
+import { usePersistedState } from '../lib/usePersistedState';
 import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import { SkeletonList } from '../components/ui/Skeleton';
 import {
@@ -106,8 +107,8 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const moreRef = useRef<SheetRef>(null);
-  // Sections folded on this screen (comments start folded, as "Activity" in the design).
-  const [closedSections, setClosedSections] = useState<string[]>(['comments']);
+  // Sections folded on this screen (comments start folded, as "Activity" in the design), remembered.
+  const [closedSections, setClosedSections] = usePersistedState<string[]>('selectionDetail.closed', ['comments']);
   const { user } = useAuth();
   const { width, height, isWide } = useLayout();
 
@@ -503,15 +504,24 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
         {/* Title block */}
         <View style={styles.titleBlock}>
           <Text style={[type.detailTitle, { color: c.text }]}>{settled && chosen ? chosen.name : selection.name}</Text>
-          {!!(selection.room || (chosen && selection.name !== chosen.name)) && (
-            <Text style={[type.meta, { color: c.muted }]}>
-              {[selection.room, chosen && selection.name !== chosen.name ? selection.name : null].filter(Boolean).join(' · ')}
-            </Text>
-          )}
+          {(() => {
+            // Settled: the product is the title, so name the selection here.
+            // Waiting on sign-off: name the client's pick, which isn't approved yet.
+            const sub = [
+              selection.room,
+              settled && chosen && selection.name !== chosen.name ? selection.name : null,
+              !settled && chosen ? `Picked: ${chosen.name}` : null,
+            ].filter(Boolean).join(' · ');
+            return sub ? <Text style={[type.meta, { color: c.muted }]}>{sub}</Text> : null;
+          })()}
           <View style={styles.statusLine}>
             <StatusDot status={dot.status} label={undefined} />
             <Text style={[type.meta, { color: dot.status === 'pending' ? c.status.pendingText : c.text }]}>{dot.label}</Text>
-            {approvedOn ? <Text style={[type.meta, { color: c.muted }]}>{`· ${approvedOn}`}</Text> : null}
+            {approvedOn ? (
+              <Text style={[type.meta, tabular, { color: c.muted, flexShrink: 1 }]} numberOfLines={1}>
+                {`· ${[chosen?.approvedBy, approvedOn].filter(Boolean).join(', ')}`}
+              </Text>
+            ) : null}
           </View>
         </View>
 
@@ -539,9 +549,15 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
             {/* Money only arrives for roles with selections pricing access — the
                 server strips it for everyone else, so these simply don't render.
                 It is the CLIENT'S price; cost and markup are never shown here. */}
-            {price !== null ? <PropertyRow key="price" label="Price" labelWidth={sl.propLabel} value={formatMoney(price)} /> : null}
+            {price !== null ? (
+              <PropertyRow key="price" label="Price" labelWidth={sl.propLabel}>
+                <Text style={[type.body, tabular, { color: c.text }]}>{formatMoney(price)}</Text>
+              </PropertyRow>
+            ) : null}
             {price !== null && selection.allowance != null ? (
-              <PropertyRow key="allowance" label="Allowance" labelWidth={sl.propLabel} value={formatMoney(selection.allowance)} />
+              <PropertyRow key="allowance" label="Allowance" labelWidth={sl.propLabel}>
+                <Text style={[type.body, tabular, { color: c.text }]}>{formatMoney(selection.allowance)}</Text>
+              </PropertyRow>
             ) : null}
           </Card>
         )}
@@ -654,7 +670,7 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
           ))}
 
         {isTeam &&
-          section('comments', 'Comments', comments.length, (
+          section('comments', 'Activity', comments.length, (
             <View style={styles.comments}>
               {comments.length === 0 ? (
                 <Text style={[type.meta, { color: c.muted }]}>No comments yet.</Text>

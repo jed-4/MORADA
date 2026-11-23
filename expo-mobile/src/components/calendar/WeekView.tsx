@@ -12,7 +12,7 @@ import { CalendarDays, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { metrics, radii, size, tabular, type, useColors } from '../../theme';
 import { toLocalDateStr } from '../../lib/dates';
 import { useLayout } from '../../lib/useLayout';
-import { CalendarBlock, NowLine } from '../kit';
+import { CalendarBlock, FAB_CLEARANCE, NowLine } from '../kit';
 import {
   DAY_NAMES,
   eventBlockColor,
@@ -142,13 +142,13 @@ function WeekViewInner({
 
         {/* Hour labels — vertical scroll synced with timeGridScrollRef */}
         <ScrollView ref={timeLabelScrollRef} scrollEnabled={false} showsVerticalScrollIndicator={false} style={wx.flex}>
-          <View style={{ height: TOTAL_GRID_HEIGHT }}>
+          <View style={{ height: TOTAL_GRID_HEIGHT + FAB_CLEARANCE }}>
             {HOUR_LABELS.map((label, i) => {
               const y = i * HOUR_HEIGHT;
               // The now label takes over where it would collide with an hour.
               const hidden = i === 0 || Math.abs(y - nowY) < K.nowLabelClear;
               return hidden ? null : (
-                <Text key={i} style={[type.tiny, wx.hourLabel, { top: y, color: c.muted }]}>
+                <Text key={i} style={[type.tiny, tabular, wx.hourLabel, { top: y, color: c.muted }]}>
                   {label}
                 </Text>
               );
@@ -242,7 +242,8 @@ function WeekViewInner({
             ref={timeGridScrollRef}
             style={wx.flex}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ height: TOTAL_GRID_HEIGHT }}
+            // Room under 11 PM so the last slots clear the + button (GOTCHAS #9).
+            contentContainerStyle={{ height: TOTAL_GRID_HEIGHT + FAB_CLEARANCE }}
             onLayout={() => {
               const windowChanged = lastLayoutWindow.current !== null && lastLayoutWindow.current !== windowKey;
               lastLayoutWindow.current = windowKey;

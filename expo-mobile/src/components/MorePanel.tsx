@@ -14,11 +14,10 @@ import { PressableScale } from './ui/PressableScale';
 import { usePermission } from '../lib/usePermission';
 import { workspaceItems, createItems, type MoreTile } from './more/items';
 
-// The app's single More surface — a grouped bottom sheet over the tab bar.
+// The app's single More surface: a bottom sheet over the tab bar (design P06).
 // Content config lives in ./more/items.ts; the New Task sub-flow is a stacked
-// sheet pushed on top. Settings is reached via the profile row; Log Out and
-// Suggest an Idea live in the Dashboard avatar menu (kept away from the
-// thumb-friendly bottom of this sheet).
+// sheet pushed on top. Settings, Help & feedback and Sign out sit in the
+// bottom card.
 
 export interface MorePanelHandle {
   present: () => void;
@@ -149,8 +148,7 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
     }
   };
 
-  const displayName =
-    user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : user?.email;
+  const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email;
 
   const inputStyle = {
     backgroundColor: theme.background,
