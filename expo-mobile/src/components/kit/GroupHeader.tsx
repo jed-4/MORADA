@@ -18,9 +18,12 @@ export function GroupHeader({
   onToggle,
   onOpen,
   onLongPress,
+  trailing,
 }: {
   title: string;
   meta?: (string | number | null | undefined)[] | string | number | null;
+  /** Right-aligned muted figure (Labour hours: "18.5 / 98h"). */
+  trailing?: string | null;
   open: boolean;
   onToggle: () => void;
   onOpen?: () => void;
@@ -50,6 +53,7 @@ export function GroupHeader({
           {m}
         </Text>
       ))}
+      {trailing ? <Text style={[type.meta, tabular, { color: c.muted, marginLeft: 'auto' }]}>{trailing}</Text> : null}
       {onOpen ? (
         <Pressable onPress={onOpen} hitSlop={metrics.hitSlop} accessibilityLabel={`Open ${title}`} style={{ marginLeft: 'auto' }}>
           <ChevronRight size={size.icon.row} color={c.muted} strokeWidth={metrics.iconStroke} />

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type RefObject } from 'react';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -1001,6 +1002,20 @@ export default function TimesheetsScreen() {
     resetForm();
     setShowLogSheet(true);
   };
+
+  // Labour hours' + button lands here with its project: open Log Hours with
+  // that project already chosen, then clear the param so it fires once.
+  const route = useRoute();
+  const nav = useNavigation();
+  const logProjectId = (route.params as { logProjectId?: string } | undefined)?.logProjectId;
+  useEffect(() => {
+    if (!logProjectId) return;
+    resetForm();
+    setFormProjectId(logProjectId);
+    setShowLogSheet(true);
+    nav.setParams({ logProjectId: undefined } as never);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logProjectId]);
 
   const openEditSheet = async (ts: Timesheet) => {
     setShowDetail(false);

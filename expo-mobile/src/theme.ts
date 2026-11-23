@@ -643,5 +643,16 @@ export const metrics = {
     checkOffset: 1,
     itemGap: 3,
   },
+  labour: {
+    gap: 14,
+    summaryGap: 10,
+    summaryRowGap: 6,
+    rowPadTop: 11,
+    rowPadBottom: 12,
+    rowGap: 8,
+    rowInnerGap: 10,
+    codeWidth: 28,
+    barIndent: 38,
+  },
   composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18 },
 } as const;
