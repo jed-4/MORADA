@@ -10,7 +10,7 @@ import {
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
-import { CheckCheck, Eye } from 'lucide-react-native';
+import { CheckCheck, Eye, Pin } from 'lucide-react-native';
 import { Card, DayDivider, SheetBody } from '../components/kit';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -59,6 +59,8 @@ import { readableFrame } from '../components/ui/ReadableColumn';
 type Props = {
   navigation: NativeStackNavigationProp<any>;
   route: { params?: { channelId?: string; channelName?: string } };
+  /** D07: shown in the Messages right pane on the Duo (no back, wide header). */
+  embedded?: boolean;
 };
 
 /** Below this scroll offset the inverted list counts as "at the newest". */
@@ -104,7 +106,7 @@ type ListItem =
   | { kind: 'divider'; id: string; date: string }
   | { kind: 'seen'; id: string; label: string };
 
-export default function MessageThreadScreen({ navigation, route }: Props) {
+export default function MessageThreadScreen({ navigation, route, embedded }: Props) {
   // Both params are always supplied when this screen is opened (nav + deep links).
   const { channelId, channelName } = route.params as { channelId: string; channelName: string };
   const { user } = useAuth();
@@ -631,8 +633,11 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
         showPresence={dmOtherOnline}
         isClientFacing={!!channelMeta?.isClientFacing}
         theme={theme}
-        paddingTop={insets.top + 8}
-        onBack={() => navigation.goBack()}
+        paddingTop={embedded ? insets.top : insets.top + 8}
+        onBack={embedded ? undefined : () => navigation.goBack()}
+        wide={embedded}
+        memberCount={embedded ? members.length : undefined}
+        actions={embedded && topPinned ? [{ icon: Pin, label: 'Pinned messages', onPress: handlePressPinned }] : undefined}
       />
 
       {/* Pinned banner */}
@@ -659,7 +664,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
             inverted
             keyExtractor={item => item.id}
             renderItem={renderItem}
-            contentContainerStyle={[styles.messageList, readableFrame]}
+            contentContainerStyle={[styles.messageList, embedded ? styles.messageListWide : readableFrame]}
             onScroll={onScroll}
             scrollEventThrottle={16}
             onEndReached={loadOlder}
@@ -730,6 +735,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
         onSaveEdit={handleSaveEdit}
         onCancelEdit={cancelEdit}
         onTypingChange={setTyping}
+        wide={embedded}
       />
 
       {/* Long-press message menu */}
@@ -779,6 +785,7 @@ const styles = StyleSheet.create({
   skeletonThread: { flex: 1, paddingHorizontal: space.screenX, paddingTop: space.screenBottom, gap: metrics.sheet.gap },
   listWrap: { flex: 1 },
   messageList: { paddingHorizontal: space.screenX, paddingVertical: metrics.sheet.gap },
+  messageListWide: { paddingHorizontal: metrics.messages.duoPadX, paddingVertical: metrics.messages.duoThreadPadY },
   olderSpinner: { paddingVertical: metrics.sheet.gap, alignItems: 'center' },
   dividerRow: { paddingVertical: metrics.messages.msgGap },
   seenRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: space.inlineSm, paddingTop: space.inlineSm },

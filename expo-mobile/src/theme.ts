@@ -723,6 +723,16 @@ export const metrics = {
     chipGap: 8,
   },
   messages: {
+    // D07 Duo conversation pane
+    duoPadX: 24,
+    duoHeaderHeight: 60,
+    duoHeaderPadY: 12,
+    duoIcon: 34,
+    duoIconRadius: 9,
+    duoActionIcon: 18,
+    duoThreadPadY: 16,
+    duoComposerTop: 10,
+    duoComposerBottom: 14,
     threadHeaderGap: 10,
     msgGap: 12,
     attachW: 220,

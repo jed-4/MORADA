@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { ChevronLeft, Eye, Hash } from 'lucide-react-native';
+import { ChevronLeft, Eye, Hash, type LucideIcon } from 'lucide-react-native';
 import { PresenceDot } from './PresenceDot';
 import { Avatar } from '../kit';
 import { metrics, radii, size, space, type, useColors, type Theme } from '../../theme';
@@ -19,7 +19,12 @@ interface ThreadHeaderProps {
   isClientFacing?: boolean;
   theme: Theme;
   paddingTop: number;
-  onBack: () => void;
+  /** Omitted in the Duo right pane: there's nothing to go back to. */
+  onBack?: () => void;
+  /** D07 Duo pane header: big channel icon, name + member count, actions. */
+  wide?: boolean;
+  memberCount?: number;
+  actions?: { icon: LucideIcon; label: string; onPress: () => void }[];
 }
 
 /** Preserves the Phase-2 title rules: `#channel`, or a humanised dm- fallback. */
@@ -37,14 +42,56 @@ export function ThreadHeader({
   theme,
   paddingTop,
   onBack,
+  wide,
+  memberCount,
+  actions,
 }: ThreadHeaderProps) {
   const c = useColors();
   const title = formatThreadTitle(channelName, isDm).replace(/^#/, '');
+  if (wide) {
+    return (
+      <View style={[styles.wideHeader, { paddingTop: paddingTop + M.duoHeaderPadY, borderBottomColor: c.border }]}>
+        {onBack ? (
+          <Pressable onPress={onBack} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
+            <ChevronLeft size={metrics.pageHeader.back} color={c.accent} strokeWidth={metrics.iconStroke} />
+          </Pressable>
+        ) : null}
+        {isDm ? (
+          <View>
+            <Avatar name={title} size="duo" />
+            {showPresence ? <PresenceDot theme={theme} ringColor={c.bg} size={9} /> : null}
+          </View>
+        ) : (
+          <View style={[styles.wideHash, { backgroundColor: c.greyFill }]}>
+            <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />
+          </View>
+        )}
+        <View style={styles.title}>
+          <View style={styles.nameLine}>
+            <Text style={[type.sheetTitle, styles.shrink, { color: c.text }]} numberOfLines={1} accessibilityRole="header">
+              {title}
+            </Text>
+            {isClientFacing && !isDm ? <Eye size={size.icon.meta} color={c.muted} strokeWidth={metrics.iconStroke} /> : null}
+          </View>
+          {memberCount ? (
+            <Text style={[type.caption, { color: c.muted }]}>{`${memberCount} ${memberCount === 1 ? 'member' : 'members'}`}</Text>
+          ) : null}
+        </View>
+        {actions?.map(a => (
+          <Pressable key={a.label} onPress={a.onPress} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel={a.label}>
+            <a.icon size={M.duoActionIcon} color={c.accent} strokeWidth={metrics.iconStroke} />
+          </Pressable>
+        ))}
+      </View>
+    );
+  }
   return (
     <View style={[styles.header, { paddingTop, borderBottomColor: c.border }]}>
-      <Pressable onPress={onBack} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
-        <ChevronLeft size={metrics.pageHeader.back} color={c.accent} strokeWidth={metrics.iconStroke} />
-      </Pressable>
+      {onBack ? (
+        <Pressable onPress={onBack} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
+          <ChevronLeft size={metrics.pageHeader.back} color={c.accent} strokeWidth={metrics.iconStroke} />
+        </Pressable>
+      ) : null}
       {isDm ? (
         <View>
           <Avatar name={title} />
@@ -63,7 +110,21 @@ export function ThreadHeader({
   );
 }
 
+const M = metrics.messages;
+
 const styles = StyleSheet.create({
+  wideHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: metrics.listRow.gap,
+    minHeight: M.duoHeaderHeight,
+    paddingHorizontal: M.duoPadX,
+    paddingBottom: M.duoHeaderPadY,
+    borderBottomWidth: size.border,
+  },
+  wideHash: { width: M.duoIcon, height: M.duoIcon, borderRadius: M.duoIconRadius, alignItems: 'center', justifyContent: 'center' },
+  nameLine: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  shrink: { flexShrink: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

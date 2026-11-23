@@ -51,6 +51,8 @@ interface MessageComposerProps {
    * would otherwise announce "typing" the instant the edit bar opens.
    */
   onTypingChange?: (typing: boolean) => void;
+  /** D07 Duo pane: 24 side padding, no top rule. */
+  wide?: boolean;
 }
 
 export function MessageComposer({
@@ -61,6 +63,7 @@ export function MessageComposer({
   onSaveEdit,
   onCancelEdit,
   onTypingChange,
+  wide,
 }: MessageComposerProps) {
   const c = useColors();
   const insets = useSafeAreaInsets();
@@ -231,7 +234,13 @@ export function MessageComposer({
         </ScrollView>
       )}
 
-      <View style={[styles.bar, { backgroundColor: c.bg, borderTopColor: c.border, paddingBottom: Math.max(insets.bottom, metrics.composer.padY) }]}>
+      <View
+        style={[
+          styles.bar,
+          { backgroundColor: c.bg, borderTopColor: c.border, paddingBottom: Math.max(insets.bottom, metrics.composer.padY) },
+          wide && styles.barWide,
+        ]}
+      >
         {/* Editing banner */}
         {editingMessage && (
           <View style={styles.editBanner}>
@@ -307,6 +316,12 @@ const styles = StyleSheet.create({
   mentionIcon: { width: metrics.avatar.row.size, height: metrics.avatar.row.size, borderRadius: metrics.avatar.row.size / 2, alignItems: 'center', justifyContent: 'center' },
   mentionHint: { marginLeft: 'auto', flexShrink: 1 },
   bar: { paddingHorizontal: space.screenX, paddingTop: metrics.composer.padY, borderTopWidth: size.border, gap: space.inline },
+  barWide: {
+    paddingHorizontal: metrics.messages.duoPadX,
+    paddingTop: metrics.messages.duoComposerTop,
+    paddingBottom: metrics.messages.duoComposerBottom,
+    borderTopWidth: 0,
+  },
   editBanner: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
   previewStrip: { flexGrow: 0 },
   previewStripContent: { gap: space.inline, paddingTop: space.inlineSm },

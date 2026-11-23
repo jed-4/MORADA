@@ -25,6 +25,9 @@ import { haptic } from '../lib/haptics';
 import { PresenceDot } from '../components/messages/PresenceDot';
 import { markupToDisplay } from '../components/messages/mentions';
 import { Sheet, type SheetRef } from '../components/ui/Sheet';
+import { TwoPane } from '../components/ui/TwoPane';
+import { useTwoPaneSelection } from '../lib/twoPane';
+import MessageThreadScreen from './MessageThreadScreen';
 import { SkeletonRow } from '../components/ui/Skeleton';
 import { useToast } from '../components/ui/Toast';
 import { useTheme, useColors, metrics, radii, size, space, tabular, type } from '../theme';
@@ -88,6 +91,17 @@ export default function MessagesScreen({ navigation, route }: Props) {
   const newDmSheetRef = useRef<SheetRef>(null);
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
   const [creatingDm, setCreatingDm] = useState(false);
+
+  // D07: on the Duo unfolded the open conversation sits on the right; on a
+  // phone a tap still pushes MessageThread. Names are looked up through a ref
+  // so a just-created DM (not yet in `channels`) still gets its title.
+  const namesRef = useRef<Record<string, string>>({});
+  const { selectedId, open: openThread, isWide, paneProps } = useTwoPaneSelection({
+    navigation,
+    route,
+    detailRoute: 'MessageThread',
+    paramsFor: (id: string) => ({ channelId: id, channelName: namesRef.current[id] ?? '' }),
+  });
 
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
@@ -210,13 +224,14 @@ export default function MessagesScreen({ navigation, route }: Props) {
       toast.success('Conversation started');
       await fetchChannels();
       const displayName = getDmDisplayName(channel, user?.id);
-      navigation.navigate('MessageThread', { channelId: channel.id, channelName: displayName });
+      namesRef.current[channel.id] = displayName;
+      openThread(channel.id);
     } catch {
       toast.error('Could not start conversation.');
     } finally {
       setCreatingDm(false);
     }
-  }, [fetchChannels, navigation, user?.id, toast]);
+  }, [fetchChannels, openThread, user?.id, toast]);
 
   const loadTeamUsers = useCallback(async () => {
     try {
@@ -258,6 +273,9 @@ export default function MessagesScreen({ navigation, route }: Props) {
   };
 
   const nameOf = (ch: Channel) => (ch.type === 'dm' ? getDmDisplayName(ch, user?.id) : ch.name);
+  for (const ch of channels) namesRef.current[ch.id] = nameOf(ch);
+  // The open conversation is being read on the right: don't badge it.
+  const unreadOf = (id: string) => (isWide && selectedId === id ? 0 : unreadCounts[id] || 0);
   const q = search.trim().toLowerCase();
   const visible = q ? channels.filter(ch => nameOf(ch).toLowerCase().includes(q)) : channels;
   const byRecent = (a: Channel, b: Channel) =>
@@ -265,7 +283,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
   // Only Pinned is grouped; everything else is one list, newest first.
   const pinned = visible.filter(ch => ch.isPinned);
   const recent = visible.filter(ch => !ch.isPinned).sort(byRecent);
-  const totalUnread = channels.reduce((sum, ch) => sum + (unreadCounts[ch.id] || 0), 0);
+  const totalUnread = channels.reduce((sum, ch) => sum + unreadOf(ch.id), 0);
 
   const renderLead = (item: Channel, displayName: string) => {
     if (item.type === 'dm') {
@@ -283,8 +301,9 @@ export default function MessagesScreen({ navigation, route }: Props) {
   };
 
   const renderRow = (item: Channel) => {
-    const unread = unreadCounts[item.id] || 0;
+    const unread = unreadOf(item.id);
     const displayName = nameOf(item);
+    const isOpen = isWide && selectedId === item.id;
     const preview = previewOf(item);
     // Only channels can be client-facing; a DM is never one, whatever the row says.
     const clientFacing = item.type === 'channel' && !!item.isClientFacing;
@@ -293,11 +312,12 @@ export default function MessagesScreen({ navigation, route }: Props) {
         key={item.id}
         onPress={() => {
           haptic.light();
-          navigation.navigate('MessageThread', { channelId: item.id, channelName: displayName });
+          namesRef.current[item.id] = displayName;
+          openThread(item.id);
         }}
         accessibilityRole="button"
         accessibilityLabel={`${displayName}${unread ? `, ${unread} unread` : ''}${clientFacing ? ', client can see this channel' : ''}`}
-        style={({ pressed }) => [mx.row, { opacity: pressed ? metrics.pressedOpacity : 1 }]}
+        style={({ pressed }) => [mx.row, isOpen && [mx.rowSelected, { backgroundColor: k.tint }], { opacity: pressed ? metrics.pressedOpacity : 1 }]}
       >
         <View style={mx.lead}>{renderLead(item, displayName)}</View>
         <View style={mx.body}>
@@ -373,6 +393,21 @@ export default function MessagesScreen({ navigation, route }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: k.bg }]}>
+      <TwoPane
+        {...paneProps}
+        listWidth={size.listPane.messages}
+        empty={<EmptyState icon={MessagesSquare} title="Select a conversation" />}
+        detail={
+          selectedId ? (
+            <MessageThreadScreen
+              key={selectedId}
+              embedded
+              navigation={navigation}
+              route={{ params: { channelId: selectedId, channelName: namesRef.current[selectedId] ?? '' } }}
+            />
+          ) : null
+        }
+        list={
       <ScrollView
         contentContainerStyle={[mx.frame, mx.list, pad, readableFrame]}
         keyboardShouldPersistTaps="handled"
@@ -414,6 +449,8 @@ export default function MessagesScreen({ navigation, route }: Props) {
           </>
         )}
       </ScrollView>
+        }
+      />
 
       {/* Compose: choose a direct message or a new channel. */}
       <Sheet ref={composeSheetRef} title="New">
@@ -552,6 +589,12 @@ const mx = StyleSheet.create({
   field: { gap: metrics.form.labelGap },
   center: { textAlign: 'center', paddingVertical: space.screenBottom },
   skeleton: { gap: M.gap, paddingTop: M.topGap },
+  // Duo: the open conversation is a tint block (radius 8) set in from the card edge.
+  rowSelected: {
+    marginHorizontal: -(space.cardX - metrics.card.duoPad),
+    paddingHorizontal: space.cardX - metrics.card.duoPad,
+    borderRadius: radii.lg,
+  },
   row: { flexDirection: 'row', alignItems: 'center', gap: metrics.listRow.gap, paddingVertical: metrics.listRow.padY, minHeight: M.rowMin },
   lead: { width: M.lead, alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, minWidth: 0, gap: metrics.listRow.bodyGap },

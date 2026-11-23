@@ -1333,7 +1333,7 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
         onPress={() => openDetailModal(item)}
         accessibilityRole="button"
         accessibilityLabel={`${dayLabel(d)}, ${tplName ?? 'entry'}`}
-        style={({ pressed }) => [dd.row, isOpen && { backgroundColor: k.tint }, pressed && { opacity: metrics.pressedOpacity }]}
+        style={({ pressed }) => [dd.row, isOpen && [dd.rowSelected, { backgroundColor: k.tint }], pressed && { opacity: metrics.pressedOpacity }]}
       >
         <View style={dd.rowTop}>
           <Text style={[type.rowTitle, { color: k.text }]}>{dayLabel(d)}</Text>
@@ -1609,6 +1609,12 @@ const dd = StyleSheet.create({
   countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   typeFilter: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
   row: { paddingVertical: metrics.listRow.padY, gap: space.inlineSm },
+  // Duo: the open entry is a tint block (radius 8) set in from the card edge, as in Tasks.
+  rowSelected: {
+    marginHorizontal: -(space.cardX - metrics.card.duoPad),
+    paddingHorizontal: space.cardX - metrics.card.duoPad,
+    borderRadius: radii.lg,
+  },
   rowTop: { flexDirection: 'row', alignItems: 'baseline', gap: space.inline + 2 },
   rowMeta: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, paddingTop: DY.metaTop },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
