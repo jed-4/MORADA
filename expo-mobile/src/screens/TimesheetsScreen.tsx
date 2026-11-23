@@ -1007,13 +1007,14 @@ export default function TimesheetsScreen() {
   // that project already chosen, then clear the param so it fires once.
   const route = useRoute();
   const nav = useNavigation();
-  const logProjectId = (route.params as { logProjectId?: string } | undefined)?.logProjectId;
+  const { logProjectId, logCostCodeId } = (route.params ?? {}) as { logProjectId?: string; logCostCodeId?: string };
   useEffect(() => {
     if (!logProjectId) return;
     resetForm();
     setFormProjectId(logProjectId);
+    if (logCostCodeId) setFormCostCodeId(logCostCodeId);
     setShowLogSheet(true);
-    nav.setParams({ logProjectId: undefined } as never);
+    nav.setParams({ logProjectId: undefined, logCostCodeId: undefined } as never);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logProjectId]);
 

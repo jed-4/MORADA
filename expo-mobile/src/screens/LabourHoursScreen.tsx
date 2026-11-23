@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Clock } from 'lucide-react-native';
 import { apiFetch } from '../services/api';
@@ -9,6 +9,8 @@ import type { RouteProp } from '@react-navigation/native';
 import { metrics, space, tabular, type, useColors } from '../theme';
 import { usePersistedState } from '../lib/usePersistedState';
 import { Card, EmptyState, FAB, FAB_CLEARANCE, GroupHeader, PageHeader, ProgressLine } from '../components/kit';
+import { LabourSummary } from '../components/labour/LabourSummary';
+import { fmtHours as fmt, hoursNum as num, isOverBudget as isOver, shortLabourTitle as shortTitle } from '../lib/labour';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { SkeletonList } from '../components/ui/Skeleton';
 
@@ -35,14 +37,6 @@ interface CostCategory {
   title: string;
 }
 
-const num = (v?: string | null) => parseFloat(v || '0') || 0;
-/** "1.8", "20.5", "0" — one decimal at most, no unit. */
-const fmt = (n: number) => (Math.round(n * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 });
-/** Hours booked past the budget (a code with no budget but time booked counts too). */
-const isOver = (budgeted: number, used: number) => used > budgeted && used > 0;
-/** "Labour – Framing" → "Framing": the screen is already about labour. */
-const shortTitle = (t: string) => t.replace(/^labour\s*[–—-]\s*/i, '');
-
 // Codes read as numbers ("100", "119"); anything else falls back to lexical.
 const compareCode = (a: string, b: string) => {
   const an = parseFloat(a);
@@ -58,6 +52,7 @@ interface Props {
 
 interface Row {
   id: string;
+  costCodeId: string | null;
   code: string;
   title: string;
   budgeted: number;
@@ -137,6 +132,7 @@ export default function LabourHoursScreen({ navigation, route }: Props) {
       if (!group.categoryCode && meta?.categoryCode) group.categoryCode = meta.categoryCode;
       group.rows.push({
         id: r.id,
+        costCodeId: r.costCodeId ?? null,
         code: meta?.code ?? '',
         title: shortTitle(r.costCodeTitle || 'Uncategorized'),
         budgeted,
@@ -167,7 +163,7 @@ export default function LabourHoursScreen({ navigation, route }: Props) {
   const totals = useMemo(() => {
     const budgeted = sections.reduce((s, g) => s + g.budgeted, 0);
     const used = sections.reduce((s, g) => s + g.used, 0);
-    return { budgeted, used, over: isOver(budgeted, used) };
+    return { budgeted, used };
   }, [sections]);
 
   const toggleGroup = (title: string) =>
@@ -193,14 +189,28 @@ export default function LabourHoursScreen({ navigation, route }: Props) {
     );
   }
 
-  const renderRow = (item: Row) => {
+  const renderRow = (item: Row, categoryTitle: string) => {
     const over = isOver(item.budgeted, item.used);
     const figure = over ? c.danger : c.text;
     return (
-      <View
+      <Pressable
         key={item.id}
-        style={lx.row}
-        accessible
+        style={({ pressed }) => [lx.row, { opacity: pressed && item.costCodeId ? metrics.pressedOpacity : 1 }]}
+        disabled={!item.costCodeId}
+        onPress={() =>
+          navigation.navigate('LabourCodeDetail', {
+            projectId,
+            projectName,
+            projectColor,
+            costCodeId: item.costCodeId,
+            code: item.code,
+            title: item.title,
+            categoryTitle,
+            budgeted: item.budgeted,
+            used: item.used,
+          })
+        }
+        accessibilityRole="button"
         accessibilityLabel={`${item.code ? `${item.code} ` : ''}${item.title}, ${fmt(item.used)} of ${fmt(item.budgeted)} hours${over ? `, ${fmt(item.used - item.budgeted)} hours over` : ''}`}
       >
         <View style={lx.rowTop}>
@@ -223,7 +233,7 @@ export default function LabourHoursScreen({ navigation, route }: Props) {
             <Text style={[type.caption, tabular, { color: c.danger }]}>+{fmt(item.used - item.budgeted)}h over</Text>
           ) : null}
         </View>
-      </View>
+      </Pressable>
     );
   };
 
@@ -248,21 +258,7 @@ export default function LabourHoursScreen({ navigation, route }: Props) {
           </View>
         ) : (
           <>
-            <Card>
-              <View style={lx.summary}>
-                <View style={lx.summaryRow}>
-                  <Text style={[type.meta, { color: c.muted }]}>Used</Text>
-                  <Text style={[type.heading, tabular, { color: totals.over ? c.danger : c.text }]}>{fmt(totals.used)}h</Text>
-                  <Text style={[type.body, tabular, { color: totals.over ? c.danger : c.muted }]}>of {fmt(totals.budgeted)}h</Text>
-                  <Text style={[type.body, tabular, lx.left, { color: totals.over ? c.danger : c.muted }]}>
-                    {totals.over
-                      ? `${fmt(totals.used - totals.budgeted)}h over`
-                      : `${fmt(totals.budgeted - totals.used)}h left`}
-                  </Text>
-                </View>
-                <ProgressLine value={totals.budgeted > 0 ? totals.used / totals.budgeted : 0} over={totals.over} />
-              </View>
-            </Card>
+            <LabourSummary used={totals.used} budgeted={totals.budgeted} />
 
             {sections.map(section => {
               const open = !collapsed.includes(section.title);
@@ -274,7 +270,7 @@ export default function LabourHoursScreen({ navigation, route }: Props) {
                     onToggle={() => toggleGroup(section.title)}
                     trailing={`${fmt(section.used)} / ${fmt(section.budgeted)}h`}
                   />
-                  {open ? <Card variant="list">{section.data.map(renderRow)}</Card> : null}
+                  {open ? <Card variant="list">{section.data.map(r => renderRow(r, section.title))}</Card> : null}
                 </View>
               );
             })}
@@ -293,9 +289,6 @@ const lx = StyleSheet.create({
   list: { paddingHorizontal: space.screenX, gap: L.gap },
   topPad: { paddingHorizontal: space.screenX, paddingBottom: L.gap },
   empty: { paddingTop: space.screenBottom },
-  summary: { gap: L.summaryGap },
-  summaryRow: { flexDirection: 'row', alignItems: 'baseline', gap: L.summaryRowGap },
-  left: { marginLeft: 'auto' },
   row: { paddingTop: L.rowPadTop, paddingBottom: L.rowPadBottom, gap: L.rowGap },
   rowTop: { flexDirection: 'row', alignItems: 'flex-start', gap: L.rowInnerGap },
   code: { width: L.codeWidth },

@@ -56,6 +56,7 @@ import MessagesScreen from '../screens/MessagesScreen';
 import MessageThreadScreen from '../screens/MessageThreadScreen';
 import ReceiptCaptureScreen from '../screens/ReceiptCaptureScreen';
 import LabourHoursScreen from '../screens/LabourHoursScreen';
+import LabourCodeDetailScreen from '../screens/LabourCodeDetailScreen';
 import DefectsListScreen from '../screens/DefectsListScreen';
 import DefectDetailScreen from '../screens/DefectDetailScreen';
 import DefectCaptureScreen from '../screens/DefectCaptureScreen';
@@ -207,8 +208,9 @@ function ProjectsStack() {
       <Stack.Screen
         name="LabourHours"
         component={LabourHoursScreen}
-        options={projectPageOptions('Labour Hours')}
+        options={{ headerShown: false }}
       />
+      <Stack.Screen name="LabourCodeDetail" component={LabourCodeDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DefectsList" component={DefectsListScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DefectDetail" component={DefectDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen
