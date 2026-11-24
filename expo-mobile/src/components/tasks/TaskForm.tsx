@@ -48,6 +48,12 @@ interface TaskFormProps {
   /** Omit to hide the checklist editor. */
   checklist?: TaskChecklistItem[];
   onChecklist?: (items: TaskChecklistItem[]) => void;
+  /**
+   * The half-typed "Add an item" text. Pass both to own it (so the screen's
+   * "Discard changes?" check sees it); omit to keep it inside the form.
+   */
+  newItem?: string;
+  onNewItem?: (v: string) => void;
   /** Keyboard-aware scroll: scroll the focused field into view. */
   onInputFocus?: () => void;
 }
@@ -73,11 +79,16 @@ export function TaskForm({
   descRef,
   checklist,
   onChecklist,
+  newItem: newItemProp,
+  onNewItem,
   onInputFocus,
 }: TaskFormProps) {
   const c = useColors();
   const [open, setOpen] = useState<Open>(null);
-  const [newItem, setNewItem] = useState('');
+  const [localNewItem, setLocalNewItem] = useState('');
+  const controlled = newItemProp !== undefined && !!onNewItem;
+  const newItem = controlled ? newItemProp : localNewItem;
+  const setNewItem = controlled ? onNewItem : setLocalNewItem;
   const toggle = (which: Open) => {
     haptic.select();
     setOpen(open === which ? null : which);

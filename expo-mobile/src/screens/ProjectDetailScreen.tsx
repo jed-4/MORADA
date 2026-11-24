@@ -768,6 +768,17 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
               {project.name}
             </Text>
             {price ? <Text style={[type.price, tabular, { color: c.text }]}>{price}</Text> : null}
+            {/* Embedded (Duo right pane) has no nav bar, so its ••• lives here. */}
+            {embedded ? (
+              <Pressable
+                onPress={() => moreSheetRef.current?.present()}
+                hitSlop={metrics.hitSlop}
+                accessibilityRole="button"
+                accessibilityLabel="More actions"
+              >
+                <Ellipsis size={metrics.pageHeader.back} color={c.icon} strokeWidth={metrics.iconStroke} />
+              </Pressable>
+            ) : null}
           </View>
           {(metaLine || typeof progress === 'number') ? (
             <View style={styles.metaBlock}>

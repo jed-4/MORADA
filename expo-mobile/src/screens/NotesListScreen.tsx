@@ -25,6 +25,7 @@ import { SwipeRow } from '../components/ui/SwipeRow';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { haptic } from '../lib/haptics';
 import { SkeletonList } from '../components/ui/Skeleton';
+import { goBackOrHome } from '../navigation/back';
 type Props = {
   navigation: any;
   route?: any;
@@ -445,7 +446,7 @@ export default function NotesListScreen({ navigation, route }: Props) {
         <PageHeader
           title="Notes"
           project={isProjectScoped ? { name: projectName || 'Project', color: route?.params?.projectColor ?? null, id: projectId } : null}
-          onBack={() => navigation.goBack()}
+          onBack={() => goBackOrHome(navigation)}
         />
         {!isProjectScoped ? (
           <Segmented

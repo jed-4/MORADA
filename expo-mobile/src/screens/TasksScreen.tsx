@@ -364,7 +364,7 @@ const colors = {
     }
 
     return groups.filter(g => g.tasks.length > 0);
-  }, [tasks, groupBy, getProjectName, getStatusColor, colors.accent, colors.muted, filters, statusOptions]);
+  }, [tasks, groupBy, getProjectName, getStatusColor, colors.accent, colors.muted, filters, statusOptions, datePreset]);
 
   const toggleSection = (key: string) => {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));

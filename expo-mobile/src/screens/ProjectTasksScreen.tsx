@@ -819,6 +819,8 @@ const colors = {
               descRef={editDescRef}
               checklist={editChecklist}
               onChecklist={setEditChecklist}
+              newItem={editChecklistInput}
+              onNewItem={setEditChecklistInput}
               onInputFocus={editKb.onInputFocus}
             />
           ) : null}
@@ -862,6 +864,8 @@ const colors = {
             descRef={newDescRef}
             checklist={newChecklist}
             onChecklist={setNewChecklist}
+            newItem={newChecklistInput}
+            onNewItem={setNewChecklistInput}
             onInputFocus={createKb.onInputFocus}
           />
         </ScrollView>

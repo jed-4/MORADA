@@ -19,9 +19,10 @@ import { haptic } from '../../lib/haptics';
 //   Receipt — Capture Receipt
 //   Defect  — the Defects walkthrough (DefectCapture)
 //   Clock in — only while NOT clocked in (clocked in, the timer card above
-//              already has Clock Out)
+//              already has Clock Out). Opens Timesheets with no project
+//              chosen, so the user picks there (Business (Overhead) included).
 //
-// Each acts on the last project used here (remembered between launches);
+// The others act on the last project used here (remembered between launches);
 // with none yet, or the "Project:" pill, it asks with a project list. Buttons the user's
 // role can't use are hidden (the server still checks).
 //
@@ -34,7 +35,7 @@ interface QuickProject {
   color?: string | null;
 }
 
-type Action = 'diary' | 'receipt' | 'defect' | 'clock';
+type Action = 'diary' | 'receipt' | 'defect';
 
 export function QuickCaptureRow({
   projects,
@@ -75,11 +76,6 @@ export function QuickCaptureRow({
 
   const run = useCallback(async (action: Action, p: { id: string; name: string }) => {
     const params = { projectId: p.id, projectName: p.name };
-    if (action === 'clock') {
-      // Timesheets opens with this project already chosen for Clock in.
-      tabNav.navigate('More', { screen: 'Timesheets', params: { clockInProjectId: p.id } });
-      return;
-    }
     if (action === 'receipt') {
       openInProjects('ReceiptCapture', params);
       return;
@@ -102,7 +98,7 @@ export function QuickCaptureRow({
       console.warn('Quick capture camera failed:', e);
       Alert.alert('Camera Unavailable', 'Could not open the camera.');
     }
-  }, [openInProjects, tabNav]);
+  }, [openInProjects]);
 
   const start = (action: Action) => {
     haptic.light();
@@ -157,7 +153,7 @@ export function QuickCaptureRow({
           icon: Clock,
           label: 'Clock in',
           a11y: 'Clock in',
-          onPress: () => start('clock'),
+          onPress: () => { haptic.light(); tabNav.navigate('More', { screen: 'Timesheets' }); },
         }]
       : []),
   ];
