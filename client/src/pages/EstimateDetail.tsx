@@ -101,9 +101,10 @@ import { formatGroupPath } from "@shared/import";
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
 import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
-import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
+import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, pickItemDropTarget, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import { EstimateGridHeader } from "@/components/estimates/EstimateGridHeader";
+import { startDragGhost } from "@/components/estimates/estimateDragGhost";
 import { ESTIMATE_DEFAULT_COLUMNS, EstimateColumnsPicker, useColumnResize } from "@/components/estimates/estimateColumns";
 import { EstimateSelectionBar } from "@/components/estimates/EstimateSelectionBar";
 import { linesForApply } from "@/components/estimates/templateGroupTree";
@@ -879,8 +880,7 @@ export default function EstimateDetail() {
   };
 
   // Native DOM ghost refs — updated directly without React re-render for lag-free drag feedback
-  const nativeGhostRef = React.useRef<HTMLElement | null>(null);
-  const nativeGhostListenerRef = React.useRef<((e: PointerEvent) => void) | null>(null);
+  const stopGhostRef = React.useRef<(() => void) | null>(null);
   
   // Catalog Sidebar state
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
@@ -1350,9 +1350,7 @@ export default function EstimateDetail() {
     const sourceEl = activeIdStr.startsWith('group-')
       ? (document.querySelector(`[data-sortable-group-id="${activeIdStr.replace('group-', '')}"]`) as HTMLElement | null)
       : (document.querySelector(`[data-sortable-id="${activeIdStr}"]`) as HTMLElement | null);
-    const sourceRect = sourceEl?.getBoundingClientRect();
-
-    if (sourceRect) {
+    if (sourceEl) {
       let displayName = '';
       if (activeIdStr.startsWith('group-')) {
         const groupId = activeIdStr.replace('group-', '');
@@ -1360,57 +1358,15 @@ export default function EstimateDetail() {
       } else {
         displayName = items.find(i => i.id === activeIdStr)?.name || 'Item';
       }
-
-      const ghost = document.createElement('div');
-      Object.assign(ghost.style, {
-        position: 'fixed',
-        zIndex: '9999',
-        pointerEvents: 'none',
-        width: `${sourceRect.width}px`,
-        height: `${Math.round(sourceRect.height) || 32}px`,
-        top: `${sourceRect.top}px`,
-        left: `${sourceRect.left}px`,
-        display: 'flex',
-        alignItems: 'center',
-        padding: '0 12px',
-        // Tokens, not a baked lavender — the literal ignored dark mode.
-        background: 'hsl(var(--primary) / 0.25)',
-        borderLeft: '2px solid hsl(var(--primary))',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-        cursor: 'grabbing',
-        overflow: 'hidden',
-        fontSize: '12px',
-        // The theme tokens are bare HSL triplets: `var(--foreground)` on its
-        // own is not a valid colour, so this silently fell back to inherited.
-        color: 'hsl(var(--foreground))',
-        whiteSpace: 'nowrap',
-        textOverflow: 'ellipsis',
-      });
-      ghost.textContent = displayName;
-      document.body.appendChild(ghost);
-      nativeGhostRef.current = ghost;
-
-      const initialY = activatorEvent?.clientY ?? (sourceRect.top + sourceRect.height / 2);
-      const handlePointerMove = (e: PointerEvent) => {
-        if (!nativeGhostRef.current) return;
-        const deltaY = e.clientY - initialY;
-        nativeGhostRef.current.style.top = `${sourceRect.top + deltaY}px`;
-      };
-      window.addEventListener('pointermove', handlePointerMove, { passive: true });
-      nativeGhostListenerRef.current = handlePointerMove;
+      // Shared with the template page.
+      stopGhostRef.current = startDragGhost(sourceEl, displayName, activatorEvent?.clientY);
     }
   };
   
   // Helper: remove the native DOM ghost and its pointermove listener
   const removeNativeGhost = () => {
-    if (nativeGhostRef.current) {
-      document.body.removeChild(nativeGhostRef.current);
-      nativeGhostRef.current = null;
-    }
-    if (nativeGhostListenerRef.current) {
-      window.removeEventListener('pointermove', nativeGhostListenerRef.current);
-      nativeGhostListenerRef.current = null;
-    }
+    stopGhostRef.current?.();
+    stopGhostRef.current = null;
   };
 
   // Handle drag cancel - clear all drag state
@@ -1538,69 +1494,26 @@ export default function EstimateDetail() {
       return;
     }
     
-    // --- Item drag: GROUP-AWARE drop-target detection ---
-    // Determine which group the cursor is currently over using each group
-    // card's full bounds — the [data-sortable-group-id] element wraps the group
-    // header AND all of that group's item rows. Nested subgroups appear after
-    // their parent in the DOM, so the LAST containing match is the innermost
-    // group. When no group contains the cursor it's the ungrouped area
-    // (targetGroupId = null). Only rows in that target group are considered, so
-    // a within-group drag stays in its group and only crosses into another
-    // group when the cursor actually enters that group's area — this is the fix
-    // for the accidental cross-group leak.
-    let targetGroupId: string | null = null;
+    // --- Item drag: shared with the template page (pickItemDropTarget). ---
+    // The innermost group card under the cursor is the target group; only its
+    // rows are candidates, so a drag stays in its group until the cursor
+    // actually enters another one. An empty group targets its header.
+    const measuredGroups: { id: string; top: number; bottom: number }[] = [];
     document.querySelectorAll('[data-sortable-group-id]').forEach((el) => {
       const gid = el.getAttribute('data-sortable-group-id');
       if (!gid) return;
       const rect = el.getBoundingClientRect();
-      if (cursorY >= rect.top && cursorY <= rect.bottom) targetGroupId = gid;
+      measuredGroups.push({ id: gid, top: rect.top, bottom: rect.bottom });
     });
-
-    const rowPositions: { id: string; top: number; bottom: number; midpoint: number }[] = [];
+    const groupOfItem = new Map(items.map((i) => [i.id, i.groupId ?? null]));
+    const measuredRows: { id: string; groupId: string | null; top: number; bottom: number }[] = [];
     document.querySelectorAll('[data-sortable-id]').forEach((row) => {
       const id = row.getAttribute('data-sortable-id');
-      if (!id || id === activeIdStr || id.startsWith('group-')) return;
-      const rowItem = items.find(i => i.id === id);
-      if (!rowItem) return;
-      if ((rowItem.groupId ?? null) !== targetGroupId) return; // only rows in the target group
+      if (!id || id.startsWith('group-') || !groupOfItem.has(id)) return;
       const rect = row.getBoundingClientRect();
-      rowPositions.push({ id, top: rect.top, bottom: rect.bottom, midpoint: rect.top + rect.height / 2 });
+      measuredRows.push({ id, groupId: groupOfItem.get(id) ?? null, top: rect.top, bottom: rect.bottom });
     });
-
-    // Empty target group → aim at the group header so the item drops into it.
-    if (rowPositions.length === 0) {
-      setDropTargetSync(targetGroupId ? { id: `group-${targetGroupId}`, position: 'below' } : null);
-      return;
-    }
-
-    // Sort by visual position (top to bottom)
-    rowPositions.sort((a, b) => a.top - b.top);
-
-    // Cursor above all rows of the target group → indicator above the first row.
-    if (cursorY < rowPositions[0].midpoint) {
-      setDropTargetSync({ id: rowPositions[0].id, position: 'above' });
-      return;
-    }
-    // Cursor below all rows → indicator below the last row.
-    const lastRow = rowPositions[rowPositions.length - 1];
-    if (cursorY > lastRow.midpoint) {
-      setDropTargetSync({ id: lastRow.id, position: 'below' });
-      return;
-    }
-    // Otherwise find the gap the cursor is in.
-    for (let i = 0; i < rowPositions.length; i++) {
-      const current = rowPositions[i];
-      const next = rowPositions[i + 1];
-      if (cursorY <= current.midpoint) {
-        setDropTargetSync({ id: current.id, position: 'above' });
-        return;
-      } else if (!next || cursorY <= next.midpoint) {
-        setDropTargetSync({ id: current.id, position: 'below' });
-        return;
-      }
-    }
-
-    setDropTargetSync(null);
+    setDropTargetSync(pickItemDropTarget(cursorY, activeIdStr, measuredGroups, measuredRows));
   };
 
   // Handle drag end for reordering items, groups, and cross-group moves

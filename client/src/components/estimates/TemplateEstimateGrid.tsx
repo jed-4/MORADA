@@ -17,13 +17,14 @@ import React, { useMemo, useState, useCallback, useEffect, useRef } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import type { DragEndEvent, DragMoveEvent, CollisionDetection } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import type { DragEndEvent, DragMoveEvent, DragStartEvent, CollisionDetection } from "@dnd-kit/core";
 import {
   NEST_ZONE_BOTTOM,
   NEST_ZONE_TOP,
   descendantsOf,
   hiddenGroupIds,
+  pickItemDropTarget,
   planGroupDrop,
   type DropTarget,
   type GroupMove,
@@ -32,11 +33,13 @@ import {
   UNGROUPED,
   currentTree,
   layoutTemplateGroups,
+  moveTemplateLine,
   templateDescendants,
   templateGroupOrder,
   templateGroupParents,
 } from "@/components/estimates/templateGroupTree";
 import { computeEstimateItemPrice, round2 } from "@shared/pricing";
+import { startDragGhost } from "@/components/estimates/estimateDragGhost";
 import type { CostCode, CostCategory, EstimateItem, EstimateGroup, FieldCategoryWithOptions } from "@shared/schema";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
 import {
@@ -947,12 +950,64 @@ export function TemplateEstimateGrid({
     };
   }, []);
 
+  /* The bar under the cursor while dragging — the estimate page's. Without it
+     a drag here showed nothing moving at all (rows don't slide aside). */
+  const stopGhost = useRef<(() => void) | null>(null);
+  const endGhost = () => { stopGhost.current?.(); stopGhost.current = null; };
+  useEffect(() => endGhost, []);
+
+  const handleDragStart = useCallback(
+    (e: DragStartEvent) => {
+      const id = String(e.active.id);
+      setActiveId(id);
+      setDropTargetSync(null);
+      endGhost();
+      const isGroup = id.startsWith("group-");
+      const key = isGroup ? id.slice("group-".length) : id;
+      const sourceEl = gridRef.current?.querySelector<HTMLElement>(
+        isGroup ? `[data-sortable-group-id="${CSS.escape(key)}"]` : `[data-sortable-id="${CSS.escape(key)}"]`,
+      );
+      if (!sourceEl) return;
+      const label = isGroup
+        ? key === UNGROUPED ? "General" : key
+        : latestItems.current.find((i) => i.id === key)?.name || "Line";
+      stopGhost.current = startDragGhost(sourceEl, label, (e.activatorEvent as PointerEvent | null)?.clientY);
+    },
+    [],
+  );
+
   const handleDragMove = useCallback(
     (e: DragMoveEvent) => {
       const activeIdStr = String(e.active.id);
-      if (!activeIdStr.startsWith("group-")) return;
       const cursorY = pointerYRef.current;
       if (cursorY == null) return;
+
+      // A LINE: same targeting as the estimate page (pickItemDropTarget), so
+      // it shows the same drop line, crosses into another group only once the
+      // cursor is inside it, and can land in an empty group.
+      if (!activeIdStr.startsWith("group-")) {
+        const root = gridRef.current;
+        if (!root) return;
+        const groupOf = new Map(lineItems.map((l) => [l.id, l.groupName || UNGROUPED]));
+        const measuredGroups: { id: string; top: number; bottom: number }[] = [];
+        root.querySelectorAll<HTMLElement>("[data-sortable-group-id]").forEach((el) => {
+          const r = el.getBoundingClientRect();
+          measuredGroups.push({ id: el.getAttribute("data-sortable-group-id")!, top: r.top, bottom: r.bottom });
+        });
+        const rows: { id: string; groupId: string | null; top: number; bottom: number }[] = [];
+        root.querySelectorAll<HTMLElement>("[data-sortable-id]").forEach((el) => {
+          const id = el.getAttribute("data-sortable-id")!;
+          const g = groupOf.get(id);
+          if (g === undefined) return;
+          const r = el.getBoundingClientRect();
+          if (r.height === 0) return; // inside a collapsed group
+          rows.push({ id, groupId: g, top: r.top, bottom: r.bottom });
+        });
+        const next = pickItemDropTarget(cursorY, activeIdStr, measuredGroups, rows);
+        // Keep the last good target when a frame resolves nothing.
+        if (next) setDropTargetSync(next);
+        return;
+      }
       const dragged = activeIdStr.slice("group-".length);
 
       // Not into itself, its own subtree, or a group hidden inside a collapsed
@@ -991,7 +1046,7 @@ export function TemplateEstimateGrid({
       for (const h of headers) if (h.midpoint <= cursorY) above = h;
       setDropTargetSync({ id: `group-${above.id}`, position: "below" });
     },
-    [groups],
+    [groups, lineItems],
   );
 
   const applyGroupMoves = useCallback(
@@ -1016,9 +1071,10 @@ export function TemplateEstimateGrid({
   const handleDragEnd = useCallback(
     (e: DragEndEvent) => {
       setActiveId(null);
+      endGhost();
       const target = dropTargetRef.current;
       setDropTargetSync(null);
-      const { active, over } = e;
+      const { active } = e;
       const activeIdStr = String(active.id);
 
       if (activeIdStr.startsWith("group-")) {
@@ -1032,21 +1088,17 @@ export function TemplateEstimateGrid({
         return;
       }
 
-      const items = latestItems.current;
-      if (!over || active.id === over.id) return;
-      const ordered = items.filter((i) => !i.isGroup).slice().sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-      const from = ordered.findIndex((i) => i.id === active.id);
-      const to = ordered.findIndex((i) => i.id === over.id);
-      if (from < 0 || to < 0) return;
-      // Dropping a line onto a line in another group moves it into that group,
-      // which used to be ignored: it changed position in a list nobody sees and
-      // stayed put on screen.
-      const destinationGroup = ordered[to].groupName;
-      const moved = arrayMove(ordered, from, to).map((i, idx) =>
-        i.id === active.id ? { ...i, sortOrder: idx, groupName: destinationGroup } : { ...i, sortOrder: idx },
-      );
-      const byId = new Map(moved.map((i) => [i.id, i]));
-      commit((current) => current.map((i) => byId.get(i.id) ?? i));
+      // A line lands where the drop line showed — the same target the estimate
+      // page uses. It used to go wherever dnd-kit's closest-centre guess put
+      // it, with no line to show where that was, and it couldn't reach an
+      // empty group at all.
+      //
+      // withGroupRows first: on a template with no group rows yet, group order
+      // is read from where lines sit in the list, so moving the first line into
+      // another group used to drag that whole group to the top. Laying the
+      // group rows down pins every group where it is on screen.
+      if (!target) return;
+      commit((current) => moveTemplateLine(withGroupRows(current), activeIdStr, target));
     },
     [groups, applyGroupMoves, commit],
   );
@@ -1096,7 +1148,7 @@ export function TemplateEstimateGrid({
     handleToggleSelection,
     collapsedItems: new Set(),
     handleToggleItemCollapse: () => {},
-    dropTarget: null,
+    dropTarget,
     activeId,
     updateItemMutation,
     createSelectionFromItemMutation: noopMutation,
@@ -1150,9 +1202,9 @@ export function TemplateEstimateGrid({
         <DndContext
           sensors={sensors}
           collisionDetection={collisionDetection}
-          onDragStart={(e) => setActiveId(String(e.active.id))}
+          onDragStart={handleDragStart}
           onDragMove={handleDragMove}
-          onDragCancel={() => { setActiveId(null); setDropTargetSync(null); }}
+          onDragCancel={() => { setActiveId(null); setDropTargetSync(null); endGhost(); }}
           onDragEnd={handleDragEnd}
         >
           <SortableContext
