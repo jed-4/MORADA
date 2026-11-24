@@ -77,6 +77,7 @@ type ChannelMeta = {
   type?: string;
   dmParticipants?: string[] | null;
   isClientFacing?: boolean;
+  emoji?: string | null;
 };
 
 function getSenderName(msg: Message): string {
@@ -632,6 +633,7 @@ export default function MessageThreadScreen({ navigation, route, embedded }: Pro
         isDm={channelMeta?.type === 'dm'}
         showPresence={dmOtherOnline}
         isClientFacing={!!channelMeta?.isClientFacing}
+        emoji={channelMeta?.emoji}
         theme={theme}
         paddingTop={embedded ? insets.top : insets.top + 8}
         onBack={embedded ? undefined : () => navigation.goBack()}

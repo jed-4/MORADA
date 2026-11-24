@@ -750,6 +750,10 @@ export const metrics = {
     topGap: 12,
     rowMin: 60,
     lead: 28,
+    // Channel emoji (set on the web) in place of the # / project square.
+    emoji: 20,
+    emojiHeader: 16,
+    emojiDuo: 20,
     seedPadX: 24,
   },
   labourDetail: {

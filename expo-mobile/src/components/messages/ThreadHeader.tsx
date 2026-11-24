@@ -23,6 +23,8 @@ interface ThreadHeaderProps {
   onBack?: () => void;
   /** D07 Duo pane header: big channel icon, name + member count, actions. */
   wide?: boolean;
+  /** Channel emoji (set on the web); replaces the # when present. */
+  emoji?: string | null;
   memberCount?: number;
   actions?: { icon: LucideIcon; label: string; onPress: () => void }[];
 }
@@ -43,6 +45,7 @@ export function ThreadHeader({
   paddingTop,
   onBack,
   wide,
+  emoji,
   memberCount,
   actions,
 }: ThreadHeaderProps) {
@@ -63,7 +66,7 @@ export function ThreadHeader({
           </View>
         ) : (
           <View style={[styles.wideHash, { backgroundColor: c.greyFill }]}>
-            <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />
+            {emoji ? <Text style={{ fontSize: M.emojiDuo }}>{emoji}</Text> : <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
           </View>
         )}
         <View style={styles.title}>
@@ -99,7 +102,7 @@ export function ThreadHeader({
         </View>
       ) : (
         <View style={[styles.hash, { backgroundColor: c.greyFill }]}>
-          <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />
+          {emoji ? <Text style={{ fontSize: M.emojiHeader }}>{emoji}</Text> : <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
         </View>
       )}
       <Text style={[type.sectionTitle, styles.title, { color: c.text }]} numberOfLines={1} accessibilityRole="header">

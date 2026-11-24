@@ -42,6 +42,8 @@ interface Channel {
   isPinned?: boolean;
   /** Clients can read this channel — drives the amber eye/CLIENT signals. */
   isClientFacing?: boolean;
+  /** Optional channel emoji, chosen on the web. */
+  emoji?: string | null;
   lastMessageAt?: string | null;
   lastMessageContent?: string | null;
   lastMessageSender?: string | null;
@@ -296,6 +298,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
         </View>
       );
     }
+    if (item.emoji) return <Text style={{ fontSize: M.emoji, lineHeight: M.lead }}>{item.emoji}</Text>;
     if (item.projectId) return <ProjectSquare color={projectColor(item.projectId)} fallbackKey={item.projectId} />;
     return <Text style={[type.price, { color: k.muted }]}>#</Text>;
   };
