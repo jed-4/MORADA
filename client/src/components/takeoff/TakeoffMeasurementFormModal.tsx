@@ -11,6 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { unitFitsType, unitForType } from "./useTakeoffGeometry";
 import { useToast } from "@/hooks/use-toast";
 import type { TakeoffCategory, TakeoffMeasurement } from "@shared/schema";
 
@@ -61,7 +62,9 @@ export const TYPE_OPTIONS: Array<{ value: MeasurementType; label: string; hint: 
 
 export const UNIT_OPTIONS: Record<MeasurementType, string[]> = {
   area: ["m²", "ft²"],
-  linear: ["lm", "m", "m²", "ft"],
+  // No m²: a linear item reports m² only once it has a wall height, and the
+  // height decides that (the picker then shows m² and locks).
+  linear: ["lm", "m", "ft"],
   count: ["each", "pcs"],
   manual: ["", "m", "m²", "m³", "kg", "L", "hrs", "each"],
 };
@@ -114,7 +117,15 @@ export default function TakeoffMeasurementFormModal({
   const drawnShapes = Array.isArray((editing as any)?.geometry)
     ? ((editing as any).geometry as unknown[]).length
     : 0;
-  const typeLocked = isEdit && drawnShapes > 0;
+  /* Area and Linear can be swapped even after drawing: it is the fix for an
+     item set up as the wrong one (a joist run drawn as an area). The marks
+     can't be re-read as the other type, so they are cleared on save, and the
+     form says so before that happens. Count and Manual stay locked once there
+     are marks — nothing they hold converts. */
+  const storedType = (editing?.measurementType ?? "area") as MeasurementType;
+  const swappable = (t: MeasurementType) => t === "area" || t === "linear";
+  const typeLocked = isEdit && drawnShapes > 0 && !swappable(storedType);
+  const restrictToSwap = isEdit && drawnShapes > 0 && swappable(storedType);
   const [name, setName] = useState("");
   const [categoryId, setCategoryId] = useState<string>("__none__");
   const [newCategory, setNewCategory] = useState("");
@@ -140,7 +151,16 @@ export default function TakeoffMeasurementFormModal({
       setColor(editing.color);
       setMultiplier(String(editing.multiplier ?? 1));
       setWastePercent(String(editing.wastePercent ?? 0));
-      setUnit(editing.unit || defaultUnitFor(editing.measurementType as MeasurementType));
+      // Seeded with a unit that fits the type. A stored mismatch (an area
+      // labelled "lm") would otherwise sit in the picker as a value it doesn't
+      // offer, show blank, and be saved straight back.
+      setUnit(
+        unitForType(
+          editing.measurementType,
+          editing.unit || defaultUnitFor(editing.measurementType as MeasurementType),
+          (editing as { heightMm?: number | null }).heightMm ?? null,
+        ),
+      );
       setFillPattern((editing.fillPattern as FillPattern) || "solid");
       setLineType((editing.lineType as LineType) || "solid");
       setLineSize(editing.lineSize ?? 2);
@@ -291,7 +311,11 @@ export default function TakeoffMeasurementFormModal({
                 </SelectTrigger>
                 <SelectContent>
                   {TYPE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
+                    <SelectItem
+                      key={opt.value}
+                      value={opt.value}
+                      disabled={restrictToSwap && !swappable(opt.value)}
+                    >
                       <span className="font-medium">{opt.label}</span>
                       <span className="text-muted-foreground ml-2 text-xs">{opt.hint}</span>
                     </SelectItem>
@@ -306,6 +330,13 @@ export default function TakeoffMeasurementFormModal({
                 <p className="text-xs text-muted-foreground" data-testid="text-type-locked">
                   Locked — {drawnShapes} shape{drawnShapes !== 1 ? "s" : ""} already measured.
                   Delete them to change the type.
+                </p>
+              )}
+              {restrictToSwap && measurementType !== storedType && (
+                <p className="text-xs text-destructive" data-testid="text-type-change-clears">
+                  Saving clears the {drawnShapes} mark{drawnShapes !== 1 ? "s" : ""} already drawn —
+                  {drawnShapes !== 1 ? " they were" : " it was"} measured as {storedType === "area" ? "an area" : "a length"}.
+                  Draw {drawnShapes !== 1 ? "them" : "it"} again afterwards.
                 </p>
               )}
             </div>
@@ -331,6 +362,23 @@ export default function TakeoffMeasurementFormModal({
               </Select>
             </div>
           </div>
+
+          {/* An item saved with a unit that doesn't fit its type — an Area
+              labelled "lm" — measured one thing and claimed another. Say
+              which, so the fix is a click rather than a mystery. */}
+          {isEdit && editing && measurementType === storedType &&
+            !unitFitsType(editing.measurementType, editing.unit, (editing as { heightMm?: number | null }).heightMm ?? null) && (
+            <p
+              className="text-xs rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5"
+              data-testid="text-unit-type-mismatch"
+            >
+              This item measures <strong>{storedType === "area" ? "area" : storedType}</strong> but was labelled
+              {" "}<strong>{editing.unit}</strong>.
+              {storedType === "area" && ["lm", "m", "ft"].includes(editing.unit ?? "")
+                ? " If it's a length, set Type to Linear."
+                : " Saving corrects the label."}
+            </p>
+          )}
 
           {measurementType === "linear" && (
             <div className="space-y-1.5">

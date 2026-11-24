@@ -232,3 +232,73 @@ export function distanceToPolyline(p: Point, pts: Point[]): number {
   }
   return min;
 }
+
+/**
+ * The units an item of each type can honestly report.
+ *
+ * A measurement stores its type (what it draws and how it is measured) and its
+ * unit (what the row prints) separately, and nothing kept them in step. An
+ * edit made before #327 could save the unit of a NEW type while the type
+ * itself was dropped, and a take-off template saved from such an item carried
+ * the pair on to every project it was applied to. The result was an item
+ * labelled "lm" that drew and measured as an area: click along a joist run and
+ * the closed outline crossed itself, its halves cancelled, and the row read
+ * "0.04 lm".
+ *
+ * `manual` is free-form — its figure is typed, so any unit stands.
+ */
+const UNITS_BY_TYPE: Record<string, string[] | null> = {
+  area: ["m²", "ft²"],
+  linear: ["lm", "m", "ft"],
+  count: ["each", "pcs"],
+  manual: null,
+};
+
+/** Whether `unit` describes what an item of `type` actually measures. */
+export function unitFitsType(type: string, unit: string | null | undefined, heightMm?: number | null): boolean {
+  // A wall height turns a run into an area: m² and nothing else.
+  if (type === "linear" && heightMm) return unit === "m²";
+  const allowed = UNITS_BY_TYPE[type];
+  if (allowed === undefined) return true; // a type this file doesn't know: leave it be
+  if (allowed === null) return true;
+  return allowed.includes(unit ?? "");
+}
+
+/**
+ * The unit to store and show: the item's own when it fits its type, otherwise
+ * the type's default. Applied on every write and on display, so a mismatched
+ * row shows what it really measures instead of a label it doesn't.
+ */
+export function unitForType(type: string, unit: string | null | undefined, heightMm?: number | null): string {
+  if (unitFitsType(type, unit, heightMm)) return unit ?? "";
+  if (type === "linear") return unitForLinear(heightMm);
+  return defaultUnitForType(type);
+}
+
+function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
+  const orient = (p: Point, q: Point, r: Point) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const o1 = orient(a, b, c), o2 = orient(a, b, d), o3 = orient(c, d, a), o4 = orient(c, d, b);
+  return o1 * o2 < 0 && o3 * o4 < 0; // proper crossing only; touching at a corner is fine
+}
+
+/**
+ * Whether a closed outline crosses itself.
+ *
+ * The area of a crossed outline is not the area of what was meant: the
+ * shoelace sum counts its two lobes with opposite signs, so they cancel. It is
+ * almost always a line drawn on an Area item — points clicked ALONG something
+ * rather than AROUND it.
+ */
+export function polygonSelfIntersects(pts: Point[]): boolean {
+  const n = pts.length;
+  if (n < 4) return false;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    for (let j = i + 1; j < n; j++) {
+      // Neighbouring edges share a corner; skip them (and the wrap-around pair).
+      if (j === i || (j + 1) % n === i || (i + 1) % n === j) continue;
+      if (segmentsCross(a, b, pts[j], pts[(j + 1) % n])) return true;
+    }
+  }
+  return false;
+}

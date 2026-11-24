@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Trash2 } from "lucide-react";
 import type { TakeoffMeasurement, TakeoffCategory } from "@shared/schema";
+import { unitForType } from "./useTakeoffGeometry";
 
 export type TemplateItem = {
   name: string;
@@ -253,14 +254,18 @@ export function LoadTemplateModal({ open, onOpenChange, projectId, plans, catego
           color: item.color,
           geometry: [],
           quantity: 0,
-          // The saved unit wins; the derivation is the fallback for templates
-          // that predate it.
-          unit:
+          // The saved unit wins when it fits the type; otherwise the type's
+          // own. A template saved from a mismatched item (an Area labelled
+          // "lm") would otherwise recreate the mismatch on every project.
+          unit: unitForType(
+            item.measurementType,
             item.unit ??
-            (item.measurementType === "area" || (item.measurementType === "linear" && item.heightMm)
-              ? "m²"
-              : item.measurementType === "linear" ? "lm"
-              : item.measurementType === "count" ? "each" : ""),
+              (item.measurementType === "area" || (item.measurementType === "linear" && item.heightMm)
+                ? "m²"
+                : item.measurementType === "linear" ? "lm"
+                : item.measurementType === "count" ? "each" : ""),
+            item.heightMm ?? null,
+          ),
           heightMm: item.heightMm ?? null,
           multiplier: item.multiplier,
           wastePercent: item.wastePercent,

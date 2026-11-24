@@ -13682,9 +13682,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .pick({ color: true, geometry: true, label: true, fontSize: true, strokeWidth: true })
       .partial();
     // Measurement mutable fields — explicit allowlist (excludes projectId/planId/pageId/companyId).
+    // 🚨 measurementType was missing from this list from the day it was written
+    // (May 2026), and zod's pick() drops unlisted keys SILENTLY — so changing an
+    // item's type in Edit returned 200 and changed nothing. #327 made the client
+    // send the type; it never arrived. An item set from Area to Linear carried
+    // on drawing and measuring as an area while saying "lm".
     const updateTakeoffMeasurementSchema = insertTakeoffMeasurementSchema
       .pick({
-        name: true, categoryId: true, color: true, geometry: true,
+        name: true, categoryId: true, color: true, geometry: true, measurementType: true,
         quantity: true, unit: true, heightMm: true, multiplier: true, wastePercent: true,
         fillPattern: true, lineType: true, lineSize: true,
         isVisible: true, order: true,
@@ -13875,6 +13880,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (parsed.data.categoryId) {
           const cat = await storage.getTakeoffCategory(parsed.data.categoryId, req.user.companyId);
           if (!cat || cat.projectId !== req.params.projectId) return res.status(403).json({ error: "Invalid category" });
+        }
+        // A type change can't keep marks measured as the old type: a polygon's
+        // area is not a length. The edit form clears them and says so; any
+        // other caller has to do the same, explicitly.
+        if (parsed.data.measurementType && parsed.data.measurementType !== existing.measurementType) {
+          const hadMarks = Array.isArray(existing.geometry) && (existing.geometry as unknown[]).length > 0;
+          const clears = Array.isArray(parsed.data.geometry) && (parsed.data.geometry as unknown[]).length === 0;
+          if (hadMarks && !clears) {
+            return res.status(400).json({
+              error: "Changing the type clears the marks already drawn — send geometry: [] with the new type.",
+            });
+          }
         }
         const updated = await storage.updateTakeoffMeasurement(req.params.id, req.user.companyId, parsed.data);
         if (!updated) return res.status(404).json({ error: "Measurement not found" });
