@@ -64,7 +64,7 @@ import {
   FileText,
 } from "lucide-react";
 import type { EstimateTemplate } from "@shared/schema";
-import { TemplateEstimateGrid } from "@/components/estimates/TemplateEstimateGrid";
+import { TemplateEstimateGrid, newTemplateLine } from "@/components/estimates/TemplateEstimateGrid";
 import {
   UNGROUPED,
   currentTree,
@@ -127,33 +127,6 @@ const calcLineAmount = (item: TemplateItem): number => {
 const fmt = (n: number) =>
   n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// ─── Empty-item factory ───────────────────────────────────────────────────────
-
-const makeEmpty = (groupName: string, sortOrder: number): TemplateItem => ({
-  id: crypto.randomUUID(),
-  groupName,
-  name: "",
-  description: "",
-  costCodeId: undefined,
-  costCodeTitle: undefined,
-  unit: "ea",
-  quantity: 1,
-  unitPrice: 0,
-  markup: 0,
-  allowance: "None",
-  wastagePercent: 0,
-  type: "Material",
-  sortOrder,
-  isGroup: false,
-});
-
-// ─── Inline cell editor ───────────────────────────────────────────────────────
-
-interface CellEditingState {
-  itemId: string;
-  field: string;
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function EstimateTemplateDetail() {
@@ -161,10 +134,9 @@ export default function EstimateTemplateDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  // Editing state
-  const [editingCell, setEditingCell] = useState<CellEditingState | null>(null);
-  const [editingValue, setEditingValue] = useState("");
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["ungrouped"]));
+  // A line Add Item just made, for the grid to open for typing.
+  const [editLineId, setEditLineId] = useState<string | null>(null);
+  const clearEditLine = useCallback(() => setEditLineId(null), []);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<TemplateItem | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [addGroupDialogOpen, setAddGroupDialogOpen] = useState(false);
@@ -315,15 +287,16 @@ export default function EstimateTemplateDetail() {
     setDeleteConfirmItem(null);
   };
 
+  /**
+   * Add Item: a blank line with its name open for typing, so the price-list
+   * search shows straight away — the same as Add Line in a group. This used to
+   * set editing state on THIS page, which the grid never read, so the new line
+   * just sat there blank.
+   */
   const handleAddItem = (group: string) => {
-    const newItem = makeEmpty(group === "ungrouped" ? "" : group, items.length);
+    const newItem = newTemplateLine(items, group);
     saveItems([...items, newItem]);
-    // Auto-open name editing for the new item
-    setTimeout(() => {
-      setEditingCell({ itemId: newItem.id, field: "name" });
-      setEditingValue("");
-      setExpandedGroups((prev) => new Set([...prev, group]));
-    }, 200);
+    setEditLineId(newItem.id);
   };
 
   /**
@@ -487,13 +460,6 @@ export default function EstimateTemplateDetail() {
     });
 
     await saveItems([...base, ...mapped]);
-
-    // Imported groups should land open, not collapsed out of sight.
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      mapped.forEach((m) => next.add(m.groupName || "ungrouped"));
-      return next;
-    });
 
     return mapped.length;
   };
@@ -673,6 +639,8 @@ export default function EstimateTemplateDetail() {
             const row = items.find((i) => i.id === id);
             if (row) setDeleteConfirmItem(row);
           }}
+          editLineId={editLineId}
+          onEditLineOpened={clearEditLine}
         />
       )}
 
