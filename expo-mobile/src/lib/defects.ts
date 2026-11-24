@@ -437,7 +437,7 @@ export function mentionIdsInText(text: string, picked: TeamUser[]): string[] {
 export const DEFECT_DOT: Record<DefectStage, DotStatus> = {
   open: 'pending',
   sent: 'sent',
-  accepted: 'done',
+  accepted: 'sent',
   fixed: 'inProgress',
   closed: 'done',
   rejected: 'rejected',

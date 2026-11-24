@@ -291,7 +291,7 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
 
   /** A photo from site (camera or library) onto the chosen product. */
   const addPhoto = () => {
-    if (!chosen) return;
+    if (!chosen || uploading) return;
     const upload = async (assets: ImagePicker.ImagePickerAsset[]) => {
       setUploading(true);
       try {
@@ -758,7 +758,7 @@ export default function SelectionDetailScreen({ navigation, route, embedded = fa
                 key="photo"
                 lead={<Camera size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
                 title={uploading ? 'Uploading…' : 'Add a photo'}
-                onPress={() => { moreRef.current?.dismiss(); setTimeout(addPhoto, 300); }}
+                onPress={() => { if (uploading) return; moreRef.current?.dismiss(); setTimeout(addPhoto, 300); }}
               />
             ) : null}
             {chosen?.url ? (

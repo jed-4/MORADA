@@ -388,7 +388,6 @@ export default function DefectCaptureScreen({ navigation, route }: Props) {
             style={[type.headingSemi, cs.input, { color: c.text }]}
             returnKeyType="next"
             maxLength={200}
-            multiline
             accessibilityLabel="Title (optional)"
           />
           <View style={cs.notesRow}>

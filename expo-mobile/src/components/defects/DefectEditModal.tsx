@@ -167,7 +167,6 @@ export function DefectEditModal({ defect, visible, canDelete, onClose, onSaved, 
                 placeholderTextColor={c.placeholderLarge}
                 style={[type.headingSemi, styles.input, { color: c.text }]}
                 maxLength={200}
-                multiline
                 accessibilityLabel="Title"
               />
               <TextInput

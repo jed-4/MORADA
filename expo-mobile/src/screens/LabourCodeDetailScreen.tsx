@@ -23,7 +23,14 @@ interface Timesheet {
   description: string | null;
   status: 'draft' | 'submitted' | 'approved' | 'rejected';
   costCodeId: string | null;
+  /** Estimate work item a clock-in was logged against (no cost code of its own). */
+  workItemId?: string | null;
   costCodeSplits?: { costCodeId: string; duration: string }[];
+}
+
+interface EstimateItem {
+  id: string;
+  costCode?: string | null;
 }
 
 interface BudgetRow {
@@ -80,16 +87,19 @@ function dayLabel(value: string): string {
 
 /**
  * Hours this timesheet booked to the code. Same rule as the server's labour
- * budget: split rows win; otherwise the timesheet's own cost code. Only
- * submitted and approved time counts, so the list adds up to "Used".
+ * budget (server/storage.ts recalculateLabourHoursBudget): split rows win;
+ * otherwise the timesheet's own cost code; otherwise the cost code of its
+ * linked estimate work item (mobile clock-ins). Only submitted and approved
+ * time counts, so the list adds up to "Used".
  */
-function hoursForCode(ts: Timesheet, costCodeId: string): number {
+function hoursForCode(ts: Timesheet, costCodeId: string, workItemCode: Map<string, string>): number {
   if (ts.status !== 'submitted' && ts.status !== 'approved') return 0;
   const splits = ts.costCodeSplits ?? [];
   if (splits.length > 0) {
     return splits.filter(s => s.costCodeId === costCodeId).reduce((sum, s) => sum + hoursNum(s.duration), 0);
   }
-  return ts.costCodeId === costCodeId ? hoursNum(ts.duration) : 0;
+  const code = ts.costCodeId || (ts.workItemId ? workItemCode.get(ts.workItemId) : undefined);
+  return code === costCodeId ? hoursNum(ts.duration) : 0;
 }
 
 export default function LabourCodeDetailScreen({
@@ -105,6 +115,8 @@ export default function LabourCodeDetailScreen({
 
   const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
   const [users, setUsers] = useState<TeamUser[]>([]);
+  // Estimate work item id → cost code id, for timesheets with no code of their own.
+  const [workItemCode, setWorkItemCode] = useState<Map<string, string>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [person, setPerson] = useState<string | null>(null);
@@ -122,7 +134,16 @@ export default function LabourCodeDetailScreen({
         apiFetch<TeamUser[]>('/api/users/assignable').catch(() => []),
         apiFetch<BudgetRow[]>(`/api/projects/${p.projectId}/labour-hours-budget`).catch(() => null),
       ]);
-      setTimesheets(ts || []);
+      const list = ts || [];
+      // Only pay for the estimate items fetch when a timesheet needs it.
+      const needsWorkItems = list.some(t => !t.costCodeId && t.workItemId && !(t.costCodeSplits?.length));
+      const items = needsWorkItems
+        ? await apiFetch<EstimateItem[]>(`/api/projects/${p.projectId}/estimate-items`).catch(() => [])
+        : [];
+      const map = new Map<string, string>();
+      (items || []).forEach(it => { if (it.costCode) map.set(it.id, it.costCode); });
+      setWorkItemCode(map);
+      setTimesheets(list);
       setUsers(team || []);
       const row = budget?.find(r => r.costCodeId === p.costCodeId);
       if (row) {
@@ -159,13 +180,13 @@ export default function LabourCodeDetailScreen({
           id: ts.id,
           userId: ts.userId,
           date: ts.date,
-          hours: hoursForCode(ts, p.costCodeId),
+          hours: hoursForCode(ts, p.costCodeId, workItemCode),
           note: ts.description?.trim() || null,
           pending: ts.status === 'submitted',
         }))
         .filter(e => e.hours > 0)
         .sort((a, b) => dateStrOf(b.date).localeCompare(dateStrOf(a.date))),
-    [timesheets, p.costCodeId],
+    [timesheets, p.costCodeId, workItemCode],
   );
 
   const people = useMemo(() => {
