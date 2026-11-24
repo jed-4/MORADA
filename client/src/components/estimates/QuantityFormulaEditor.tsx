@@ -37,6 +37,8 @@ export interface QuantityPreview {
   text: string;
   /** Why it cannot be worked out, if it cannot. */
   error?: string;
+  /** Shown in place of "= text" — a template has no figure to show yet. */
+  label?: string;
 }
 
 interface Props {
@@ -52,6 +54,12 @@ interface Props {
   onPick: (name: string, id: string) => void;
   onAddInTakeoff?: () => void;
   testId: string;
+  /**
+   * "template": the list is the company's take-off TEMPLATE items — names with
+   * nothing measured — so it shows units, not quantities, and a name typed by
+   * hand is fine (it links when an item of that name is measured).
+   */
+  variant?: "estimate" | "template";
 }
 
 const UNCAT = "__uncat__";
@@ -68,6 +76,7 @@ export default function QuantityFormulaEditor({
   onPick,
   onAddInTakeoff,
   testId,
+  variant = "estimate",
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -366,7 +375,7 @@ export default function QuantityFormulaEditor({
       {/* The cell keeps the value visible underneath while the card is open, so
           the row does not appear to empty itself as you type. */}
       <span className="pointer-events-none truncate text-sm text-muted-foreground" aria-hidden="true">
-        {preview.text || (preview.error ? "—" : value)}
+        {preview.label || preview.text || (preview.error ? "—" : value)}
       </span>
 
       {createPortal(
@@ -381,7 +390,7 @@ export default function QuantityFormulaEditor({
         >
       {/* What the expression comes to, or why it cannot be worked out. A plain
           number says nothing — repeating "12" back beside "12" is noise. */}
-      {(preview.text || preview.error) && (
+      {(preview.text || preview.error || preview.label) && (
         <span
           className={`flex-shrink-0 rounded-sm px-1.5 py-0.5 text-xs tabular-nums whitespace-nowrap ${
             preview.error
@@ -391,7 +400,7 @@ export default function QuantityFormulaEditor({
           title={preview.error}
           data-testid={`${testId}-preview`}
         >
-          {preview.error ? "—" : `= ${preview.text}`}
+          {preview.error ? "—" : preview.label ?? `= ${preview.text}`}
         </span>
       )}
 
@@ -534,7 +543,9 @@ export default function QuantityFormulaEditor({
           {grouped.length === 0 ? (
             <div className="px-3 py-4 text-sm text-muted-foreground">
               {measurements.length === 0
-                ? "Nothing measured on this project yet."
+                ? variant === "template"
+                  ? "No take-off templates yet. You can still type {Item name}."
+                  : "Nothing measured on this project yet."
                 : `Nothing matches “${query.trim()}”.`}
             </div>
           ) : (
@@ -564,7 +575,7 @@ export default function QuantityFormulaEditor({
                     />
                     <span className="flex-1 truncate">{m.name}</span>
                     <span className="tabular-nums text-muted-foreground">
-                      {Math.round((m.quantity ?? 0) * 100) / 100} {m.unit}
+                      {variant === "template" ? m.unit : `${Math.round((m.quantity ?? 0) * 100) / 100} ${m.unit}`}
                     </span>
                   </button>
                   );
@@ -572,6 +583,7 @@ export default function QuantityFormulaEditor({
               </div>
             ))
           )}
+          {onAddInTakeoff && (
           <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-border bg-popover px-3 py-2">
             <button
               type="button"
@@ -582,6 +594,7 @@ export default function QuantityFormulaEditor({
               <Ruler className="h-4 w-4" /> Add in take-off
             </button>
           </div>
+          )}
         </div>,
         document.body,
       )}

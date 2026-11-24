@@ -84,7 +84,15 @@ function tokenize(input: string): { tokens: Token[] } | { error: string } {
     }
     if (c === "{") {
       const m = /^\{takeoff:([0-9a-zA-Z_-]+)\}/.exec(s.slice(i));
-      if (!m) return { error: "Unfinished take-off reference" };
+      if (!m) {
+        // A reference by NAME is a line waiting for its take-off item — it
+        // came from an estimate template before that item was measured.
+        const named = /^\{([^{}]*)\}/.exec(s.slice(i));
+        if (named && named[1].trim() && !/^takeoff:/.test(named[1].trim())) {
+          return { error: `Waiting for take-off item "${named[1].trim()}"` };
+        }
+        return { error: "Unfinished take-off reference" };
+      }
       tokens.push({ kind: "ref", id: m[1] });
       i += m[0].length;
       continue;
@@ -258,4 +266,163 @@ export function displayToFormula(
   });
   if (error) return { ok: false, error };
   return { ok: true, formula };
+}
+
+// ─── References by NAME: estimate templates ────────────────────────────────
+//
+// A template has no project, so it has no measurements to point at. Its lines
+// say WHICH take-off item they want by name — `{Wall tiles} * 1.1` — and the
+// name becomes an id when the template is loaded into an estimate whose
+// project has an item called that. Until then the estimate line keeps the
+// name in its formula and sits at 0: a "waiting" line. Rule 1 above still
+// holds for anything that is linked; a name is only ever a placeholder.
+
+/** `{Wall tiles}` — anything in braces that is not an id reference. */
+const NAME_REF_PATTERN = /\{([^{}]*)\}/g;
+
+/** How names are compared: case, outer spaces and runs of spaces don't count. */
+export function normaliseTakeoffName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** The take-off item names a formula is still waiting for, first-seen order. */
+export function extractNameRefs(formula: string | null | undefined): string[] {
+  if (!formula) return [];
+  const names: string[] = [];
+  const seen = new Set<string>();
+  const re = new RegExp(NAME_REF_PATTERN.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(formula)) !== null) {
+    const name = m[1].trim();
+    if (!name || /^takeoff:/.test(name)) continue;
+    const key = normaliseTakeoffName(name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+  return names;
+}
+
+/** True when a formula names at least one take-off item it isn't linked to yet. */
+export function isWaitingFormula(formula: string | null | undefined): boolean {
+  return extractNameRefs(formula).length > 0;
+}
+
+/**
+ * Check a template's formula reads, without any numbers to read it with:
+ * every name stands in as 1. `{Wall tiles} * ` is caught here, at the template,
+ * rather than on every estimate it is loaded into.
+ */
+export function checkTemplateFormula(
+  text: string,
+): { ok: true; formula: string; names: string[] } | { ok: false; error: string } {
+  const formula = text.trim();
+  if (!formula) return { ok: false, error: "Empty formula" };
+  const names = extractNameRefs(formula);
+  if (names.length === 0) {
+    return { ok: false, error: "Pick a take-off item — type { to choose one" };
+  }
+  if (extractTakeoffRefs(formula).length > 0) {
+    // An id only means something inside one project.
+    return { ok: false, error: "A template can only name take-off items, not link to one project's" };
+  }
+  const stand = formula.replace(NAME_REF_PATTERN, "1");
+  const result = evaluateQuantityFormula(stand, new Map());
+  if (!result.ok) {
+    return { ok: false, error: result.error === "Divide by zero" ? "Divides by zero" : result.error };
+  }
+  return { ok: true, formula, names };
+}
+
+export type NameResolution = {
+  /** The formula with every uniquely matched name swapped for its id. */
+  formula: string;
+  /** Names that found exactly one item. */
+  linked: string[];
+  /** Names that found none. */
+  waiting: string[];
+  /** Names that found more than one — never guessed. */
+  ambiguous: string[];
+};
+
+/**
+ * Swap names for ids where the project has exactly one item of that name.
+ *
+ * `byName` is keyed by normaliseTakeoffName. A name matching two items (the
+ * same item measured on two plans) is left as a name: quantities are money,
+ * and picking one would quietly price half the job.
+ */
+export function resolveNameRefs(
+  formula: string,
+  byName: Map<string, string[]>,
+): NameResolution {
+  const linked: string[] = [];
+  const waiting: string[] = [];
+  const ambiguous: string[] = [];
+  const note = (list: string[], name: string) => {
+    if (!list.some((n) => normaliseTakeoffName(n) === normaliseTakeoffName(name))) list.push(name);
+  };
+  const out = formula.replace(NAME_REF_PATTERN, (all, raw: string) => {
+    const name = raw.trim();
+    if (!name || /^takeoff:/.test(name)) return all;
+    const ids = byName.get(normaliseTakeoffName(name)) ?? [];
+    if (ids.length === 1) {
+      note(linked, name);
+      return `{takeoff:${ids[0]}}`;
+    }
+    note(ids.length === 0 ? waiting : ambiguous, name);
+    return all;
+  });
+  return { formula: out, linked, waiting, ambiguous };
+}
+
+/** Build the index resolveNameRefs reads from a project's measurements. */
+export function indexTakeoffByName(
+  measurements: Array<{ id: string; name: string }>,
+): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const m of measurements) {
+    const key = normaliseTakeoffName(m.name ?? "");
+    if (!key) continue;
+    map.set(key, [...(map.get(key) ?? []), m.id]);
+  }
+  return map;
+}
+
+export type TemplateFormulaLink = {
+  /** What to store on the estimate line, or null to store none. */
+  formula: string | null;
+  /** The quantity to store, or null to keep what was sent. */
+  quantity: number | null;
+  /** Every name found an item: the line follows the take-off from now on. */
+  linked: boolean;
+  /** Names still waiting (none measured) and names matching more than one. */
+  waitingFor: string[];
+  ambiguous: string[];
+};
+
+/**
+ * A template line's `{Wall tiles} * 1.1`, as it lands in a project.
+ *
+ * Fully matched → id form, evaluated, the line's quantity is the take-off's.
+ * Anything unmatched → the line keeps the formula with the names it couldn't
+ * link and sits at 0, never at the template's number, so a waiting line can't
+ * reach a quote looking priced. A formula that doesn't read, or that carries
+ * ids from some other project, is dropped and the sent quantity kept.
+ */
+export function linkTemplateFormula(
+  raw: unknown,
+  byName: Map<string, string[]>,
+  quantities: Map<string, number>,
+): TemplateFormulaLink {
+  const none: TemplateFormulaLink = { formula: null, quantity: null, linked: false, waitingFor: [], ambiguous: [] };
+  if (typeof raw !== "string" || !raw.trim()) return none;
+  const checked = checkTemplateFormula(raw);
+  if (!checked.ok) return none;
+  const r = resolveNameRefs(checked.formula, byName);
+  if (r.waiting.length === 0 && r.ambiguous.length === 0) {
+    const value = evaluateQuantityFormula(r.formula, quantities);
+    if (value.ok) return { formula: r.formula, quantity: value.value, linked: true, waitingFor: [], ambiguous: [] };
+  }
+  return { formula: r.formula, quantity: 0, linked: false, waitingFor: r.waiting, ambiguous: r.ambiguous };
 }

@@ -347,7 +347,9 @@ import {
 import { computeEstimateItemPrice, resolveEstimateStoredPrice, resolveUnitCostBasis } from "@shared/pricing";
 import {
   resolveFormulaOnWrite, syncItemRefs, repriceLinesForMeasurement, getMeasurementUsage,
+  loadTakeoffIndex, insertRefsForNewItems, linkWaitingLines,
 } from "./services/quantityFormulas";
+import { linkTemplateFormula } from "@shared/quantityFormula";
 import { compareNumberedNames } from "@shared/utils";
 import { scheduleItemTier, computeProjectBands } from "@shared/scheduleVisibility";
 import {
@@ -8968,6 +8970,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         groupIdByRawPath.set(raw, await resolveGroupPath(raw));
       }
 
+      /* Take-off quantities from a template arrive by NAME — `{Wall tiles} *
+         1.1` — because a template belongs to no project. Each name becomes
+         this project's item of that name; a line whose item isn't measured
+         yet keeps the name and waits at 0 (linkWaitingLines picks it up when
+         one is). The take-off is read once, and only if a row needs it. */
+      const takeoffIndex = items.some((i: any) => typeof i?.quantityFormula === "string" && i.quantityFormula.trim())
+        ? await loadTakeoffIndex(estimate.projectId)
+        : null;
+      const takeoffSummary = { linked: 0, waiting: 0, waitingFor: [] as string[], ambiguous: [] as string[] };
+      const noteName = (list: string[], name: string) => {
+        if (!list.some((n) => n.toLowerCase() === name.toLowerCase())) list.push(name);
+      };
+
       // Validate all items first
       const validatedItems: any[] = [];
       // Parallel to validatedItems: whether that row said it is a sub-item.
@@ -9006,7 +9021,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const groupIdToStore = rawGroupPath ? (groupIdByRawPath.get(rawGroupPath) ?? null) : null;
         
         const unitCostExTax = item.unitCostExTax || 0;
-        const quantity = item.quantity ?? 0;
+        const takeoffLink = takeoffIndex
+          ? linkTemplateFormula(item.quantityFormula, takeoffIndex.byName, takeoffIndex.quantities)
+          : null;
+        if (takeoffLink?.formula) {
+          if (takeoffLink.linked) takeoffSummary.linked++;
+          else takeoffSummary.waiting++;
+          takeoffLink.waitingFor.forEach((n) => noteName(takeoffSummary.waitingFor, n));
+          takeoffLink.ambiguous.forEach((n) => noteName(takeoffSummary.ambiguous, n));
+        }
+        const quantity = takeoffLink?.formula ? (takeoffLink.quantity ?? 0) : (item.quantity ?? 0);
         const markupPercent = item.markupPercent ?? null;
 
         const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
@@ -9030,6 +9054,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           allowanceStatus: "pending",
           pcMarkupPercent: undefined,
           quantity,
+          quantityFormula: takeoffLink?.formula ?? null,
           // Wastage drives resolveEstimateStoredPrice above, so it has to be
           // persisted too — otherwise the imported price reflects wastage the
           // stored row says is 0, and the next edit recomputes it away.
@@ -9128,13 +9153,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : [];
       const createdItems = [...createdParents, ...createdChildren];
 
+      if (takeoffIndex) {
+        await insertRefsForNewItems(createdItems as any[], new Set(takeoffIndex.quantities.keys()));
+      }
+
       if (createdItems.length > 0) {
         triggerBudgetAutoRecalc(estimateId);
       }
       res.status(201).json({
         success: true,
         count: createdItems.length,
-        items: createdItems
+        items: createdItems,
+        ...(takeoffIndex ? { takeoff: takeoffSummary } : {}),
       });
     } catch (error: any) {
       if (error.message?.includes("locked estimate")) {
@@ -13933,7 +13963,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (!cat || cat.projectId !== req.params.projectId) return res.status(403).json({ error: "Invalid category" });
         }
         const m = await storage.createTakeoffMeasurement(parsed.data);
-        res.status(201).json(m);
+        // A new name on the take-off: estimate lines loaded from a template
+        // that were waiting for an item called this link to it now.
+        let linkedItems: string[] = [];
+        try {
+          linkedItems = await linkWaitingLines(req.params.projectId);
+        } catch (e) {
+          console.error("[takeoff] linkWaitingLines:", e);
+        }
+        res.status(201).json({ ...m, linkedItems });
       } catch (e) { console.error("[takeoff] createMeasurement:", e); res.status(500).json({ error: "Failed to create measurement" }); }
     });
 
@@ -13973,7 +14011,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.error("[takeoff] repriceLinesForMeasurement:", e);
           }
         }
-        res.json({ ...updated, repricedItems });
+        // Renamed onto a name a waiting line wants → link it. Lines already
+        // linked are by id, so renaming never unlinks anything.
+        let linkedItems: string[] = [];
+        if (parsed.data.name !== undefined && parsed.data.name !== existing.name) {
+          try {
+            linkedItems = await linkWaitingLines(req.params.projectId);
+          } catch (e) {
+            console.error("[takeoff] linkWaitingLines:", e);
+          }
+        }
+        res.json({ ...updated, repricedItems, linkedItems });
       } catch (e) { console.error("[takeoff] updateMeasurement:", e); res.status(500).json({ error: "Failed to update measurement" }); }
     });
 

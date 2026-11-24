@@ -393,6 +393,18 @@ export default function EstimateDetail() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
   const [estimateTab, setEstimateTab] = useState<'estimate' | 'enotes' | 'labour' | 'takeoff'>('estimate');
+  /* Measuring on the Takeoff tab changes lines here on the server — a
+     re-measure re-prices them, a new item links lines that were waiting for
+     it — and this page's queries never go stale on their own. Coming back to
+     the estimate is when to look again. */
+  const lastTabRef = useRef(estimateTab);
+  useEffect(() => {
+    const cameFrom = lastTabRef.current;
+    lastTabRef.current = estimateTab;
+    if (estimateTab !== 'estimate' || cameFrom !== 'takeoff' || !effectiveEstimateId) return;
+    queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+  }, [estimateTab, effectiveEstimateId]);
   const [editingName, setEditingName] = useState("");
   const [isEditingMarkup, setIsEditingMarkup] = useState(false);
   const [editingMarkup, setEditingMarkup] = useState("");
@@ -804,6 +816,10 @@ export default function EstimateDetail() {
           // every line at 1 (#8). An estimate line can't hold a blank quantity
           // (the column is NOT NULL), so blank lands as the 0 you saw.
           quantity: item.quantity ?? 0,
+          // By NAME — `{Wall tiles} * 1.1`. The server swaps each name for
+          // this project's take-off item of that name; one not measured yet
+          // leaves the line waiting at 0 until it is.
+          quantityFormula: item.quantityFormula || undefined,
           unitCostExTax: (item.unitPrice ?? 0) / 100, // template stores in cents
           markupPercent: item.markup ?? 0,
           allowance: item.allowance || "None",
@@ -831,13 +847,13 @@ export default function EstimateDetail() {
         groups: groupDetails,
       });
     },
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "groups"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
       setIsTemplatePickerOpen(false);
       setTemplateSearch("");
-      toast({ title: "Template loaded", description: "Groups and items have been imported from the template." });
+      toast(templateLoadedToast(result?.takeoff));
     },
     onError: (error: any) => {
       toast({ title: "Failed to load template", description: error.message, variant: "destructive" });
@@ -2810,6 +2826,14 @@ export default function EstimateDetail() {
     // server evaluates it again and stores both it and what it came to.
     if (field === 'quantity' && !isPlainNumber(String(editingValue ?? ""))) {
       const text = String(editingValue ?? "").trim();
+      // A line waiting for its take-off item opens as `{Wall tiles} * 1.1`,
+      // which can't be converted until that item exists. Left as it was, it is
+      // simply not an edit.
+      const currentFormula = (item as any).quantityFormula as string | null | undefined;
+      if (currentFormula && text === formulaToDisplay(currentFormula, takeoffNames).trim()) {
+        setEditingCell(null);
+        return;
+      }
       const converted = displayToFormula(text, takeoffByName, pickedTakeoffRef.current);
       if (!converted.ok) {
         toast({ title: "Can't read that quantity", description: converted.error, variant: "destructive" });
@@ -7747,4 +7771,25 @@ export default function EstimateDetail() {
       </Dialog>
     </div>
   );
+}
+/**
+ * What loading a template did with its take-off quantities. Silent about the
+ * take-off when the template had none; otherwise says how many lines took
+ * their quantity from the plan and which items the rest are waiting for.
+ */
+function templateLoadedToast(takeoff?: { linked: number; waiting: number; waitingFor: string[]; ambiguous: string[] }) {
+  if (!takeoff || takeoff.linked + takeoff.waiting === 0) {
+    return { title: "Template loaded", description: "Groups and items have been imported from the template." };
+  }
+  const parts = [`${takeoff.linked} ${takeoff.linked === 1 ? "line" : "lines"} linked to the take-off`];
+  if (takeoff.waiting > 0) {
+    const names = takeoff.waitingFor.slice(0, 4).join(", ") + (takeoff.waitingFor.length > 4 ? "…" : "");
+    parts.push(`${takeoff.waiting} waiting for: ${names}`);
+  }
+  const tail = takeoff.ambiguous.length
+    ? ` More than one take-off item is called ${takeoff.ambiguous.map((n) => `"${n}"`).join(", ")} — pick the right one on those lines.`
+    : takeoff.waiting > 0
+      ? " They fill in when those items are measured."
+      : "";
+  return { title: "Template loaded", description: `${parts.join(" · ")}.${tail}` };
 }
