@@ -18,7 +18,24 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import type { DragEndEvent } from "@dnd-kit/core";
+import type { DragEndEvent, DragMoveEvent, CollisionDetection } from "@dnd-kit/core";
+import {
+  NEST_ZONE_BOTTOM,
+  NEST_ZONE_TOP,
+  descendantsOf,
+  hiddenGroupIds,
+  planGroupDrop,
+  type DropTarget,
+  type GroupMove,
+} from "@/components/estimates/estimateDragTypes";
+import {
+  UNGROUPED,
+  currentTree,
+  layoutTemplateGroups,
+  templateDescendants,
+  templateGroupOrder,
+  templateGroupParents,
+} from "@/components/estimates/templateGroupTree";
 import { computeEstimateItemPrice, round2 } from "@shared/pricing";
 import type { CostCode, CostCategory, EstimateItem, EstimateGroup, FieldCategoryWithOptions } from "@shared/schema";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
@@ -86,7 +103,6 @@ export interface TemplateItem {
 }
 
 const TAX_RATE = 10;
-const UNGROUPED = "ungrouped";
 
 // ─── Adapters ────────────────────────────────────────────────────────────────
 // A template line and an estimate line are the same idea with different field
@@ -291,6 +307,31 @@ export function TemplateEstimateGrid({
     0,
     { reorderable: true },
   );
+  /**
+   * The newest copy of the lines, including edits not yet drawn.
+   *
+   * Every write here rewrites the whole list, and `items` only catches up on
+   * the next render. Two edits close together (Enter on one quantity, then
+   * straight into the next) used to build the second from the list as it was
+   * BEFORE the first, so the second save quietly put the first one back.
+   * Writes start from this instead; it only takes `items` when the page
+   * hands over a genuinely new list.
+   */
+  const latestItems = useRef(items);
+  const seenItems = useRef(items);
+  if (seenItems.current !== items) {
+    seenItems.current = items;
+    latestItems.current = items;
+  }
+  const commit = useCallback(
+    (build: (current: TemplateItem[]) => TemplateItem[]) => {
+      const next = build(latestItems.current);
+      latestItems.current = next;
+      onSave(next);
+    },
+    [onSave],
+  );
+
   const [editingCell, setEditingCell] = useState<{ itemId: string; field: string } | null>(null);
   const [activeCell, setActiveCell] = useState<{ itemId: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState("");
@@ -358,23 +399,18 @@ export function TemplateEstimateGrid({
     const byName = new Map<string, TemplateItem>();
     groupRows.forEach((g) => byName.set(g.name || UNGROUPED, g));
 
-    const order: string[] = [];
-    const seen = new Set<string>();
     // Group rows first (they carry the author's ordering), then any group that
     // only exists as a name on a line — i.e. every template written before
-    // groups became real records.
-    groupRows.forEach((g) => {
-      const n = g.name || UNGROUPED;
-      if (!seen.has(n)) { seen.add(n); order.push(n); }
-    });
-    lineItems.forEach((i) => {
-      const n = i.groupName || UNGROUPED;
-      if (!seen.has(n)) { seen.add(n); order.push(n); }
-    });
-    if (order.length === 0) order.push(UNGROUPED);
+    // groups became real records. A group's parent comes from its row's
+    // parentGroupName; `order` is its place in that list, which is all the
+    // shared card needs to sort siblings.
+    const order = templateGroupOrder(items);
+    const parents = templateGroupParents(items);
 
-    return order.map((name) => ({
+    return order.map((name, idx) => ({
       id: name,
+      parentGroupId: parents.get(name) ?? null,
+      order: idx,
       name: name === UNGROUPED ? "General" : name,
       description: byName.get(name)?.description || null,
       isCollapsed: byName.get(name)?.isCollapsed ?? false,
@@ -383,7 +419,7 @@ export function TemplateEstimateGrid({
       // the same default. EstimateGroupCard shows it as a badge by the name.
       defaultCostCode: byName.get(name)?.costCodeId || null,
     }) as unknown as EstimateGroup);
-  }, [groupRows, lineItems]);
+  }, [groupRows, items]);
 
   const groupedItems: Record<string, EstimateItem[]> = useMemo(() => {
     const out: Record<string, EstimateItem[]> = {};
@@ -434,6 +470,27 @@ export function TemplateEstimateGrid({
         },
         { builderCostExTax: 0, builderCostIncTax: 0, clientAmountExTax: 0, clientTax: 0, clientAmountIncTax: 0 },
       );
+      out[g.id] = t;
+    });
+    // A parent's figures include everything nested under it, as on the
+    // estimate (calculateGroupTotals). Deepest groups first, so each child is
+    // final before it is added to its parent.
+    const depth = (id: string) => {
+      let d = 0;
+      let cur = (groups.find((x) => x.id === id) as any)?.parentGroupId;
+      while (cur && d < 50) { d++; cur = (groups.find((x) => x.id === cur) as any)?.parentGroupId; }
+      return d;
+    };
+    groups
+      .slice()
+      .sort((a, b) => depth(b.id) - depth(a.id))
+      .forEach((g) => {
+        const parent = (g as any).parentGroupId as string | null;
+        if (!parent || !out[parent]) return;
+        for (const k of Object.keys(out[g.id])) out[parent][k] += out[g.id][k];
+      });
+    groups.forEach((g) => {
+      const t = out[g.id];
       out[g.id] = {
         builderCostExTax: round2(t.builderCostExTax),
         builderCostIncTax: round2(t.builderCostIncTax),
@@ -473,8 +530,8 @@ export function TemplateEstimateGrid({
       const movesGroup = "groupId" in data;
       const groupName = data.groupId === UNGROUPED || data.groupId === "none" ? undefined : data.groupId;
       if (Object.keys(patch).length === 0 && !movesGroup) return;
-      onSave(
-        items.map((i) =>
+      commit((current) =>
+        current.map((i) =>
           ids.has(i.id) && !i.isGroup
             ? {
                 ...i,
@@ -487,7 +544,7 @@ export function TemplateEstimateGrid({
         ),
       );
     },
-    [items, onSave, costCodes],
+    [commit, costCodes],
   );
 
   /**
@@ -516,17 +573,19 @@ export function TemplateEstimateGrid({
   const deleteSelected = useCallback(() => {
     const ids = selectedItems;
     if (ids.size === 0) return;
-    onSave(items.filter((i) => !ids.has(i.id) || i.isGroup));
+    commit((current) => current.filter((i) => !ids.has(i.id) || i.isGroup));
     setSelectedItems(new Set());
-  }, [items, onSave, selectedItems]);
+  }, [commit, selectedItems]);
 
   const patchItem = useCallback(
     (itemId: string, data: Record<string, any>) => {
       const patch = toTemplatePatch(data, costCodes);
       if (Object.keys(patch).length === 0) return;
-      onSave(items.map((i) => (i.id === itemId ? { ...i, ...patch, ...unlinkIfRepriced(i, patch, data) } : i)));
+      commit((current) =>
+        current.map((i) => (i.id === itemId ? { ...i, ...patch, ...unlinkIfRepriced(i, patch, data) } : i)),
+      );
     },
-    [items, onSave, costCodes],
+    [commit, costCodes],
   );
 
   /**
@@ -589,27 +648,41 @@ export function TemplateEstimateGrid({
     });
   }, []);
 
+  /**
+   * The list with a real row for every group, in the order they show.
+   *
+   * A group that only exists as a name on its lines has nowhere to keep
+   * anything (collapsed, a description, a parent). Giving it a row used to
+   * APPEND one, and since group rows are read before name-only groups, that
+   * quietly moved the group up the page. Laying the rows out in place keeps
+   * every group where it was.
+   */
+  const withGroupRows = (current: TemplateItem[]) => {
+    const { parentOf, orderOf } = currentTree(current);
+    return layoutTemplateGroups(current, parentOf, orderOf);
+  };
+
   const setGroupCollapsed = useCallback(
     (groupName: string, collapsed: boolean) => {
-      const existing = items.find((i) => i.isGroup && (i.name || UNGROUPED) === groupName);
-      if (existing) {
-        onSave(items.map((i) => (i.id === existing.id ? { ...i, isCollapsed: collapsed } : i)));
-        return;
-      }
-      // First time this group is touched it becomes a real record. Lines are
-      // untouched — they still link by name.
-      onSave([
-        ...items,
-        {
-          id: crypto.randomUUID(),
-          name: groupName,
-          isGroup: true,
-          isCollapsed: collapsed,
-          sortOrder: items.length,
-        } as TemplateItem,
-      ]);
+      commit((current) => {
+        const rows = withGroupRows(current);
+        // General gets no row of its own until it has something to remember.
+        if (!rows.some((i) => i.isGroup && (i.name || UNGROUPED) === groupName)) {
+          // After the other group rows: a group with no row reads after all of
+          // them, so this keeps General exactly where it was on screen.
+          const groupRows = rows.filter((i) => i.isGroup);
+          return [
+            ...groupRows,
+            { id: crypto.randomUUID(), name: groupName, isGroup: true, isCollapsed: collapsed, sortOrder: groupRows.length } as TemplateItem,
+            ...rows.filter((i) => !i.isGroup),
+          ];
+        }
+        return rows.map((i) =>
+          i.isGroup && (i.name || UNGROUPED) === groupName ? { ...i, isCollapsed: collapsed } : i,
+        );
+      });
     },
-    [items, onSave],
+    [commit],
   );
 
   /**
@@ -621,8 +694,31 @@ export function TemplateEstimateGrid({
    * they would silently fall out of it into a new name-only group.
    */
   const updateGroup = useCallback(
-    (groupName: string, next: { name: string; description: string; costCodeId?: string }) => {
+    (groupName: string, next: { name: string; description: string; costCodeId?: string }): boolean => {
+      const items = withGroupRows(latestItems.current);
       const newName = next.name.trim() || groupName;
+      // A group IS its name — lines and subgroups find it that way — so two
+      // groups can't share one. Renaming onto an existing name would merge
+      // them silently, which is not what anyone renaming means.
+      if (newName !== groupName && templateGroupOrder(items).includes(newName)) {
+        toast({
+          title: "That name is taken",
+          description: `This template already has a group called "${newName}". Group names need to be different, including subgroups.`,
+          variant: "destructive",
+        });
+        return false;
+      }
+      // ">" separates a group from its subgroup in the Excel sheet and when the
+      // template is applied ("Kitchen > Joinery"), so a name containing it
+      // would come apart into two groups.
+      if (newName !== groupName && newName.includes(">")) {
+        toast({
+          title: "Use a name without \">\"",
+          description: "\">\" separates a group from its subgroup (Kitchen > Joinery), so it can't be part of a name.",
+          variant: "destructive",
+        });
+        return false;
+      }
       const cc = costCodes.find((c) => c.id === next.costCodeId);
       const groupFields = {
         name: newName,
@@ -640,15 +736,20 @@ export function TemplateEstimateGrid({
         if (renamed && !i.isGroup && (i.groupName || UNGROUPED) === groupName) {
           return { ...i, groupName: newName === UNGROUPED ? undefined : newName };
         }
+        // Subgroups point at their parent by name too.
+        if (renamed && i.isGroup && i.parentGroupName === groupName) {
+          return { ...i, parentGroupName: newName };
+        }
         return i;
       });
-      onSave(
+      commit(() =>
         found
           ? updated
           : [...updated, { id: crypto.randomUUID(), isGroup: true, sortOrder: items.length, ...groupFields } as TemplateItem],
       );
+      return true;
     },
-    [items, onSave, costCodes],
+    [commit, costCodes, toast],
   );
 
   // ── Edit Group dialog ──────────────────────────────────────────────────────
@@ -687,14 +788,40 @@ export function TemplateEstimateGrid({
       const { groupName, name, description, costCodeId } = editingGroup;
       // "General" is the display name of the ungrouped bucket, not a real name.
       const keepUngrouped = groupName === UNGROUPED && name.trim() === "General";
-      updateGroup(groupName, {
+      const ok = updateGroup(groupName, {
         name: keepUngrouped ? UNGROUPED : name,
         description,
         costCodeId: costCodeId || undefined,
       });
+      if (!ok) return; // keep the dialog open so the name can be changed
     }
     setEditingGroup(null);
   };
+
+  // ── Description dialog ─────────────────────────────────────────────────────
+  // The shared Description cell only sets editingCell; the estimate page owns
+  // the dialog that then opens. This grid never had one, so clicking a
+  // template line's description did nothing and the column could never be
+  // filled in.
+  const editingDescriptionItem =
+    editingCell?.field === "description" ? items.find((i) => i.id === editingCell.itemId) : undefined;
+
+  const saveDescription = () => {
+    if (!editingDescriptionItem) return;
+    patchItem(editingDescriptionItem.id, { description: editingValue });
+    setEditingCell(null);
+    setEditingValue("");
+  };
+
+  const descriptionDialogDismiss = useCommitOnDismiss({
+    isDirty: () =>
+      !!editingDescriptionItem && (editingValue ?? "") !== (editingDescriptionItem.description ?? ""),
+    commit: saveDescription,
+    discard: () => {
+      setEditingCell(null);
+      setEditingValue("");
+    },
+  });
 
   const groupEditorDismiss = useCommitOnDismiss({
     isDirty: groupEditorIsDirty,
@@ -704,9 +831,10 @@ export function TemplateEstimateGrid({
 
   const addItemToGroup = useCallback(
     (groupName: string) => {
+      const items = latestItems.current;
       // New lines start on the group's default cost code, as on an estimate.
       const groupRow = items.find((i) => i.isGroup && (i.name || UNGROUPED) === groupName);
-      onSave([
+      commit(() => [
         ...items,
         {
           id: crypto.randomUUID(),
@@ -730,31 +858,209 @@ export function TemplateEstimateGrid({
     [items, onSave],
   );
 
+  /**
+   * Delete a group with everything in it — its lines AND its subgroups, at any
+   * depth. Leaving subgroups behind would orphan them at the top level, which
+   * is the opposite of what deleting a section you've finished with means.
+   */
   const deleteGroup = useCallback(
     (groupName: string) => {
-      onSave(
-        items.filter(
-          (i) => !(i.isGroup && (i.name || UNGROUPED) === groupName) && (i.groupName || UNGROUPED) !== groupName,
-        ),
-      );
+      commit((current) => {
+        const doomed = templateDescendants(templateGroupParents(current), groupName);
+        doomed.add(groupName);
+        return current.filter((i) =>
+          i.isGroup ? !doomed.has(i.name || UNGROUPED) : !doomed.has(i.groupName || UNGROUPED),
+        );
+      });
     },
-    [items, onSave],
+    [commit],
+  );
+
+  /**
+   * Deleting a group asks first, saying what goes with it. It used to delete
+   * on the click; with subgroups, one click can now take a whole section.
+   */
+  const [groupToDelete, setGroupToDelete] = useState<string | null>(null);
+  const groupDeleteSummary = useMemo(() => {
+    if (!groupToDelete) return null;
+    const parents = templateGroupParents(items);
+    const inside = templateDescendants(parents, groupToDelete);
+    const all = new Set(inside);
+    all.add(groupToDelete);
+    const lines = items.filter((i) => !i.isGroup && all.has(i.groupName || UNGROUPED)).length;
+    return { subgroups: inside.size, lines };
+  }, [groupToDelete, items]);
+
+  /**
+   * Add Subgroup (from the group's menu). Was a no-op on templates. The new
+   * subgroup goes last inside its parent with a unique name, and the Edit
+   * Group dialog opens straight away to name it.
+   */
+  const addSubgroup = useCallback(
+    (parentName: string) => {
+      if (parentName === UNGROUPED) {
+        toast({ title: "Name this group first", description: "General holds ungrouped lines and can't contain subgroups." });
+        return;
+      }
+      const existing = new Set(templateGroupOrder(latestItems.current));
+      let name = "New Subgroup";
+      for (let n = 2; existing.has(name); n++) name = `New Subgroup ${n}`;
+      commit((current) => {
+        const rows = withGroupRows(current);
+        const { parentOf, orderOf } = currentTree(rows);
+        const withChild = [
+          ...rows,
+          { id: crypto.randomUUID(), name, isGroup: true, isCollapsed: false, parentGroupName: parentName, sortOrder: rows.length } as TemplateItem,
+        ];
+        parentOf.set(name, parentName);
+        orderOf.set(name, Number.MAX_SAFE_INTEGER); // last among its siblings
+        return layoutTemplateGroups(withChild, parentOf, orderOf);
+      });
+      setEditingGroup({ groupName: name, name, description: "", costCodeId: "" });
+    },
+    [commit, toast],
+  );
+
+  // ── Group drag: nest, un-nest, reorder ──────────────────────────────────────
+  // The same gesture and the same rules as the estimate page (#315), through
+  // the same pure planner: the middle band of a group header drops the group
+  // INSIDE it (last child); the top/bottom edges drop it beside it, which is
+  // how groups reorder and how a subgroup is pulled back out.
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const dropTargetRef = useRef<DropTarget | null>(null);
+  const setDropTargetSync = (t: DropTarget | null) => {
+    dropTargetRef.current = t;
+    setDropTarget(t);
+  };
+
+  // The live pointer. Reconstructing it from dnd-kit's rect + delta counts the
+  // movement twice (the rect is already translated) — see estimateDragTypes.
+  const pointerYRef = useRef<number | null>(null);
+  useEffect(() => {
+    const track = (e: PointerEvent) => { pointerYRef.current = e.clientY; };
+    document.addEventListener("pointermove", track, { passive: true });
+    document.addEventListener("pointerup", track, { passive: true });
+    return () => {
+      document.removeEventListener("pointermove", track);
+      document.removeEventListener("pointerup", track);
+    };
+  }, []);
+
+  const handleDragMove = useCallback(
+    (e: DragMoveEvent) => {
+      const activeIdStr = String(e.active.id);
+      if (!activeIdStr.startsWith("group-")) return;
+      const cursorY = pointerYRef.current;
+      if (cursorY == null) return;
+      const dragged = activeIdStr.slice("group-".length);
+
+      // Not into itself, its own subtree, or a group hidden inside a collapsed
+      // one (clipped, not removed, so it still measures full height).
+      const blocked = descendantsOf(groups as any, dragged);
+      blocked.add(dragged);
+      for (const id of Array.from(hiddenGroupIds(groups as any))) blocked.add(id);
+
+      const headers: { id: string; top: number; height: number; midpoint: number }[] = [];
+      gridRef.current?.querySelectorAll("[data-group-header-id]").forEach((el) => {
+        const gid = el.getAttribute("data-group-header-id");
+        if (!gid || blocked.has(gid)) return;
+        const r = el.getBoundingClientRect();
+        if (r.height === 0) return;
+        headers.push({ id: gid, top: r.top, height: r.height, midpoint: r.top + r.height / 2 });
+      });
+      if (headers.length === 0) { setDropTargetSync(null); return; }
+      headers.sort((a, b) => a.top - b.top);
+
+      // General is the bucket for ungrouped lines: it can't hold subgroups and
+      // can't go inside another group.
+      const canNest = (targetId: string) => dragged !== UNGROUPED && targetId !== UNGROUPED;
+      const nestOver = headers.find(
+        (h) => cursorY >= h.top + h.height * NEST_ZONE_TOP && cursorY <= h.top + h.height * NEST_ZONE_BOTTOM,
+      );
+      if (nestOver && canNest(nestOver.id)) {
+        setDropTargetSync({ id: `group-${nestOver.id}`, position: "inside" });
+        return;
+      }
+      if (cursorY < headers[0].midpoint) {
+        setDropTargetSync({ id: `group-${headers[0].id}`, position: "above" });
+        return;
+      }
+      // Below a header: beside the last header above the cursor.
+      let above = headers[0];
+      for (const h of headers) if (h.midpoint <= cursorY) above = h;
+      setDropTargetSync({ id: `group-${above.id}`, position: "below" });
+    },
+    [groups],
+  );
+
+  const applyGroupMoves = useCallback(
+    (moves: GroupMove[]) => {
+      commit((current) => {
+        const rows = withGroupRows(current);
+        const { parentOf, orderOf } = currentTree(rows);
+        // planGroupDrop orders are per parent; currentTree's are global. Only
+        // relative order among siblings is read, so a moved level is
+        // re-sequenced on its own scale, after everything already there.
+        const base = rows.length + 1;
+        for (const m of moves) {
+          orderOf.set(m.id, base + m.order);
+          if ("parentGroupId" in m) parentOf.set(m.id, m.parentGroupId ?? null);
+        }
+        return layoutTemplateGroups(rows, parentOf, orderOf);
+      });
+    },
+    [commit],
   );
 
   const handleDragEnd = useCallback(
     (e: DragEndEvent) => {
       setActiveId(null);
+      const target = dropTargetRef.current;
+      setDropTargetSync(null);
       const { active, over } = e;
+      const activeIdStr = String(active.id);
+
+      if (activeIdStr.startsWith("group-")) {
+        if (!target) return;
+        const dragged = activeIdStr.slice("group-".length);
+        const targetId = target.id.slice("group-".length);
+        const moves = planGroupDrop(groups as any, dragged, targetId, target.position);
+        // General stays top level whichever way it is dropped.
+        if (moves.some((m) => m.id === UNGROUPED && m.parentGroupId)) return;
+        if (moves.length > 0) applyGroupMoves(moves);
+        return;
+      }
+
+      const items = latestItems.current;
       if (!over || active.id === over.id) return;
       const ordered = items.filter((i) => !i.isGroup).slice().sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
       const from = ordered.findIndex((i) => i.id === active.id);
       const to = ordered.findIndex((i) => i.id === over.id);
       if (from < 0 || to < 0) return;
-      const moved = arrayMove(ordered, from, to).map((i, idx) => ({ ...i, sortOrder: idx }));
+      // Dropping a line onto a line in another group moves it into that group,
+      // which used to be ignored: it changed position in a list nobody sees and
+      // stayed put on screen.
+      const destinationGroup = ordered[to].groupName;
+      const moved = arrayMove(ordered, from, to).map((i, idx) =>
+        i.id === active.id ? { ...i, sortOrder: idx, groupName: destinationGroup } : { ...i, sortOrder: idx },
+      );
       const byId = new Map(moved.map((i) => [i.id, i]));
-      onSave(items.map((i) => byId.get(i.id) ?? i));
+      commit((current) => current.map((i) => byId.get(i.id) ?? i));
     },
-    [items, onSave],
+    [groups, applyGroupMoves, commit],
+  );
+
+  /** Item drags resolve `over` to a line only. A group card's rect encloses all
+      of its rows, so closestCenter would otherwise hand the drop to the card. */
+  const collisionDetection: CollisionDetection = useCallback(
+    (args) =>
+      String(args.active.id).startsWith("group-")
+        ? closestCenter(args)
+        : closestCenter({
+            ...args,
+            droppableContainers: args.droppableContainers.filter((c) => !String(c.id).startsWith("group-")),
+          }),
+    [],
   );
 
   // ── Layout ─────────────────────────────────────────────────────────────────
@@ -811,9 +1117,10 @@ export function TemplateEstimateGrid({
     updateItemMutation,
     createSelectionFromItemMutation: noopMutation,
     handleDuplicateItem: (id: string) => {
-      const src = items.find((i) => i.id === id);
-      if (!src) return;
-      onSave([...items, { ...src, id: crypto.randomUUID(), sortOrder: items.length }]);
+      commit((current) => {
+        const src = current.find((i) => i.id === id);
+        return src ? [...current, { ...src, id: crypto.randomUUID(), sortOrder: current.length }] : current;
+      });
     },
     handleCopyItem: () => {},
     form: { reset: () => {} },
@@ -961,13 +1268,18 @@ export function TemplateEstimateGrid({
 
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={collisionDetection}
           onDragStart={(e) => setActiveId(String(e.active.id))}
+          onDragMove={handleDragMove}
+          onDragCancel={() => { setActiveId(null); setDropTargetSync(null); }}
           onDragEnd={handleDragEnd}
         >
-          <SortableContext items={lineItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext
+            items={[...groups.map((g) => `group-${g.id}`), ...lineItems.map((i) => i.id)]}
+            strategy={verticalListSortingStrategy}
+          >
             <div>
-              {groups.map((group, idx) => (
+              {groups.filter((g) => !(g as any).parentGroupId).map((group, idx) => (
                 <EstimateGroupCard
                   key={group.id}
                   group={group}
@@ -979,12 +1291,15 @@ export function TemplateEstimateGrid({
                   groupIndex={idx}
                   handleToggleGroupCollapse={(id, current) => setGroupCollapsed(id, !current)}
                   renderItemRow={renderItemRow}
-                  onDeleteGroup={deleteGroup}
+                  onDeleteGroup={setGroupToDelete}
                   onEditGroup={openGroupEditor}
                   onEditGroupDescription={openGroupEditor}
                   onDuplicateGroup={() => {}}
                   onCopyGroup={() => {}}
-                  onAddSubgroup={() => {}}
+                  onAddSubgroup={addSubgroup}
+                  subgroups={groups.filter((g) => !!(g as any).parentGroupId)}
+                  allGroups={groups}
+                  dropTarget={dropTarget}
                   onAddItemToGroup={addItemToGroup}
                   isLocked={false}
                   selectedItems={selectedItems}
@@ -1009,6 +1324,70 @@ export function TemplateEstimateGrid({
           </SortableContext>
         </DndContext>
       </div>
+
+      {/* Delete group — confirm, with what goes with it. */}
+      <Dialog open={!!groupToDelete} onOpenChange={(open) => { if (!open) setGroupToDelete(null); }}>
+        <DialogContent className="max-w-md rounded-xl">
+          <DialogHeader>
+            <DialogTitle>
+              Delete {groupToDelete === UNGROUPED ? "General" : `"${groupToDelete}"`}?
+            </DialogTitle>
+          </DialogHeader>
+          {groupDeleteSummary && (
+            <p className="text-sm text-muted-foreground" data-testid="text-template-group-delete-summary">
+              This removes {groupDeleteSummary.lines} line{groupDeleteSummary.lines === 1 ? "" : "s"}
+              {groupDeleteSummary.subgroups > 0
+                ? ` and ${groupDeleteSummary.subgroups} subgroup${groupDeleteSummary.subgroups === 1 ? "" : "s"}`
+                : ""}{" "}
+              from this template.
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGroupToDelete(null)} data-testid="button-cancel-template-group-delete">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (groupToDelete) deleteGroup(groupToDelete);
+                setGroupToDelete(null);
+              }}
+              data-testid="button-confirm-template-group-delete"
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Description — the same dialog the estimate page opens. */}
+      <Dialog open={!!editingDescriptionItem} onOpenChange={descriptionDialogDismiss.onOpenChange}>
+        <DialogContent className="max-w-2xl rounded-xl" {...descriptionDialogDismiss.contentProps}>
+          <DialogHeader>
+            <DialogTitle>Edit Description</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <RichTextEditor
+              content={editingValue}
+              onChange={(html) => setEditingValue(html)}
+              placeholder="Enter description..."
+              data-testid="richtext-template-item-description"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setEditingCell(null); setEditingValue(""); }}
+              data-testid="button-cancel-template-description"
+            >
+              Cancel
+            </Button>
+            <Button onClick={saveDescription} data-testid="button-save-template-description">
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Group — clicking away keeps the edit, as on the estimate. */}
       <Dialog open={!!editingGroup} onOpenChange={groupEditorDismiss.onOpenChange}>

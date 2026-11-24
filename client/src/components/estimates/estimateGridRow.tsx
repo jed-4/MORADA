@@ -12,6 +12,7 @@
  * grid container when an editor closes).
  */
 import React from "react";
+import type { DropPosition, DropTarget } from "./estimateDragTypes";
 import { useSortable } from "@dnd-kit/sortable";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,7 +65,7 @@ export interface SortableRowProps {
   className?: string;
   isDraggable?: boolean;
   gridTemplate: string;
-  dropIndicator?: 'above' | 'below' | null;
+  dropIndicator?: DropPosition | null;
   activeDragId?: string | null;
   onDoubleClick?: () => void;
 }
@@ -297,7 +298,10 @@ export interface EstimateGridCtx {
   handleToggleSelection: (id: string) => void;
   collapsedItems: Set<string>;
   handleToggleItemCollapse: (id: string) => void;
-  dropTarget: { id: string; position: 'above' | 'below' } | null;
+  // Widened to the shared DropTarget: 'inside' is only ever produced for a
+  // GROUP drag, and the row renderers compare against 'above'/'below', so it
+  // reaches here as "no indicator" rather than needing a branch of its own.
+  dropTarget: DropTarget | null;
   activeId: string | null;
 
   // take-off backed quantities (optional: the template grid has no take-off)
@@ -645,21 +649,24 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
       
       case 'description':
         return (
-          <div 
-            className={cellBase}
+          <div
+            className={`${cellBase} ${!isLocked ? 'cursor-pointer' : ''}`}
             role="gridcell"
             data-testid={`cell-description-${item.id}`}
+            // On the CELL, not the text inside it. The text div collapses to
+            // 1px tall when there is no description yet, so a line without
+            // one had nothing you could actually click to start one.
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isLocked) {
+                handleCellEdit(item, 'description');
+              }
+            }}
           >
             <HoverCard openDelay={200}>
               <HoverCardTrigger asChild>
-                <div 
-                  className={`truncate w-full min-w-0 ${!isLocked ? 'cursor-pointer border-b border-transparent hover:border-primary/30 transition-colors' : ''}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!isLocked) {
-                      handleCellEdit(item, 'description');
-                    }
-                  }}
+                <div
+                  className={`truncate w-full min-w-0 ${!isLocked ? 'border-b border-transparent hover:border-primary/30 transition-colors' : ''}`}
                   dangerouslySetInnerHTML={{ 
                     __html: item.description || '' 
                   }}
