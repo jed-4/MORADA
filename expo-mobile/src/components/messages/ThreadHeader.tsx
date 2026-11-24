@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { ChevronLeft, Eye, Hash, type LucideIcon } from 'lucide-react-native';
+import { ChevronLeft, Hash, type LucideIcon } from 'lucide-react-native';
+import { ClientBadge } from './ClientBadge';
 import { PresenceDot } from './PresenceDot';
 import { Avatar } from '../kit';
 import { metrics, radii, size, space, type, useColors, type Theme } from '../../theme';
@@ -89,7 +90,7 @@ export function ThreadHeader({
             <Text style={[type.sheetTitle, styles.shrink, { color: c.text }]} numberOfLines={1} accessibilityRole="header">
               {title}
             </Text>
-            {isClientFacing && !isDm ? <Eye size={size.icon.meta} color={c.muted} strokeWidth={metrics.iconStroke} /> : null}
+            {isClientFacing && !isDm ? <ClientBadge /> : null}
           </View>
           {memberCount ? (
             <Text style={[type.caption, { color: c.muted }]}>{`${memberCount} ${memberCount === 1 ? 'member' : 'members'}`}</Text>
@@ -125,7 +126,7 @@ export function ThreadHeader({
       <Text style={[type.sectionTitle, styles.title, { color: c.text }]} numberOfLines={1} accessibilityRole="header">
         {title}
       </Text>
-      {isClientFacing && !isDm ? <Eye size={size.icon.row} color={c.muted} strokeWidth={metrics.iconStroke} /> : null}
+      {isClientFacing && !isDm ? <ClientBadge /> : null}
     </View>
   );
 }

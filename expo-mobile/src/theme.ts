@@ -379,6 +379,8 @@ export const type = {
   tile:          { fontFamily: fonts.regular,  fontSize: 11.5, lineHeight: 14 },
   micro:         { fontFamily: fonts.regular,  fontSize: 11, lineHeight: 13 },
   tiny:          { fontFamily: fonts.regular,  fontSize: 10, lineHeight: 12 },
+  // Amber CLIENT pill on client-facing channels.
+  badgeLabel:    { fontFamily: fonts.bold,     fontSize: 9,  lineHeight: 11, letterSpacing: 0.5 },
   ganttName:     { fontFamily: fonts.regular,  fontSize: 12.5, lineHeight: 15 },
   initials:      { fontFamily: fonts.regular,  fontSize: 9,  lineHeight: 11 },
   duoTab:        { fontFamily: fonts.regular,  fontSize: 13, lineHeight: 16 },
@@ -769,6 +771,8 @@ export const metrics = {
     emojiPick: 26,
     emojiGridGap: 4,
     seedPadX: 24,
+    // Amber CLIENT pill (client-facing channels)
+    clientBadge: { padX: 6, padY: 2, gap: 3, icon: 10 },
   },
   labourDetail: {
     titleGap: 4,

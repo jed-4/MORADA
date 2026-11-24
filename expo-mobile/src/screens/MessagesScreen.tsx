@@ -18,6 +18,7 @@ import { usePolling } from '../lib/usePolling';
 import { usePresence } from '../lib/usePresence';
 import { shortWhen } from '../lib/format';
 import { usePersistedState } from '../lib/usePersistedState';
+import { ClientBadge } from '../components/messages/ClientBadge';
 import { Eye, Hash, Lock, MessagesSquare, Search, SquarePen, User, X } from 'lucide-react-native';
 import { Avatar, ButtonRow, Card, EmptyState, FieldHint, FieldLabel, GroupHeader, ListRow, PrimaryButton, ProjectSquare, RootTitle, SheetBody, TextField, ToggleRow, UnreadBadge } from '../components/kit';
 import { readableFrame } from '../components/ui/ReadableColumn';
@@ -345,7 +346,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
             <Text style={[unread ? type.rowTitleStrong : type.rowTitle, mx.name, { color: k.text }]} numberOfLines={1}>
               {displayName}
             </Text>
-            {clientFacing ? <Eye size={size.icon.meta} color={k.muted} strokeWidth={metrics.iconStroke} /> : null}
+            {clientFacing ? <ClientBadge /> : null}
             {item.lastMessageAt ? (
               <Text style={[type.caption, tabular, mx.time, { color: unread ? k.accent : k.muted }]}>{shortWhen(item.lastMessageAt)}</Text>
             ) : null}
