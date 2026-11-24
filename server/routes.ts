@@ -13,6 +13,7 @@ import { recordSiteArrival, recordSiteLeave, listSiteVisits } from "./services/s
 import { resolveClockTime, StaleClientTimeError } from "./clockTime";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
 import { computePOTotalsCents, hasPricedLine, poLineCents } from "@shared/poTotals";
+import { subPoLineParts } from "@shared/subPoLines";
 import { canMovePOStatus, poStatusMoveError } from "@shared/poStatus";
 import { poAcceptUrl, readPoAcceptToken } from "./utils/poAcceptToken";
 import { optionClientPriceCents, costIncGstCents, solvePricing } from "@shared/selectionPricing";
@@ -27210,8 +27211,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Pulling a timesheet line off a PO releases that timesheet back to the
       // queue, same as deleting the whole PO. Scoped to this PO so a timesheet
       // that has since been linked elsewhere is left alone.
+      // A split timesheet owns several lines: release it only once its LAST
+      // line on this PO is gone, or it would be re-queued for a second PO while
+      // its other lines are still on this one.
       const sourceTimesheetId = (existingItem as any).sourceTimesheetId;
-      if (sourceTimesheetId) {
+      const siblingLineRemains = !!sourceTimesheetId &&
+        (await storage.getPurchaseOrderItems(req.params.poId)).some((i) => i.sourceTimesheetId === sourceTimesheetId);
+      if (sourceTimesheetId && !siblingLineRemains) {
         await db
           .update(schema.timesheets)
           .set({
@@ -27915,41 +27921,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allCostCodes = await storage.getCostCodes(req.user.companyId);
       const poProject = allProjects.find((p: any) => p.id === projectId);
 
-      for (let i = 0; i < timesheets.length; i++) {
-        const ts = timesheets[i];
-        const project = allProjects.find((p: any) => p.id === ts.projectId);
-        const costCode = ts.costCodeId ? allCostCodes.find((cc: any) => cc.id === ts.costCodeId) : null;
+      // A timesheet split across cost codes gets one line per split, so the PO
+      // and the bill raised from it carry the same breakdown as the timesheet.
+      // Every line keeps sourceTimesheetId, so one timesheet can own several.
+      const allSplits = await storage.getTimesheetCostCodesByTimesheetIds(timesheets.map((ts) => ts.id));
+      const payRate = profileRate; // validated non-zero above
 
-        const netHours = parseFloat(ts.duration || "0");
-        const payRate = profileRate; // validated non-zero above
-        const lineTotal = Math.round(netHours * payRate * 100);
+      for (const ts of timesheets) {
+        const project = allProjects.find((p: any) => p.id === ts.projectId);
+        const splits = allSplits.filter((s) => s.timesheetId === ts.id);
+        const tsHours = parseFloat(ts.duration || "0");
 
         const dateStr = ts.date ? new Date(ts.date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "";
         const timeRange = `${ts.startTime || "?"} - ${ts.endTime || "?"}`;
         const breakStr = ts.breakDuration ? ` (${ts.breakDuration}hr break)` : "";
-        const costCodeStr = costCode ? `${costCode.code} - ${costCode.title}` : "";
-        // The job goes on EVERY line, first, because a PO does not belong to one
-        // job. Timesheets are gathered by "awaiting PO" and subcontractor, not by
-        // project, so a single PO routinely carries a week split across several
-        // sites — and the header can only name the one it was raised against.
-        // Naming it once up there left every other line unattributable, and a
-        // returning invoice impossible to match back without opening the app.
-        const descParts: string[] = [];
-        if (project?.name) descParts.push(project.name);
-        descParts.push(`${dateStr} -- ${timeRange}${breakStr}`);
-        if (costCodeStr) descParts.push(costCodeStr);
-        if (ts.description) descParts.push(ts.description);
 
-        lineItems.push({
-          description: descParts.join("\n"),
-          quantity: netHours.toFixed(2),
-          unit: "hours",
-          unitPrice: Math.round(payRate * 100),
-          total: lineTotal,
-          costCodeId: ts.costCodeId || null,
-          sourceTimesheetId: ts.id,
-          displayOrder: i,
-        });
+        for (const part of subPoLineParts(ts, splits)) {
+          const costCode = part.costCodeId ? allCostCodes.find((cc: any) => cc.id === part.costCodeId) : null;
+          const costCodeStr = costCode ? `${costCode.code} - ${costCode.title}` : "";
+          // The job goes on EVERY line, first, because a PO does not belong to one
+          // job. Timesheets are gathered by "awaiting PO" and subcontractor, not by
+          // project, so a single PO routinely carries a week split across several
+          // sites — and the header can only name the one it was raised against.
+          // Naming it once up there left every other line unattributable, and a
+          // returning invoice impossible to match back without opening the app.
+          const descParts: string[] = [];
+          if (project?.name) descParts.push(project.name);
+          descParts.push(`${dateStr} -- ${timeRange}${breakStr}`);
+          if (part.splitOf) {
+            descParts.push(`${costCodeStr || "No cost code"} (split ${part.splitOf.index} of ${part.splitOf.count}: ${part.hours.toFixed(2)} of ${tsHours.toFixed(2)} hrs)`);
+          } else if (costCodeStr) {
+            descParts.push(costCodeStr);
+          }
+          if (ts.description) descParts.push(ts.description);
+
+          lineItems.push({
+            description: descParts.join("\n"),
+            quantity: part.hours.toFixed(2),
+            unit: "hours",
+            unitPrice: Math.round(payRate * 100),
+            total: Math.round(part.hours * payRate * 100),
+            costCodeId: part.costCodeId,
+            sourceTimesheetId: ts.id,
+            displayOrder: lineItems.length,
+          });
+        }
       }
 
       const headerTotals = computePOTotalsCents(lineItems, "exclusive");
