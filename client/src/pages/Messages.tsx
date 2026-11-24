@@ -2052,7 +2052,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                         {isPinned && (
                           <Pin className="h-3 w-3 shrink-0 text-primary rotate-45" />
                         )}
-                        {channel.type === "dm" ? (
+                        {channel.type === "dm" && !channel.emoji ? (
                           <User className="h-3.5 w-3.5 shrink-0 text-primary" />
                         ) : channel.emoji ? (
                           <ChannelEmoji emoji={channel.emoji} />
@@ -2112,10 +2112,10 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       already resolved the name; the header did not, so opening
                       a DM put its generated id — "dm-<uuid>-<uuid>" — across
                       the top of the conversation, and a hash in front of it. */}
-                  {selectedChannel.type === "dm"
-                    ? <User className="h-4 w-4 text-primary shrink-0" />
-                    : selectedChannel.emoji
-                      ? <ChannelEmoji emoji={selectedChannel.emoji} className="text-base" />
+                  {selectedChannel.emoji
+                    ? <ChannelEmoji emoji={selectedChannel.emoji} className="text-base" />
+                    : selectedChannel.type === "dm"
+                      ? <User className="h-4 w-4 text-primary shrink-0" />
                       : <Hash className="h-4 w-4 text-primary shrink-0" />}
                   <span className="text-base font-semibold truncate">{getDmDisplayName(selectedChannel)}</span>
                   {selectedChannel.isClientFacing && <ClientBadge />}
@@ -3587,6 +3587,30 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                   );
                 })()}
               </div>
+
+              {/* ── DM icon: a DM can't be renamed, but either person can pick its emoji ── */}
+              {selectedChannel?.type === "dm" && (
+                <>
+                  <Separator />
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Settings
+                    </p>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Icon</Label>
+                      <ChannelEmojiPicker
+                        value={selectedChannel?.emoji}
+                        disabled={renameChannelMutation.isPending}
+                        onChange={(emoji) => selectedChannel && renameChannelMutation.mutate({
+                          channelId: selectedChannel.id,
+                          emoji,
+                        })}
+                        data-testid="button-dm-emoji"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* ── Channel Settings (rename — non-DM only) ── */}
               {selectedChannel?.type !== "dm" && (
