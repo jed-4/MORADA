@@ -26575,6 +26575,59 @@ export class DbStorage implements IStorage {
   }
 
   /**
+   * Message search: every word must appear in the message (case-insensitive),
+   * newest first. Same access rule as reading a channel — only channels this
+   * person is a MEMBER of, in their company, not archived; deleted messages
+   * and thread replies are left out (replies don't show in the channel view).
+   * LIKE wildcards in the words are escaped so "50%" means fifty percent.
+   */
+  async searchMessagesForUser(userId: string, companyId: string, words: string[], limit: number): Promise<any[]> {
+    try {
+      const escapeLike = (w: string) => w.replace(/[\\%_]/g, (ch) => "\\" + ch);
+      const wordConds = words.map((w) => sql`${schema.messages.content} ILIKE ${"%" + escapeLike(w) + "%"}`);
+      return await db
+        .select({
+          id: schema.messages.id,
+          channelId: schema.messages.channelId,
+          userId: schema.messages.userId,
+          content: schema.messages.content,
+          createdAt: schema.messages.createdAt,
+          channelName: schema.channels.name,
+          channelType: schema.channels.type,
+          channelEmoji: schema.channels.emoji,
+          isClientFacing: schema.channels.isClientFacing,
+          dmParticipants: schema.channels.dmParticipants,
+          userFirstName: schema.users.firstName,
+          userLastName: schema.users.lastName,
+        })
+        .from(schema.messages)
+        .innerJoin(schema.channels, eq(schema.channels.id, schema.messages.channelId))
+        .innerJoin(
+          schema.channelMembers,
+          and(
+            eq(schema.channelMembers.channelId, schema.messages.channelId),
+            eq(schema.channelMembers.userId, userId),
+          ),
+        )
+        .leftJoin(schema.users, eq(schema.users.id, schema.messages.userId))
+        .where(
+          and(
+            eq(schema.channels.companyId, companyId),
+            eq(schema.channels.isArchived, false),
+            eq(schema.messages.isDeleted, false),
+            isNull(schema.messages.threadParentId),
+            ...wordConds,
+          ),
+        )
+        .orderBy(desc(schema.messages.createdAt))
+        .limit(limit);
+    } catch (error) {
+      console.error("Database error in searchMessagesForUser:", error);
+      throw error;
+    }
+  }
+
+  /**
    * The newest message in each channel this person is in — one row per
    * conversation.
    *
