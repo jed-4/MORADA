@@ -135,3 +135,50 @@ export function planGroupDrop(
   sequence([...destination.slice(0, insertAt), dragged, ...destination.slice(insertAt)], newParentId);
   return moves;
 }
+
+// ─── Item drops ──────────────────────────────────────────────────────────────
+
+/** A group card's on-screen extent (header plus every row inside it). */
+export type MeasuredGroup = { id: string; top: number; bottom: number };
+/** A line's on-screen extent, and the group it currently sits in. */
+export type MeasuredRow = { id: string; groupId: string | null; top: number; bottom: number };
+
+/**
+ * Where a dragged LINE would land, from the cursor and what is on screen.
+ *
+ * Shared by the estimate and the estimate template so a line drags the same way
+ * on both. The rule:
+ *  - The target group is the innermost group card containing the cursor
+ *    (subgroup cards come after their parent in the DOM, so the LAST
+ *    containing card wins). No card → the ungrouped area (null).
+ *  - Only that group's rows are candidates, so a drag stays in its group until
+ *    the cursor actually enters another one.
+ *  - An empty group targets its header (`group-<id>`, below) so a line can be
+ *    dropped into a group with nothing in it yet.
+ *  - Otherwise: above the first row, below the last, or in the gap between
+ *    the two rows whose midpoints straddle the cursor.
+ */
+export function pickItemDropTarget(
+  cursorY: number,
+  activeId: string,
+  groups: MeasuredGroup[],
+  rows: MeasuredRow[],
+): DropTarget | null {
+  let targetGroupId: string | null = null;
+  for (const g of groups) if (cursorY >= g.top && cursorY <= g.bottom) targetGroupId = g.id;
+
+  const candidates = rows
+    .filter((r) => r.id !== activeId && (r.groupId ?? null) === targetGroupId)
+    .map((r) => ({ ...r, midpoint: r.top + (r.bottom - r.top) / 2 }))
+    .sort((a, b) => a.top - b.top);
+
+  if (candidates.length === 0) {
+    return targetGroupId ? { id: `group-${targetGroupId}`, position: "below" } : null;
+  }
+  if (cursorY < candidates[0].midpoint) return { id: candidates[0].id, position: "above" };
+  for (let i = 0; i < candidates.length; i++) {
+    const next = candidates[i + 1];
+    if (!next || cursorY <= next.midpoint) return { id: candidates[i].id, position: "below" };
+  }
+  return null;
+}
