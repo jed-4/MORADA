@@ -29,7 +29,7 @@ import {
 import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import { useToast } from '../components/ui/Toast';
 import { Skeleton } from '../components/ui/Skeleton';
-import { isInStack } from '../navigation/back';
+import { goBackOrHome, isInStack } from '../navigation/back';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   EVENT_COLORS,
@@ -1028,7 +1028,7 @@ export default function CalendarScreen({ navigation }: Props) {
         {/* Month · ‹ › · Today · filter */}
         <View style={cx.headRow}>
           {showBack ? (
-            <Pressable onPress={() => navigation.goBack()} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
+            <Pressable onPress={() => goBackOrHome(navigation)} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
               <ChevronLeft size={metrics.pageHeader.back} color={k.accent} strokeWidth={metrics.iconStroke} />
             </Pressable>
           ) : null}

@@ -4,15 +4,22 @@ import { metrics, projectTint, radii, tabular, type, useColors } from '../../the
 
 export type Trade = 'slate' | 'blue' | 'teal' | 'leave';
 
-/** Schedule Gantt bar: trade tint + 3dp strip; date label inside when it fits, else after. */
-export function GanttBar({ trade = 'slate', color, width, label }: { trade?: Trade; /** Item colour: tint fill + full-colour strip. Overrides `trade`. */ color?: string | null; width: number; label?: string | null }) {
+/** Schedule Gantt bar: trade tint + 3dp strip; label inside when it fits, else after. */
+export function GanttBar({ trade = 'slate', color, width, label, labelFits }: {
+  trade?: Trade;
+  /** Item colour: tint fill + full-colour strip. Overrides `trade`. */ color?: string | null;
+  width: number;
+  label?: string | null;
+  /** Whether the label fits inside the bar. Defaults to a short-date-label check against `minLabelWidth`. */
+  labelFits?: boolean;
+}) {
   const c = useColors();
   const dark = useColorScheme() === 'dark';
   const t = color
     ? { fill: projectTint(color, dark ? metrics.calendarBlock.tintDark : metrics.calendarBlock.tint, c.bg), strip: color }
     : c.trade[trade];
   const m = metrics.ganttBar;
-  const inside = !!label && width >= m.minLabelWidth;
+  const inside = !!label && (labelFits ?? width >= m.minLabelWidth);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <View style={{ width, height: m.height, borderRadius: radii.squareMd, backgroundColor: t.fill, overflow: 'hidden', flexDirection: 'row', alignItems: 'center' }}>
@@ -23,7 +30,7 @@ export function GanttBar({ trade = 'slate', color, width, label }: { trade?: Tra
           </Text>
         ) : null}
       </View>
-      {label && !inside ? <Text style={[type.tiny, tabular, { color: c.muted, paddingLeft: m.labelPadX }]}>{label}</Text> : null}
+      {label && !inside ? <Text numberOfLines={1} style={[type.tiny, tabular, { color: c.muted, paddingLeft: m.labelPadX }]}>{label}</Text> : null}
     </View>
   );
 }

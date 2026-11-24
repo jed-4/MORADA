@@ -521,7 +521,9 @@ export const metrics = {
     agendaWidth: 3,
     agendaHeight: 32,
   },
-  ganttBar: { height: 22, strip: 3, labelPadX: 6, minLabelWidth: 44 },
+  // nameCharWidth: rough average glyph width of type.tiny, to judge whether an
+  // item name fits inside its bar.
+  ganttBar: { height: 22, strip: 3, labelPadX: 6, minLabelWidth: 44, nameCharWidth: 6 },
   divider: { gap: 10, nowDot: 7, nowLine: 2 },
   workspace: {
     contentTop: 8,
@@ -624,6 +626,12 @@ export const metrics = {
       startHour: 6,
       endHour: 18,
       blockInset: 3,
+      // All-day strip caps here and scrolls (about three chips).
+      allDayMax: 96,
+      // Month mode: day cell height, item dot size, dots shown per day.
+      monthCell: 44,
+      monthDot: 5,
+      monthDots: 3,
     },
   },
   scope: {

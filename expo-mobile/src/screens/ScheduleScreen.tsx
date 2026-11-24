@@ -27,7 +27,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Calendar as CalendarIcon, Check, CheckCheck, ChevronDown, ChevronRight, Ellipsis, FolderOpen, Plus, SendHorizontal, SquareCheck, Trash2 } from 'lucide-react-native';
 import {
   ButtonRow, CalendarBlock, Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, FieldLabel, GanttBar, ListRow, ModalSheet, NowLine,
-  PageHeader, PrimaryButton, ProgressLine, PropertyRow, SecondaryButton, SheetHeader, StatusDot, TextField, TodayMarker, ToggleRow,
+  PageHeader, PrimaryButton, ProgressLine, PropertyRow, SecondaryButton, Segmented, SheetHeader, StatusDot, TextField, TodayMarker, ToggleRow,
   UnderlineTabs, type DotStatus,
 } from '../components/kit';
 import { SkeletonList } from '../components/ui/Skeleton';
@@ -106,6 +106,7 @@ type Props = {
 };
 
 type ViewMode = 'list' | 'gantt' | 'calendar';
+type CalendarMode = 'week' | 'month';
 
 const PHASE_ORDER: Record<string, number> = {
   construction: 0,
@@ -184,7 +185,10 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** Gantt: how often a live scroll may re-render the off-range markers. */
+const GANTT_MARKER_THROTTLE_MS = 150;
 
 /** Same rule as the bars: the first 10 characters are the calendar day, read as local midnight. */
 const localDay = (d: string) => new Date(String(d).substring(0, 10) + 'T00:00:00');
@@ -282,6 +286,10 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [addingNote, setAddingNote] = useState(false);
 
   const [weekStartDate, setWeekStartDate] = useState<Date>(getMondayOfWeek(new Date()));
+  // Calendar tab: Week (time grid) or Month (grid + the picked day's items).
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>('week');
+  const [monthDate, setMonthDate] = useState<Date>(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [selectedDate, setSelectedDate] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
 
   const [checklistSteps, setChecklistSteps] = useState<ScheduleItemStep[]>([]);
   const [loadingSteps, setLoadingSteps] = useState(false);
@@ -330,6 +338,8 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   // the "25 ›" markers on work that starts past the right edge.
   const [ganttViewX, setGanttViewX] = useState(0);
   const ganttXRef = useRef(0);
+  // Last time onScroll committed ganttViewX (throttles the marker re-render).
+  const ganttMarkerAtRef = useRef(0);
   // Calendar: the week's days scroll sideways; the time grid fills the rest.
   const calScrollRef = useRef<ScrollViewInstance>(null);
   const [calBodyHeight, setCalBodyHeight] = useState(0);
@@ -730,7 +740,7 @@ const colors = {
     minDate.setHours(0, 0, 0, 0);
     maxDate.setHours(0, 0, 0, 0);
 
-    const days = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const days = Math.round((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     const sortedItems = [...items].sort((a, b) => {
       const sa = plm(a.startDate).getTime();
       const sb = plm(b.startDate).getTime();
@@ -876,7 +886,11 @@ const colors = {
   };
 
   const scrollGanttTo = (x: number, animated = true) => {
-    const nx = Math.max(0, x);
+    // Clamp to the real scroll range so ganttXRef / ganttViewX match where the
+    // ScrollView actually lands (it stops at the end without telling us).
+    const visibleW = screenWidth - 2 * padX - nameColWidth;
+    const maxX = Math.max(0, ganttData().days * dayW - visibleW);
+    const nx = Math.min(Math.max(0, x), maxX);
     ganttXRef.current = nx;
     ganttScrollRef.current?.scrollTo({ x: nx, animated });
     ganttHeaderScrollRef.current?.scrollTo({ x: nx, animated });
@@ -914,7 +928,9 @@ const colors = {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const MS_PER_DAY = 1000 * 60 * 60 * 24;
-    const todayDayIndex = Math.floor((today.getTime() - minDate.getTime()) / MS_PER_DAY);
+    // Day gaps between local midnights use Math.round: across a daylight-saving
+    // change the gap is N days ± 1 hour, and floor would give N-1.
+    const todayDayIndex = Math.round((today.getTime() - minDate.getTime()) / MS_PER_DAY);
     const todayX = todayDayIndex * dayW + dayW / 2 - g.todayLine / 2;
 
     const dateHeaders: { date: Date; isWeekend: boolean }[] = [];
@@ -948,7 +964,11 @@ const colors = {
 
     return (
       <View style={styles.flex1}>
-        {/* Date header: month in the corner, weekday + date per column */}
+        {/* Date header: month in the corner, weekday + date per column. With
+            no names column there is no corner, so the month sits above. */}
+        {!showNamesCol && (
+          <Text style={[type.meta, ss.ganttMonthAbove, { color: k.text, marginHorizontal: padX }]}>{ganttMonth}</Text>
+        )}
         <View style={[ss.ganttHeader, { borderBottomColor: k.border, marginHorizontal: padX }]}>
           {showNamesCol && (
             <View style={[ss.ganttCorner, { width: nameColWidth }]}>
@@ -994,8 +1014,16 @@ const colors = {
               ref={ganttScrollRef}
               scrollEventThrottle={16}
               onScroll={(e) => {
-                syncGanttHeader(e.nativeEvent.contentOffset.x);
+                const x = e.nativeEvent.contentOffset.x;
+                syncGanttHeader(x);
                 if (showGanttMenu) setShowGanttMenu(false);
+                // Keep the "25 ›" markers and corner month current mid-scroll,
+                // but re-render at most every GANTT_MARKER_THROTTLE_MS, not per frame.
+                const now = Date.now();
+                if (now - ganttMarkerAtRef.current >= GANTT_MARKER_THROTTLE_MS) {
+                  ganttMarkerAtRef.current = now;
+                  updateGanttMonth(x);
+                }
               }}
               onMomentumScrollEnd={(e) => updateGanttMonth(e.nativeEvent.contentOffset.x)}
               onScrollEndDrag={(e) => updateGanttMonth(e.nativeEvent.contentOffset.x)}
@@ -1034,7 +1062,7 @@ const colors = {
                 {sortedItems.map((item, idx) => {
                   const itemStart = parseLocalMidnight(item.startDate);
                   const itemEnd = parseLocalMidnight(item.endDate);
-                  const startDay = Math.max(0, Math.floor((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
+                  const startDay = Math.max(0, Math.round((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
                   const durationDays = Math.max(1, Math.round((itemEnd.getTime() - itemStart.getTime()) / MS_PER_DAY) + 1);
                   const barLeft = startDay * dayW + g.barInset;
                   const barWidth = Math.max(durationDays * dayW - 2 * g.barInset, dayW - 2 * g.barInset);
@@ -1080,7 +1108,19 @@ const colors = {
                         accessibilityRole="button"
                         accessibilityLabel={`${item.name}, ${formatDateRange(item.startDate, item.endDate)}`}
                       >
-                        <GanttBar color={item.color || item.assignedToColor} width={barWidth} label={range} />
+                        {/* Names column on: the bar carries its dates. Off: nothing else
+                            names the row, so the bar carries the item name (inside when
+                            it fits, else just after the bar). */}
+                        {showNamesCol ? (
+                          <GanttBar color={item.color || item.assignedToColor} width={barWidth} label={range} />
+                        ) : (
+                          <GanttBar
+                            color={item.color || item.assignedToColor}
+                            width={barWidth}
+                            label={item.name}
+                            labelFits={item.name.length * metrics.ganttBar.nameCharWidth + metrics.ganttBar.strip + 2 * metrics.ganttBar.labelPadX <= barWidth}
+                          />
+                        )}
                       </Pressable>
                     </View>
                   );
@@ -1091,7 +1131,7 @@ const colors = {
                   const deps = item.dependencies || [];
                   if (deps.length === 0) return null;
                   const itemStart = parseLocalMidnight(item.startDate);
-                  const depStartDay = Math.max(0, Math.floor((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
+                  const depStartDay = Math.max(0, Math.round((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
                   const depBarLeft = depStartDay * dayW + g.barInset;
                   const depRowTop = idx * g.rowHeight + g.rowHeight / 2;
 
@@ -1153,7 +1193,7 @@ const colors = {
     return `${h12}:${String(m).padStart(2, '0')}`;
   };
 
-  const renderCalendarView = () => {
+  const renderWeekView = () => {
     const weekDays = getWeekDays();
     const timed = items.filter(it => timeOf(it.startTime) != null);
     let startHour: number = cal.startHour;
@@ -1175,7 +1215,7 @@ const colors = {
     const hasAllDay = allDayRows.some(r => r.length > 0);
 
     return (
-      <View style={styles.flex1}>
+      <View style={styles.flex1} onLayout={(e) => setCalBodyHeight(e.nativeEvent.layout.height)}>
         <ScrollView
           horizontal
           ref={calScrollRef}
@@ -1207,9 +1247,15 @@ const colors = {
               })}
             </View>
 
-            {/* All-day items (schedule items without a time) */}
+            {/* All-day items (schedule items without a time). Capped in height and
+                scrolls on its own, so a busy week never pushes items out of reach. */}
             {hasAllDay ? (
-              <View style={[ss.calAllDay, { borderBottomColor: k.border }]}>
+              <ScrollView
+                style={[ss.calAllDayScroll, { borderBottomColor: k.border }]}
+                contentContainerStyle={ss.calAllDay}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={false}
+              >
                 <View style={ss.calGutter} />
                 {allDayRows.map((row, i) => (
                   <View key={i} style={[ss.calAllDayCol, { width: cal.dayWidth }]}>
@@ -1220,7 +1266,7 @@ const colors = {
                     ))}
                   </View>
                 ))}
-              </View>
+              </ScrollView>
             ) : null}
 
             {/* Time grid */}
@@ -1285,18 +1331,139 @@ const colors = {
     );
   };
 
-  // ‹ Today › in the tab row: a week at a time.
+  // ── Calendar: month grid (Monday first) + the picked day's items ──────────
+  const renderMonthView = () => {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const gridStart = getMondayOfWeek(new Date(year, month, 1));
+    const lastOfMonth = new Date(year, month + 1, 0);
+    const weeks: Date[][] = [];
+    for (let d = new Date(gridStart); d <= lastOfMonth || weeks[weeks.length - 1]?.length !== 7;) {
+      if (!weeks.length || weeks[weeks.length - 1].length === 7) weeks.push([]);
+      weeks[weeks.length - 1].push(new Date(d));
+      d.setDate(d.getDate() + 1);
+    }
+    const dayItems = getItemsForDate(selectedDate);
+    const dayNamesMonFirst = [...DAY_NAMES.slice(1), DAY_NAMES[0]];
+
+    return (
+      <ScrollView
+        style={styles.flex1}
+        contentContainerStyle={{ paddingHorizontal: padX, paddingBottom: FAB_CLEARANCE + space.screenBottom }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
+      >
+        <View style={[ss.monthWeekRow, { borderBottomWidth: size.border, borderBottomColor: k.border }]}>
+          {dayNamesMonFirst.map(n => (
+            <View key={n} style={ss.monthDayName}>
+              <Text style={[type.tiny, { color: k.muted }]}>{n.toUpperCase()}</Text>
+            </View>
+          ))}
+        </View>
+        {weeks.map((week, wi) => (
+          <View key={wi} style={ss.monthWeekRow}>
+            {week.map((day, di) => {
+              const inMonth = day.getMonth() === month;
+              const todayCell = isToday(day);
+              const selected = isSameDay(day, selectedDate);
+              const weekend = day.getDay() === 0 || day.getDay() === 6;
+              const dots = inMonth ? getItemsForDate(day).slice(0, cal.monthDots) : [];
+              return (
+                <Pressable
+                  key={di}
+                  onPress={() => setSelectedDate(day)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${DAY_NAMES[day.getDay()]} ${day.getDate()} ${MONTHS[day.getMonth()]}`}
+                  style={[ss.monthCell, weekend && { backgroundColor: k.greyFill }]}
+                >
+                  <View style={[ss.calDateCircle, selected && { backgroundColor: k.tint }, todayCell && { backgroundColor: k.accent }]}>
+                    <Text style={[type.body, tabular, { color: todayCell ? k.onAccent : selected ? k.accent : inMonth ? k.text : k.faint }]}>
+                      {day.getDate()}
+                    </Text>
+                  </View>
+                  <View style={ss.monthDots}>
+                    {dots.map(it => <View key={it.id} style={[ss.monthDot, { backgroundColor: getItemColor(it) }]} />)}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+
+        <View style={ss.monthAgenda}>
+          <Text style={[type.meta, { color: k.muted, marginBottom: sc.dayLabelGap }]}>
+            {`${DAY_NAMES[selectedDate.getDay()]} ${selectedDate.getDate()} ${MONTHS[selectedDate.getMonth()]}`}
+          </Text>
+          {dayItems.length === 0 ? (
+            <Text style={[type.meta, { color: k.muted }]}>Nothing scheduled this day</Text>
+          ) : (
+            <Card variant="list">
+              {dayItems.map(item => {
+                const status = getStatusOption(item.status);
+                return (
+                  <ListRow
+                    key={item.id}
+                    onPress={() => openDetail(item)}
+                    title={item.name}
+                    done={item.status === 'completed'}
+                    subtitle={itemMeta(item)}
+                    trailing={<StatusDot status={dotFor(item.status)} label={status.name} />}
+                  />
+                );
+              })}
+            </Card>
+          )}
+        </View>
+      </ScrollView>
+    );
+  };
+
+  const setCalMode = (mode: CalendarMode) => {
+    setCalendarMode(mode);
+    if (mode === 'week') setWeekStartDate(getMondayOfWeek(selectedDate));
+    else {
+      // Open on the month of the week being looked at; keep the picked day if it's in it.
+      const anchor = isSameDay(getMondayOfWeek(selectedDate), weekStartDate) ? selectedDate : weekStartDate;
+      setMonthDate(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
+      setSelectedDate(new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate()));
+    }
+  };
+
+  const renderCalendarView = () => (
+    <View style={styles.flex1}>
+      <View style={[ss.calModeRow, { paddingHorizontal: padX }]}>
+        <Segmented
+          options={[{ key: 'week', label: 'Week' }, { key: 'month', label: 'Month' }]}
+          value={calendarMode}
+          onChange={setCalMode}
+        />
+        {calendarMode === 'month' ? (
+          <Text style={[type.metaMedium, { color: k.text }]}>{`${MONTHS_FULL[monthDate.getMonth()]} ${monthDate.getFullYear()}`}</Text>
+        ) : null}
+      </View>
+      {calendarMode === 'month' ? renderMonthView() : renderWeekView()}
+    </View>
+  );
+
+  // ‹ Today › in the tab row: a week at a time (a month at a time in Month).
+  const shiftMonth = (by: number) => setMonthDate(d => new Date(d.getFullYear(), d.getMonth() + by, 1));
   const navPrev = () => {
     if (viewMode === 'gantt') scrollGanttTo(ganttXRef.current - visibleDays * dayW);
+    else if (calendarMode === 'month') shiftMonth(-1);
     else { const d = new Date(weekStartDate); d.setDate(d.getDate() - 7); setWeekStartDate(d); }
   };
   const navNext = () => {
     if (viewMode === 'gantt') scrollGanttTo(ganttXRef.current + visibleDays * dayW);
+    else if (calendarMode === 'month') shiftMonth(1);
     else { const d = new Date(weekStartDate); d.setDate(d.getDate() + 7); setWeekStartDate(d); }
   };
   const navToday = () => {
     if (viewMode === 'gantt') scrollGanttTo(ganttTodayX());
-    else setWeekStartDate(getMondayOfWeek(new Date()));
+    else if (calendarMode === 'month') {
+      const t = new Date(); t.setHours(0, 0, 0, 0);
+      setMonthDate(new Date(t.getFullYear(), t.getMonth(), 1));
+      setSelectedDate(t);
+    } else setWeekStartDate(getMondayOfWeek(new Date()));
   };
 
   const closeDetail = () => {
@@ -1736,7 +1903,7 @@ const colors = {
       ) : loading ? (
         <SkeletonList />
       ) : (
-        <View style={styles.flex1} onLayout={(e) => setCalBodyHeight(e.nativeEvent.layout.height)}>
+        <View style={styles.flex1}>
           {viewMode === 'list' && renderListView()}
           {viewMode === 'gantt' && renderGanttView()}
           {viewMode === 'calendar' && renderCalendarView()}
@@ -1776,6 +1943,7 @@ const ss = StyleSheet.create({
   ganttMenu: { position: 'absolute', right: space.screenX, top: '100%', width: metrics.workspace.menuWidth, zIndex: 20 },
   ganttHeader: { flexDirection: 'row', borderBottomWidth: size.border, marginHorizontal: space.screenX },
   ganttCorner: { justifyContent: 'flex-end', paddingBottom: space.inline },
+  ganttMonthAbove: { paddingBottom: space.inlineSm },
   ganttDateCell: { alignItems: 'center', justifyContent: 'flex-end', paddingBottom: space.inlineSm, gap: space.inlineSm / 2 },
   ganttDateNum: {
     width: S.gantt.todayCircle,
@@ -1799,7 +1967,15 @@ const ss = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  calAllDay: { flexDirection: 'row', borderBottomWidth: size.border, paddingLeft: space.screenX, paddingVertical: space.inlineSm },
+  calAllDayScroll: { flexGrow: 0, maxHeight: S.calendar.allDayMax, borderBottomWidth: size.border },
+  calAllDay: { flexDirection: 'row', paddingLeft: space.screenX, paddingVertical: space.inlineSm },
+  calModeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: space.inline },
+  monthWeekRow: { flexDirection: 'row' },
+  monthDayName: { flex: 1, alignItems: 'center', paddingBottom: space.inlineSm },
+  monthCell: { flex: 1, height: S.calendar.monthCell, alignItems: 'center', justifyContent: 'center', gap: space.inlineSm / 2 },
+  monthDots: { flexDirection: 'row', gap: space.inlineSm / 2, height: S.calendar.monthDot },
+  monthDot: { width: S.calendar.monthDot, height: S.calendar.monthDot, borderRadius: S.calendar.monthDot / 2 },
+  monthAgenda: { paddingTop: S.dayGroupGap },
   calAllDayCol: { gap: space.inlineSm / 2, paddingHorizontal: S.calendar.blockInset },
   calHour: { position: 'absolute', left: 0, marginTop: -space.inline },
   calDayCol: { borderLeftWidth: size.border },

@@ -47,8 +47,10 @@ export function formatShortCents(cents: number | null | undefined): string | nul
   const dollars = cents / 100;
   const abs = Math.abs(dollars);
   const sign = dollars < 0 ? '-' : '';
-  if (abs >= 1_000_000) return `${sign}$${parseFloat((abs / 1_000_000).toFixed(2))}m`;
-  if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}k`;
+  // Thresholds sit at the rounding boundary, so $999,600 reads "$1m" (not
+  // "$1000k") and $999.60 reads "$1k" (not "$1000").
+  if (abs >= 999_500) return `${sign}$${parseFloat((abs / 1_000_000).toFixed(2))}m`;
+  if (abs >= 999.5) return `${sign}$${Math.round(abs / 1_000)}k`;
   return `${sign}$${Math.round(abs)}`;
 }
 

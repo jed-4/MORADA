@@ -165,7 +165,7 @@ export function ScheduleActivityFeedButton({
         <Bell size={size.icon.header} color={k.icon} strokeWidth={metrics.iconStroke} />
         {unread > 0 ? (
           <View style={styles.badge}>
-            <UnreadBadge count={unread > 9 ? 9 : unread} />
+            <UnreadBadge count={unread} />
           </View>
         ) : null}
       </Pressable>
