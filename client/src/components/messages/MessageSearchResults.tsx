@@ -2,7 +2,7 @@ import { Fragment, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, isToday, isYesterday, isThisWeek, isThisYear } from "date-fns";
 import { Eye, Loader2, Lock, User } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { ClientBadge } from "@/components/messages/ClientBadge";
 import { ChannelEmoji } from "@/components/ChannelEmojiPicker";
 import { getApiBaseUrl } from "@/lib/queryClient";
 import { stripMentionMarkup } from "@/lib/messageText";
@@ -90,14 +90,6 @@ function ConversationIcon({ c }: { c: ConversationLike }) {
   return <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
 }
 
-function ClientBadge() {
-  return (
-    <Badge variant="secondary" className="h-4 text-data px-1 shrink-0">
-      <Eye className="h-2.5 w-2.5 mr-0.5" />
-      Client
-    </Badge>
-  );
-}
 
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
@@ -185,7 +177,7 @@ export function MessageSearchResults({
           >
             <ConversationIcon c={c} />
             <span className="truncate flex-1">{getConversationName(c)}</span>
-            {c.isClientFacing && <ClientBadge />}
+            {c.isClientFacing && <ClientBadge size="sm" />}
           </button>
         ))
       )}
@@ -237,7 +229,7 @@ export function MessageSearchResults({
                 <div className="flex items-center gap-1.5 w-full min-w-0 text-xs">
                   <ConversationIcon c={conversation} />
                   <span className="truncate font-medium">{getConversationName(conversation)}</span>
-                  {hit.isClientFacing && <ClientBadge />}
+                  {hit.isClientFacing && <ClientBadge size="sm" />}
                   <span className="ml-auto shrink-0 text-data text-muted-foreground">{shortDate(hit.createdAt)}</span>
                 </div>
                 <div className="text-xs text-muted-foreground truncate">{sender}</div>

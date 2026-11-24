@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { ClientBadge } from "@/components/messages/ClientBadge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -2117,12 +2118,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
                       ? <User className="h-4 w-4 text-primary shrink-0" />
                       : <Hash className="h-4 w-4 text-primary shrink-0" />}
                   <span className="text-base font-semibold truncate">{getDmDisplayName(selectedChannel)}</span>
-                  {selectedChannel.isClientFacing && (
-                    <Badge variant="secondary" className="h-5 text-data shrink-0">
-                      <Eye className="h-3 w-3 mr-1" />
-                      Client
-                    </Badge>
-                  )}
+                  {selectedChannel.isClientFacing && <ClientBadge />}
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
