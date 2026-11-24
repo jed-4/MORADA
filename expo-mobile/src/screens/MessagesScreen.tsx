@@ -127,6 +127,23 @@ export default function MessagesScreen({ navigation, route }: Props) {
     }
   }, []);
 
+  // Duo two-pane: the open thread marks itself read on open and on leave, but
+  // that never reached this list, so a thread's badge came back once you left
+  // it. Zero it locally the moment the selection moves, and again when the
+  // thread's read POST lands. No list refetch here: mark-read also fires on
+  // every incoming message, and the socket already refreshes the list then.
+  const prevSelectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevSelectedRef.current;
+    prevSelectedRef.current = isWide ? selectedId : null;
+    const ids = [prev, isWide ? selectedId : null].filter((id): id is string => !!id);
+    if (!ids.length) return;
+    setUnreadCounts(c => (ids.every(id => !c[id]) ? c : { ...c, ...Object.fromEntries(ids.map(id => [id, 0])) }));
+  }, [isWide, selectedId]);
+  const handleMarkedRead = useCallback((id: string) => {
+    setUnreadCounts(c => (c[id] ? { ...c, [id]: 0 } : c));
+  }, []);
+
   const fetchAssignableUsers = useCallback(async () => {
     try {
       const allUsers = await apiFetch<TeamUser[]>('/api/users/assignable');
@@ -406,6 +423,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
               key={selectedId}
               embedded
               onChannelChanged={fetchChannels}
+              onMarkedRead={handleMarkedRead}
               navigation={navigation}
               route={{ params: { channelId: selectedId, channelName: namesRef.current[selectedId] ?? '' } }}
             />

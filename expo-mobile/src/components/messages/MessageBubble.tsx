@@ -132,6 +132,14 @@ export const MessageBubble = memo(function MessageBubble({
           onToggle={emoji => onToggleReaction(msg, emoji)}
         />
 
+        {/* A follow-up has no header, so its send/upload progress goes here —
+            main showed "Sending…" / upload status under every own message. */}
+        {isMe && msg.pending && !isFirstFromSender ? (
+          <Text style={[type.caption, tabular, styles.status, { color: c.muted }]}>
+            {msg.uploadStatus || 'Sending…'}
+          </Text>
+        ) : null}
+
         {isMe && msg.failed ? (
           <View style={styles.failed}>
             <Pressable hitSlop={metrics.hitSlop} onPress={() => onRetry(msg)} accessibilityRole="button">
@@ -170,5 +178,6 @@ const styles = StyleSheet.create({
     borderWidth: size.border,
   },
   fileName: { flexShrink: 1 },
+  status: { marginTop: space.inlineSm },
   failed: { flexDirection: 'row', alignItems: 'center', gap: space.inline, marginTop: space.inlineSm },
 });

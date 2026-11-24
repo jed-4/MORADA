@@ -65,6 +65,8 @@ type Props = {
   embedded?: boolean;
   /** Told when the channel's emoji changes, so the Duo list beside it updates. */
   onChannelChanged?: () => void;
+  /** Told after this channel is marked read, so the Duo list beside it clears its badge. */
+  onMarkedRead?: (channelId: string) => void;
 };
 
 /** Below this scroll offset the inverted list counts as "at the newest". */
@@ -111,7 +113,7 @@ type ListItem =
   | { kind: 'divider'; id: string; date: string }
   | { kind: 'seen'; id: string; label: string };
 
-export default function MessageThreadScreen({ navigation, route, embedded, onChannelChanged }: Props) {
+export default function MessageThreadScreen({ navigation, route, embedded, onChannelChanged, onMarkedRead }: Props) {
   // Both params are always supplied when this screen is opened (nav + deep links).
   const { channelId, channelName } = route.params as { channelId: string; channelName: string };
   const { user } = useAuth();
@@ -177,9 +179,13 @@ export default function MessageThreadScreen({ navigation, route, embedded, onCha
     setHasNew(false);
   }, []);
 
+  // Through a ref so a new callback from the list doesn't re-run the focus effect.
+  const onMarkedReadRef = useRef(onMarkedRead);
+  onMarkedReadRef.current = onMarkedRead;
   const markRead = useCallback(async () => {
     try {
       await apiRequest(`/api/channels/${channelId}/read`, 'POST');
+      onMarkedReadRef.current?.(channelId);
     } catch {
       // silently fail
     }
