@@ -39,6 +39,8 @@ import {
   templateGroupParents,
 } from "@/components/estimates/templateGroupTree";
 import { computeEstimateItemPrice, round2 } from "@shared/pricing";
+import { checkTemplateFormula, isPlainNumber, normaliseTakeoffName } from "@shared/quantityFormula";
+import type { TakeoffTemplate } from "@shared/takeoffTemplates";
 import { startDragGhost } from "@/components/estimates/estimateDragGhost";
 import type { CostCode, CostCategory, EstimateItem, EstimateGroup, FieldCategoryWithOptions } from "@shared/schema";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
@@ -81,6 +83,13 @@ export interface TemplateItem {
   costCodeTitle?: string;
   unit?: string;
   quantity?: number;
+  /**
+   * The quantity as an expression over take-off items BY NAME —
+   * `{Wall tiles} * 1.1`. A template has no project, so nothing to link to;
+   * loading it into an estimate swaps each name for that project's item of the
+   * same name (see resolveNameRefs). JSON, so no migration.
+   */
+  quantityFormula?: string | null;
   unitPrice?: number; // cents
   /**
    * The catalogue item this line's cost came from.
@@ -126,6 +135,7 @@ function toEstimateItem(t: TemplateItem): EstimateItem {
     costCode: t.costCodeId || "",
     unitType: t.unit || "",
     quantity: t.quantity ?? 0,
+    quantityFormula: t.quantityFormula ?? null,
     unitCostExTax: (t.unitPrice ?? 0) / 100,
     markupPercent: t.markup ?? 0,
     allowance: t.allowance || "None",
@@ -172,7 +182,12 @@ export function toTemplatePatch(
   const patch: Partial<TemplateItem> = {};
   if ("name" in data) patch.name = data.name;
   if ("description" in data) patch.description = data.description;
-  if ("quantity" in data) patch.quantity = Number(data.quantity) || 0;
+  if ("quantity" in data) {
+    patch.quantity = Number(data.quantity) || 0;
+    // A typed number takes the line off the take-off — the estimate's rule.
+    patch.quantityFormula = null;
+  }
+  if ("quantityFormula" in data) patch.quantityFormula = data.quantityFormula || null;
   if ("unitType" in data) patch.unit = data.unitType;
   if ("type" in data) patch.type = data.type;
   if ("allowance" in data) patch.allowance = data.allowance;
@@ -643,7 +658,9 @@ export function TemplateEstimateGrid({
   const handleCellEdit = useCallback((item: EstimateItem, field: string) => {
     // A cell's column name and the field it holds differ for markup; reading
     // item.markup found nothing, so the editor opened blank.
-    const raw = (item as any)[CELL_FIELD_SOURCE[field] ?? field];
+    // A take-off quantity opens as its formula: the 0 behind it means nothing.
+    const formula = field === "quantity" ? (item as any).quantityFormula : null;
+    const raw = formula || (item as any)[CELL_FIELD_SOURCE[field] ?? field];
     setEditingCell({ itemId: item.id, field });
     setActiveCell({ itemId: item.id, field });
     setEditingValue(raw == null ? "" : String(raw));
@@ -651,12 +668,31 @@ export function TemplateEstimateGrid({
 
   const handleCellSave = useCallback(
     (item: EstimateItem, field: string) => {
+      // Not a number → a formula over take-off items by name. Checked here so
+      // a broken one is caught once, at the template, not on every estimate.
+      const text = String(editingValue ?? "").trim();
+      if (field === "quantity" && text && !isPlainNumber(text)) {
+        const checked = checkTemplateFormula(text);
+        if (!checked.ok) {
+          toast({ title: "Can't read that quantity", description: checked.error, variant: "destructive" });
+          return;
+        }
+        if (checked.formula !== ((item as any).quantityFormula ?? null)) {
+          // The number is the take-off's, once there is one. Until then 0 —
+          // never a guess that could reach a quote.
+          patchItem(item.id, { quantity: 0, quantityFormula: checked.formula });
+        }
+        setEditingCell(null);
+        setEditingValue("");
+        gridRef.current?.focus();
+        return;
+      }
       patchItem(item.id, { [field]: editingValue });
       setEditingCell(null);
       setEditingValue("");
       gridRef.current?.focus();
     },
-    [editingValue, patchItem],
+    [editingValue, patchItem, toast],
   );
 
   const handleCellCancel = useCallback(() => {
@@ -1160,6 +1196,38 @@ export function TemplateEstimateGrid({
   // ── Layout ─────────────────────────────────────────────────────────────────
   const { visibleCols, gridTemplate, tableWidth } = gridLayout(columns);
 
+  /* Lines are drawn and measured on the job, so the right list here is what
+     the company's take-off TEMPLATES measure: one entry per item name, grouped
+     by the category it sits in. Loading both templates onto a job is what makes
+     the names meet. */
+  const { data: takeoffTemplates = [] } = useQuery<TakeoffTemplate[]>({
+    queryKey: ["/api/takeoff-templates"],
+  });
+  const takeoffItems = useMemo(() => templateTakeoffItems(takeoffTemplates), [takeoffTemplates]);
+  const quantityPreview = useCallback((text: string): { text: string; error?: string; label?: string } => {
+    const trimmed = (text ?? "").trim();
+    if (!trimmed || isPlainNumber(trimmed)) return { text: "" };
+    const lastOpen = trimmed.lastIndexOf("{");
+    if (lastOpen >= 0 && !trimmed.slice(lastOpen).includes("}")) return { text: "" };
+    const checked = checkTemplateFormula(trimmed);
+    if (!checked.ok) return { text: "", error: checked.error };
+    const known = new Set(takeoffItems.measurements.map((m) => normaliseTakeoffName(m.name)));
+    const unknown = checked.names.filter((n) => !known.has(normaliseTakeoffName(n)));
+    return unknown.length
+      ? { text: "", label: "from take-off · not in a template" }
+      : { text: "", label: "from take-off" };
+  }, [takeoffItems]);
+  const takeoffCtx = useMemo(
+    () => ({
+      ...takeoffItems,
+      names: new Map<string, string>(),
+      preview: quantityPreview,
+      onPick: () => {},
+      mode: "template" as const,
+    }),
+    [takeoffItems, quantityPreview],
+  );
+
   const ctx: EstimateGridCtx = {
     editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell,
     handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus,
@@ -1211,6 +1279,7 @@ export function TemplateEstimateGrid({
     // confirmation, a unit that could not come across, a failed save — went
     // nowhere. The grid looked silent when it was actually trying to speak.
     toast,
+    takeoff: takeoffCtx,
   };
 
   const renderItemRow = useCallback(
@@ -1469,4 +1538,44 @@ export function TemplateEstimateGrid({
       </Dialog>
     </div>
   );
+}
+
+/**
+ * The company's take-off template items as the picker's list: one per name
+ * (the same item in two templates is one choice — names are what link), with
+ * categories made from the names they sit under. Shaped like measurements so
+ * the estimate's own picker can draw them unchanged.
+ */
+export function templateTakeoffItems(templates: TakeoffTemplate[]) {
+  const seen = new Set<string>();
+  const categoryIds = new Map<string, string>();
+  const measurements: any[] = [];
+  const categories: any[] = [];
+  for (const t of templates) {
+    for (const item of t.items ?? []) {
+      const name = String(item?.name ?? "").trim();
+      const key = normaliseTakeoffName(name);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const catName = String(item.categoryName ?? "").trim();
+      let categoryId: string | null = null;
+      if (catName) {
+        const catKey = catName.toLowerCase();
+        if (!categoryIds.has(catKey)) {
+          categoryIds.set(catKey, `cat:${catKey}`);
+          categories.push({ id: `cat:${catKey}`, name: catName, order: categories.length });
+        }
+        categoryId = categoryIds.get(catKey)!;
+      }
+      measurements.push({
+        id: `name:${key}`,
+        name,
+        categoryId,
+        color: item.color || "#A890D4",
+        unit: item.unit || "",
+        quantity: 0,
+      });
+    }
+  }
+  return { measurements, categories };
 }

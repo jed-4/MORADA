@@ -45,7 +45,7 @@ import {
 } from "lucide-react";
 import { PriceListItemPicker } from "@/components/estimates/PriceListItemPicker";
 import QuantityFormulaEditor from "@/components/estimates/QuantityFormulaEditor";
-import { formulaToDisplay } from "@shared/quantityFormula";
+import { extractNameRefs, formulaToDisplay, normaliseTakeoffName } from "@shared/quantityFormula";
 import { isFixedPriceLine, isLumpSumLine } from "@shared/pricing";
 import type {
   EstimateItem,
@@ -314,7 +314,12 @@ export interface EstimateGridCtx {
     preview: (text: string) => { text: string; error?: string };
     /** Remember which item a picked name came from. */
     onPick: (name: string, id: string) => void;
-    onAddInTakeoff: () => void;
+    onAddInTakeoff?: () => void;
+    /**
+     * "template": the list is take-off TEMPLATE items and a formula names its
+     * items rather than linking them — there is no project to link into yet.
+     */
+    mode?: "estimate" | "template";
   };
 
   // actions
@@ -867,6 +872,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                   preview={takeoff.preview(String(editingValue ?? ""))}
                   onPick={takeoff.onPick}
                   onAddInTakeoff={takeoff.onAddInTakeoff}
+                  variant={takeoff.mode}
                   testId={`input-edit-quantity-${item.id}`}
                 />
               ) : (
@@ -897,6 +903,28 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
         const formula = (item as any).quantityFormula as string | null | undefined;
         const formulaWords = formula && takeoff ? formulaToDisplay(formula, takeoff.names) : null;
         const formulaBroken = !!formulaWords && formulaWords.includes("{deleted item}");
+        // Names still in braces: on a template that is the design (it links on
+        // load); on an estimate it is a line waiting for its take-off item.
+        const waitingFor = formula ? extractNameRefs(formula) : [];
+        const onTemplate = takeoff?.mode === "template";
+        const isWaiting = !onTemplate && waitingFor.length > 0;
+        const ambiguousNames = isWaiting && takeoff
+          ? waitingFor.filter((n) => {
+              const key = normaliseTakeoffName(n);
+              return takeoff.measurements.filter((m) => normaliseTakeoffName(m.name) === key).length > 1;
+            })
+          : [];
+        const formulaTitle = !formulaWords
+          ? ""
+          : onTemplate
+            ? `${formulaWords} — the quantity comes from the take-off once this template is loaded into an estimate`
+            : isWaiting
+              ? `Waiting for take-off: ${waitingFor.join(", ")}. ${
+                  ambiguousNames.length
+                    ? `More than one take-off item is called ${ambiguousNames.map((n) => `"${n}"`).join(", ")} — click to pick one.`
+                    : "This line links itself as soon as an item with that name is measured."
+                }`
+              : `${formulaWords}${formulaBroken ? " — a take-off item in this formula was deleted, so this is the last figure it gave" : " — from the take-off"}`;
 
         return (
           <div
@@ -906,7 +934,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
               isLocked
                 ? ''
                 : formulaWords
-                  ? `${formulaWords}${formulaBroken ? " — a take-off item in this formula was deleted, so this is the last figure it gave" : " — from the take-off"}`
+                  ? formulaTitle
                   : `Click to edit${wastage > 0 ? ` (builder cost includes +${wastage}% waste)` : ''}`
             }
             onClick={(e) => {
@@ -940,11 +968,17 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
             ) : null}
             {formulaWords && (
               <Ruler
-                className={`h-3 w-3 flex-shrink-0 ${formulaBroken ? "text-destructive" : "text-muted-foreground"}`}
-                data-testid={`quantity-from-takeoff-${item.id}`}
+                className={`h-3 w-3 flex-shrink-0 ${
+                  formulaBroken ? "text-destructive" : isWaiting ? "text-amber" : onTemplate ? "text-primary" : "text-muted-foreground"
+                }`}
+                data-testid={isWaiting ? `quantity-waiting-takeoff-${item.id}` : `quantity-from-takeoff-${item.id}`}
               />
             )}
-            {isLumpSumLine(item.unitCostExTax, item.priceIncTax) && !formulaWords ? null : (
+            {onTemplate && formulaWords ? (
+              <span className="truncate text-xs text-muted-foreground" data-testid={`quantity-takeoff-names-${item.id}`}>
+                {waitingFor.join(", ")}
+              </span>
+            ) : isLumpSumLine(item.unitCostExTax, item.priceIncTax) && !formulaWords ? null : (
               <span>{baseQuantity.toFixed(2).replace(/\.?0+$/, '')}</span>
             )}
           </div>

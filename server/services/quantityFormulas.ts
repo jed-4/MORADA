@@ -1,9 +1,12 @@
 import { db } from "../db";
 import * as schema from "@shared/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   evaluateQuantityFormula,
   extractTakeoffRefs,
+  indexTakeoffByName,
+  isWaitingFormula,
+  resolveNameRefs,
 } from "@shared/quantityFormula";
 import { resolveEstimateStoredPrice } from "@shared/pricing";
 
@@ -248,4 +251,105 @@ export async function getMeasurementUsage(projectId: string): Promise<Measuremen
     });
   }
   return Array.from(byMeasurement.values());
+}
+
+/** A project's take-off, indexed for linking names: one query. */
+export async function loadTakeoffIndex(projectId: string) {
+  const rows = await db
+    .select({
+      id: schema.takeoffMeasurements.id,
+      name: schema.takeoffMeasurements.name,
+      quantity: schema.takeoffMeasurements.quantity,
+    })
+    .from(schema.takeoffMeasurements)
+    .where(eq(schema.takeoffMeasurements.projectId, projectId));
+  return {
+    byName: indexTakeoffByName(rows),
+    quantities: new Map(rows.map((r) => [r.id, Number(r.quantity) || 0] as const)),
+  };
+}
+
+/**
+ * Index the take-off refs of lines just created, in ONE insert.
+ *
+ * syncItemRefs is per line (delete, check, insert) — fine for one edit, and
+ * three round trips a line for a 60-line template load. New lines have no refs
+ * to delete, and `liveIds` (the project's measurements, already loaded) says
+ * which ids exist.
+ */
+export async function insertRefsForNewItems(
+  items: Array<{ id: string; quantityFormula?: string | null }>,
+  liveIds: Set<string>,
+): Promise<void> {
+  const values = items.flatMap((item) =>
+    extractTakeoffRefs(item.quantityFormula)
+      .filter((id) => liveIds.has(id))
+      .map((measurementId) => ({ estimateItemId: item.id, measurementId })),
+  );
+  if (values.length === 0) return;
+  await db.insert(schema.estimateItemTakeoffRefs).values(values).onConflictDoNothing();
+}
+
+/**
+ * Link the estimate lines that are waiting for a take-off item.
+ *
+ * A line loaded from a template before its item was measured keeps the item's
+ * NAME in its formula (`{Wall tiles} * 1.1`) at quantity 0. Call this whenever
+ * a project's take-off gains a name — an item created (drawn, or loaded from a
+ * take-off template) or renamed — and every waiting line that now matches
+ * exactly one item is linked, evaluated and re-priced. So it doesn't matter
+ * which was loaded first, the estimate template or the take-off.
+ *
+ * Same exclusions as re-measuring: locked estimates and superseded revisions
+ * are records, not working documents, and are left as they are.
+ *
+ * Returns the ids of the lines it changed.
+ */
+export async function linkWaitingLines(projectId: string): Promise<string[]> {
+  // Only lines with a NAME in braces; id references (`{takeoff:…}`) are the
+  // linked ones. Postgres ARE supports the lookahead.
+  const rows = await db
+    .select({ item: schema.estimateItems, estimate: schema.estimates })
+    .from(schema.estimateItems)
+    .innerJoin(schema.estimates, eq(schema.estimates.id, schema.estimateItems.estimateId))
+    .where(
+      and(
+        eq(schema.estimates.projectId, projectId),
+        sql`${schema.estimateItems.quantityFormula} ~ ${"\\{(?!takeoff:)"}`,
+      ),
+    );
+  const waiting = rows.filter((r) => !r.estimate.isLocked && isWaitingFormula(r.item.quantityFormula));
+  if (waiting.length === 0) return [];
+
+  const latest = await resolveLatestRevisions(Array.from(new Map(waiting.map((r) => [r.estimate.id, r.estimate])).values()));
+  const candidates = waiting.filter((r) => latest.has(r.estimate.id));
+  if (candidates.length === 0) return [];
+
+  const { byName, quantities } = await loadTakeoffIndex(projectId);
+  const changed: Array<{ id: string; quantityFormula: string }> = [];
+  for (const { item, estimate } of candidates) {
+    const r = resolveNameRefs(item.quantityFormula!, byName);
+    if (r.linked.length === 0) continue; // nothing new matched
+    const patch: Record<string, any> = { quantityFormula: r.formula, updatedAt: new Date() };
+    if (r.waiting.length === 0 && r.ambiguous.length === 0) {
+      const value = evaluateQuantityFormula(r.formula, quantities);
+      if (value.ok) {
+        const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
+          unitCostExTax: item.unitCostExTax,
+          unitCostIncTax: (item as any).unitCostIncTax,
+          quantity: value.value,
+          markupPercent: item.markupPercent,
+          projectMarkupPercent: estimate.projectMarkupPercent,
+          taxRate: estimate.taxRate,
+          wastagePercent: item.wastagePercent,
+          existingPriceIncTax: item.priceIncTax,
+        });
+        Object.assign(patch, { quantity: value.value, taxAmount, priceIncTax });
+      }
+    }
+    await db.update(schema.estimateItems).set(patch).where(eq(schema.estimateItems.id, item.id));
+    changed.push({ id: item.id, quantityFormula: r.formula });
+  }
+  await insertRefsForNewItems(changed, new Set(quantities.keys()));
+  return changed.map((c) => c.id);
 }
