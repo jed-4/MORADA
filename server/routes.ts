@@ -44421,6 +44421,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Search message text across the conversations the caller is a member of
+   * (the same rule as reading a channel). `q` is split into words; every word
+   * must appear. Newest first, at most 50. Clients only ever belong to their
+   * own client-facing channels, so membership already scopes them.
+   * Registered before /api/messages/:id so "search" isn't read as an id.
+   */
+  app.get("/api/messages/search", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const userId = user?.id;
+      const companyId = user?.companyId;
+      if (!userId || !companyId) return res.status(401).json({ error: "Unauthorized" });
+      const q = String(req.query.q ?? "").trim().slice(0, 200);
+      const words = Array.from(new Set(q.split(/\s+/).filter((w) => w.length > 0))).slice(0, 8);
+      if (q.length < 2 || words.length === 0) return res.json([]);
+      const requested = Number(req.query.limit);
+      const limit = Number.isFinite(requested) ? Math.min(50, Math.max(1, requested)) : 50;
+      res.json(await storage.searchMessagesForUser(userId, companyId, words, limit));
+    } catch (error) {
+      console.error("Failed to search messages:", error);
+      res.status(500).json({ error: "Failed to search messages" });
+    }
+  });
+
   app.get("/api/messages/:id", requireAuth, async (req, res) => {
     try {
       // message → channel → company
