@@ -60,7 +60,7 @@ import { readableFrame } from '../components/ui/ReadableColumn';
 // required strings at the destructure below.
 type Props = {
   navigation: NativeStackNavigationProp<any>;
-  route: { params?: { channelId?: string; channelName?: string } };
+  route: { params?: { channelId?: string; channelName?: string; focusMessageId?: string } };
   /** D07: shown in the Messages right pane on the Duo (no back, wide header). */
   embedded?: boolean;
   /** Told when the channel's emoji changes, so the Duo list beside it updates. */
@@ -115,7 +115,7 @@ type ListItem =
 
 export default function MessageThreadScreen({ navigation, route, embedded, onChannelChanged, onMarkedRead }: Props) {
   // Both params are always supplied when this screen is opened (nav + deep links).
-  const { channelId, channelName } = route.params as { channelId: string; channelName: string };
+  const { channelId, channelName, focusMessageId } = route.params as { channelId: string; channelName: string; focusMessageId?: string };
   const { user } = useAuth();
   const isClient = user?.userCategory === 'client';
   const theme = useTheme();
@@ -150,6 +150,12 @@ export default function MessageThreadScreen({ navigation, route, embedded, onCha
   const [channelMeta, setChannelMeta] = useState<ChannelMeta | null>(null);
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
   const [pinnedPreview, setPinnedPreview] = useState<Message | null>(null);
+  // The preview sheet shows a pinned message or a search hit that isn't loaded.
+  const [previewTitle, setPreviewTitle] = useState('Pinned message');
+  // Search → open thread: the message to scroll to, briefly tinted.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const jumpTargetRef = useRef<Message | null>(null);
+  const focusedRef = useRef<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [hasNew, setHasNew] = useState(false);
 
@@ -593,7 +599,7 @@ export default function MessageThreadScreen({ navigation, route, embedded, onCha
     }
 
     const msg = item.msg;
-    return (
+    const bubble = (
       <MessageBubble
         msg={msg}
         isMe={msg.userId === user?.id}
@@ -610,7 +616,8 @@ export default function MessageThreadScreen({ navigation, route, embedded, onCha
         onPressFile={openFileAttachment}
       />
     );
-  }, [colors.border, colors.secondary, colors.bg, colors.muted, user?.id, reactionsMap, theme, openMenu, toggleReaction, retrySend, discardFailed, openFileAttachment]);
+    return msg.id === highlightId ? <View style={[styles.highlight, { backgroundColor: k.tint }]}>{bubble}</View> : bubble;
+  }, [colors.border, colors.secondary, colors.bg, colors.muted, user?.id, reactionsMap, theme, openMenu, toggleReaction, retrySend, discardFailed, openFileAttachment, highlightId, k.tint]);
 
   // ── Pinned banner ──
 
@@ -625,9 +632,32 @@ export default function MessageThreadScreen({ navigation, route, embedded, onCha
       return;
     }
     // Not in the loaded window — show the text rather than paging back to it.
+    setPreviewTitle('Pinned message');
     setPinnedPreview(topPinned);
     pinnedSheetRef.current?.present();
   }, [topPinned, listData]);
+
+  // Opened from message search: scroll to the hit and tint it for a moment.
+  // Older than the loaded window → show it in the preview sheet instead.
+  const showPreview = useCallback((msg: Message) => {
+    setPreviewTitle('Message');
+    setPinnedPreview(msg);
+    pinnedSheetRef.current?.present();
+  }, []);
+  useEffect(() => {
+    if (!focusMessageId || loading || focusedRef.current === focusMessageId) return;
+    focusedRef.current = focusMessageId;
+    const idx = listData.findIndex(r => r.kind === 'message' && r.id === focusMessageId);
+    if (idx >= 0) {
+      const row = listData[idx];
+      jumpTargetRef.current = row.kind === 'message' ? row.msg : null;
+      setHighlightId(focusMessageId);
+      setTimeout(() => flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 }), metrics.sheetSwapMs);
+      setTimeout(() => setHighlightId(h => (h === focusMessageId ? null : h)), metrics.messages.highlightMs);
+      return;
+    }
+    apiFetch<Message>(`/api/messages/${focusMessageId}`).then(showPreview).catch(() => {});
+  }, [focusMessageId, loading, listData, showPreview]);
 
   // Clients can react and copy, but the server refuses them edit, delete and
   // pin (clientAccess ALLOW_RULES), so those actions aren't offered.
@@ -720,7 +750,11 @@ export default function MessageThreadScreen({ navigation, route, embedded, onCha
             maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
             onScrollToIndexFailed={() => {
               // Target hasn't been measured yet — fall back to the text preview.
-              if (topPinned) {
+              if (jumpTargetRef.current) {
+                showPreview(jumpTargetRef.current);
+                jumpTargetRef.current = null;
+              } else if (topPinned) {
+                setPreviewTitle('Pinned message');
                 setPinnedPreview(topPinned);
                 pinnedSheetRef.current?.present();
               }
@@ -819,7 +853,7 @@ export default function MessageThreadScreen({ navigation, route, embedded, onCha
       </Sheet>
 
       {/* Pinned message preview (when the message isn't in the loaded window) */}
-      <Sheet ref={pinnedSheetRef} title="Pinned message" scrollable onDismiss={() => setPinnedPreview(null)}>
+      <Sheet ref={pinnedSheetRef} title={previewTitle} scrollable onDismiss={() => setPinnedPreview(null)}>
         <SheetBody>
           {pinnedPreview && (
             <Card variant="notes">
@@ -840,6 +874,7 @@ export default function MessageThreadScreen({ navigation, route, embedded, onCha
 const EM = metrics.messages;
 
 const styles = StyleSheet.create({
+  highlight: { borderRadius: radii.md },
   emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: EM.emojiGridGap, justifyContent: 'center' },
   emojiCell: { width: EM.emojiCell, height: EM.emojiCell, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center' },
   emojiGlyph: { fontSize: EM.emojiPick },

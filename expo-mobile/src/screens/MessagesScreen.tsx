@@ -19,6 +19,7 @@ import { usePresence } from '../lib/usePresence';
 import { shortWhen } from '../lib/format';
 import { usePersistedState } from '../lib/usePersistedState';
 import { ClientBadge } from '../components/messages/ClientBadge';
+import { MessageSearchResults, type MessageSearchHit } from '../components/messages/MessageSearchResults';
 import { Eye, Hash, Lock, MessagesSquare, Search, SquarePen, User, X } from 'lucide-react-native';
 import { Avatar, ButtonRow, Card, EmptyState, FieldHint, FieldLabel, GroupHeader, ListRow, PrimaryButton, ProjectSquare, RootTitle, SheetBody, TextField, ToggleRow, UnreadBadge } from '../components/kit';
 import { readableFrame } from '../components/ui/ReadableColumn';
@@ -99,12 +100,26 @@ export default function MessagesScreen({ navigation, route }: Props) {
   // phone a tap still pushes MessageThread. Names are looked up through a ref
   // so a just-created DM (not yet in `channels`) still gets its title.
   const namesRef = useRef<Record<string, string>>({});
+  // Message search → open a thread at a message. The phone push reads the ref;
+  // the Duo pane reads `focus` (channel + message) for the embedded thread.
+  const focusRef = useRef<string | null>(null);
+  const [focus, setFocus] = useState<{ channelId: string; messageId: string } | null>(null);
   const { selectedId, open: openThread, isWide, paneProps } = useTwoPaneSelection({
     navigation,
     route,
     detailRoute: 'MessageThread',
-    paramsFor: (id: string) => ({ channelId: id, channelName: namesRef.current[id] ?? '' }),
+    paramsFor: (id: string) => ({
+      channelId: id,
+      channelName: namesRef.current[id] ?? '',
+      ...(focusRef.current ? { focusMessageId: focusRef.current } : {}),
+    }),
   });
+
+  // A search jump belongs to one conversation: drop it once another is open,
+  // so coming back later doesn't jump (and tint) all over again.
+  useEffect(() => {
+    if (focus && selectedId !== focus.channelId) setFocus(null);
+  }, [focus, selectedId]);
 
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
@@ -321,6 +336,25 @@ export default function MessagesScreen({ navigation, route }: Props) {
     return <Text style={[type.price, { color: k.muted }]}>#</Text>;
   };
 
+  // Message search hits reuse the list's own naming and lead icons.
+  const channelById = (id: string) => channels.find(ch => ch.id === id);
+  const hitName = (h: MessageSearchHit) => {
+    const ch = channelById(h.channelId);
+    if (ch) return nameOf(ch);
+    return h.channelType === 'dm' ? 'Direct message' : h.channelName || 'Channel';
+  };
+  const hitLead = (h: MessageSearchHit) => {
+    const ch = channelById(h.channelId);
+    if (ch) return renderLead(ch, nameOf(ch));
+    return h.channelEmoji ? <Text style={{ fontSize: M.emoji, lineHeight: M.lead }}>{h.channelEmoji}</Text> : <Text style={[type.price, { color: k.muted }]}>#</Text>;
+  };
+  const openHit = (h: MessageSearchHit) => {
+    focusRef.current = h.id;
+    setFocus({ channelId: h.channelId, messageId: h.id });
+    openThread(h.channelId);
+    focusRef.current = null;
+  };
+
   const renderRow = (item: Channel) => {
     const unread = unreadOf(item.id);
     const displayName = nameOf(item);
@@ -426,7 +460,13 @@ export default function MessagesScreen({ navigation, route }: Props) {
               onChannelChanged={fetchChannels}
               onMarkedRead={handleMarkedRead}
               navigation={navigation}
-              route={{ params: { channelId: selectedId, channelName: namesRef.current[selectedId] ?? '' } }}
+              route={{
+                params: {
+                  channelId: selectedId,
+                  channelName: namesRef.current[selectedId] ?? '',
+                  ...(focus?.channelId === selectedId ? { focusMessageId: focus.messageId } : {}),
+                },
+              }}
             />
           ) : null
         }
@@ -454,7 +494,8 @@ export default function MessagesScreen({ navigation, route }: Props) {
             </Pressable>
           </View>
         ) : visible.length === 0 ? (
-          <Text style={[type.body, { color: k.muted }]}>Nothing matches your search</Text>
+          // 2+ characters: the Messages section below says whether anything matched.
+          q.length >= 2 ? null : <Text style={[type.body, { color: k.muted }]}>Nothing matches your search</Text>
         ) : (
           <>
             {pinned.length > 0 ? (
@@ -471,6 +512,14 @@ export default function MessagesScreen({ navigation, route }: Props) {
             ) : null}
           </>
         )}
+        {searchVisible && channels.length > 0 ? (
+          <MessageSearchResults
+            query={search}
+            conversationName={hitName}
+            renderLead={hitLead}
+            onOpen={openHit}
+          />
+        ) : null}
       </ScrollView>
         }
       />

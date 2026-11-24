@@ -771,6 +771,10 @@ export const metrics = {
     emojiPick: 26,
     emojiGridGap: 4,
     seedPadX: 24,
+    // Search → thread: how long the found message stays tinted.
+    highlightMs: 2500,
+    // Search results: snippet length around the first match.
+    snippetChars: 90,
     // Amber CLIENT pill (client-facing channels)
     clientBadge: { padX: 6, padY: 2, gap: 3, icon: 10 },
   },
