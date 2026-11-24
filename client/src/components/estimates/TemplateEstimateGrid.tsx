@@ -223,6 +223,33 @@ function readColumns(): ColumnConfig[] {
   }
 }
 
+/**
+ * A new, blank template line in `groupName`, as Add Line / Add Item make it.
+ * One factory for both: the page's Add Item used its own, which started lines
+ * on a different unit and ignored the group's default cost code.
+ */
+export function newTemplateLine(items: TemplateItem[], groupName: string): TemplateItem {
+  // New lines start on the group's default cost code, as on an estimate.
+  const groupRow = items.find((i) => i.isGroup && (i.name || UNGROUPED) === groupName);
+  return {
+    id: crypto.randomUUID(),
+    name: "",
+    groupName: groupName === UNGROUPED ? undefined : groupName,
+    costCodeId: groupRow?.costCodeId,
+    costCodeTitle: groupRow?.costCodeTitle,
+    quantity: 1,
+    unitPrice: 0,
+    markup: 0,
+    proposalVisible: false,
+    shownAs: "price",
+    wastagePercent: 0,
+    allowance: "None",
+    type: "Material",
+    sortOrder: items.length,
+    isGroup: false,
+  } as TemplateItem;
+}
+
 interface Props {
   items: TemplateItem[];
   onSave: (next: TemplateItem[]) => void;
@@ -236,6 +263,13 @@ interface Props {
    * instant one.
    */
   onRequestDelete: (id: string) => void;
+  /**
+   * A line the page just added (its Add Item button) whose name should open
+   * for typing — the price-list search lives in that editor. The page's own
+   * editing state never reached this grid, so the line just sat there blank.
+   */
+  editLineId?: string | null;
+  onEditLineOpened?: () => void;
 }
 
 export function TemplateEstimateGrid({
@@ -245,6 +279,8 @@ export function TemplateEstimateGrid({
   costCategories,
   formatCurrency,
   onRequestDelete,
+  editLineId,
+  onEditLineOpened,
 }: Props) {
   // Column order, visibility and widths: the same model, picker and resizing
   // as the estimate page.
@@ -833,33 +869,38 @@ export function TemplateEstimateGrid({
     discard: () => setEditingGroup(null),
   });
 
+  const openNameEditor = (itemId: string) => {
+    setEditingCell({ itemId, field: "name" });
+    setActiveCell({ itemId, field: "name" });
+    setEditingValue("");
+  };
+
+  // The page's Add Item hands its new line over here to open.
+  useEffect(() => {
+    if (!editLineId) return;
+    const line = items.find((i) => i.id === editLineId);
+    if (!line) return; // not drawn yet
+    // Add Item puts the line in the last group, which may be collapsed — open
+    // it, or the editor would be hidden inside it.
+    const group = groups.find((g) => g.id === (line.groupName || UNGROUPED));
+    if ((group as any)?.isCollapsed) setGroupCollapsed(group!.id, false);
+    openNameEditor(editLineId);
+    onEditLineOpened?.();
+  }, [editLineId, items, groups, setGroupCollapsed, onEditLineOpened]);
+
+  /**
+   * Add Line: a blank line in the group, with its name open for typing — as on
+   * the estimate, where typing a name searches the price list and picking one
+   * fills the line. It used to add the blank line and stop, so there was no
+   * search to see until you found the empty row and clicked into it.
+   */
   const addItemToGroup = useCallback(
     (groupName: string) => {
-      const items = latestItems.current;
-      // New lines start on the group's default cost code, as on an estimate.
-      const groupRow = items.find((i) => i.isGroup && (i.name || UNGROUPED) === groupName);
-      commit(() => [
-        ...items,
-        {
-          id: crypto.randomUUID(),
-          name: "",
-          groupName: groupName === UNGROUPED ? undefined : groupName,
-          costCodeId: groupRow?.costCodeId,
-          costCodeTitle: groupRow?.costCodeTitle,
-          quantity: 1,
-          unitPrice: 0,
-          markup: 0,
-          proposalVisible: false,
-          shownAs: "price",
-          wastagePercent: 0,
-          allowance: "None",
-          type: "Material",
-          sortOrder: items.length,
-          isGroup: false,
-        } as TemplateItem,
-      ]);
+      const line = newTemplateLine(latestItems.current, groupName);
+      commit((current) => [...current, line]);
+      openNameEditor(line.id);
     },
-    [items, onSave],
+    [commit],
   );
 
   /**
