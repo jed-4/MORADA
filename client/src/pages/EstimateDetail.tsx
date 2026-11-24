@@ -103,6 +103,9 @@ import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
+import { EstimateGridHeader } from "@/components/estimates/EstimateGridHeader";
+import { ESTIMATE_DEFAULT_COLUMNS, EstimateColumnsPicker, useColumnResize } from "@/components/estimates/estimateColumns";
+import { EstimateSelectionBar } from "@/components/estimates/EstimateSelectionBar";
 import { linesForApply } from "@/components/estimates/templateGroupTree";
 import {
   renderEstimateItemWithSubItems,
@@ -207,66 +210,9 @@ interface EstimateDetailParams {
 const LOCKED_EDIT_HINT =
   "This estimate is a contract, so its scope and prices are fixed. Raise a variation to change the work.";
 
-const DEFAULT_COLUMNS: ColumnConfig[] = [
-  // Item leads. The leftmost column is the most valuable space on the row and
-  // it was holding a cost code that is often blank; the thing that identifies
-  // the line belongs there.
-  { id: 'item', label: 'Item', visible: true, widthPx: 200 },
-  { id: 'costCode', label: 'Cost Code', visible: true, widthPx: 90 },
-  { id: 'type', label: 'Type', visible: true, widthPx: 80 },
-  { id: 'description', label: 'Description', visible: true, widthPx: 160 },
-  { id: 'status', label: 'Status', visible: true, widthPx: 85 },
-  { id: 'proposalVisible', label: 'Proposal', visible: true, widthPx: 70 },
-  { id: 'shownAs', label: 'Shown As', visible: true, widthPx: 85 },
-  { id: 'allowance', label: 'Allowance', visible: true, widthPx: 70 },
-  { id: 'quantity', label: 'Qty', visible: true, widthPx: 60 },
-  { id: 'wastage', label: 'Waste', visible: true, widthPx: 55 },
-  { id: 'unitType', label: 'Unit', visible: true, widthPx: 55 },
-  { id: 'unitCostExTax', label: 'Unit Cost ex', visible: true, widthPx: 90 },
-  { id: 'unitCostIncTax', label: 'Unit Cost inc', visible: false, widthPx: 85 },
-  { id: 'builderCost', label: 'Builder Cost', visible: false, widthPx: 100 },
-  { id: 'builderCostIncTax', label: 'Builder Inc', visible: false, widthPx: 95 },
-  { id: 'markup', label: 'Markup', visible: true, widthPx: 65 },
-  { id: 'markupDollarAmount', label: 'Markup $', visible: false, widthPx: 90 },
-  { id: 'clientPriceExTax', label: 'Amount', visible: true, widthPx: 90 },
-  { id: 'clientTax', label: 'Tax', visible: false, widthPx: 70 },
-  { id: 'clientPriceIncTax', label: 'Amount Inc', visible: true, widthPx: 95 },
-  { id: 'notes', label: 'Notes', visible: true, widthPx: 60 },
-];
-
-// Draggable row in the column visibility/order picker popover.
-function ColumnReorderItem({ column, onToggle }: { column: ColumnConfig; onToggle: (id: string) => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: column.id });
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-2 px-1.5 py-1 rounded-md hover:bg-muted"
-      data-testid={`column-reorder-${column.id}`}
-    >
-      <button
-        {...attributes}
-        {...listeners}
-        className="flex-shrink-0 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
-        title="Drag to reorder"
-        aria-label={`Reorder ${column.label} column`}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-      <Checkbox
-        checked={column.visible}
-        onCheckedChange={() => onToggle(column.id)}
-        className="flex-shrink-0"
-      />
-      <span className="truncate text-sm flex-1">{column.label}</span>
-    </div>
-  );
-}
+// The column list, picker and resizing are shared with the template page:
+// components/estimates/estimateColumns.tsx.
+const DEFAULT_COLUMNS = ESTIMATE_DEFAULT_COLUMNS;
 
 // Sortable Row Component for drag & drop - CSS Grid based
 // Uses a wrapper to maintain height during drag and prevent layout collapse
@@ -1886,9 +1832,10 @@ export default function EstimateDetail() {
   const [filterGroup, setFilterGroup] = useState<string>('all');
 
   // Resizing state
-  const [resizingColumn, setResizingColumn] = useState<string | null>(null);
-  const [resizeStartX, setResizeStartX] = useState(0);
-  const [resizeStartWidth, setResizeStartWidth] = useState(0);
+  // Resizing is shared with the template page. Finishing a drag marks the
+  // layout as the user's, which the debounced save below picks up.
+  const markColumnsModified = React.useCallback(() => { hasUserModifiedRef.current = true; }, []);
+  const { resizingColumn, startResize: startColumnResize } = useColumnResize(setColumns, markColumnsModified);
 
   // Auto-save preferences when columns or filters change (after user modifies them)
   useEffect(() => {
@@ -3794,72 +3741,6 @@ export default function EstimateDetail() {
     }
   }, [isAddGroupOpen, editingGroupId, groups, groupForm]);
 
-  // Column visibility toggle handler
-  const toggleColumn = (columnId: string) => {
-    hasUserModifiedRef.current = true;
-    setColumns(prev => prev.map(col => 
-      col.id === columnId ? { ...col, visible: !col.visible } : col
-    ));
-  };
-
-  // Column resize handlers
-  const handleResizeStart = (e: React.MouseEvent, columnId: string) => {
-    e.preventDefault();
-    const currentWidth = columns.find(col => col.id === columnId)?.widthPx || 100;
-    
-    setResizingColumn(columnId);
-    setResizeStartX(e.clientX);
-    setResizeStartWidth(currentWidth);
-    
-    // Prevent text selection during resize
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'col-resize';
-  };
-
-  // Handle resize effect with per-column min/max constraints
-  React.useEffect(() => {
-    if (!resizingColumn) return;
-
-    // Define min/max constraints per column type
-    const getColumnConstraints = (columnId: string) => {
-      if (columnId === 'description' || columnId === 'item') {
-        return { min: 80, max: 600 };
-      }
-      return { min: 40, max: 400 };
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const diff = e.clientX - resizeStartX;
-      const { min, max } = getColumnConstraints(resizingColumn);
-      const newWidth = Math.min(max, Math.max(min, resizeStartWidth + diff));
-      
-      setColumns(prev => prev.map(col => {
-        if (col.id === resizingColumn) {
-          return { ...col, widthPx: newWidth };
-        }
-        return col;
-      }));
-    };
-
-    const handleMouseUp = () => {
-      // Mark as user modified and clear resizing state - this will trigger the database save via debounced useEffect
-      hasUserModifiedRef.current = true;
-      setResizingColumn(null);
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-    };
-  }, [resizingColumn, resizeStartX, resizeStartWidth]);
-
   const formatCurrency = (amount: number) => {
     const isWholeNumber = amount % 1 === 0;
     
@@ -4511,19 +4392,6 @@ export default function EstimateDetail() {
         return newColumns;
       }
       return prev;
-    });
-  };
-
-  // Drag-to-reorder columns in the picker popover.
-  const handleColumnDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    hasUserModifiedRef.current = true;
-    setColumns(prev => {
-      const oldIndex = prev.findIndex(c => c.id === active.id);
-      const newIndex = prev.findIndex(c => c.id === over.id);
-      if (oldIndex < 0 || newIndex < 0) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
     });
   };
 
@@ -5626,31 +5494,10 @@ export default function EstimateDetail() {
 
               {/* Right: Controls */}
               <div className="flex items-center gap-1.5">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
-                      data-testid="button-column-visibility"
-                      title="Columns"
-                      aria-label="Columns"
-                    >
-                      <Columns3 className="w-3 h-3" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-64 p-2" data-testid="popover-columns">
-                    <div className="px-1.5 pt-1 text-sm font-semibold">Columns</div>
-                    <p className="px-1.5 pb-2 text-xs text-muted-foreground">Drag to reorder · toggle to show/hide.</p>
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleColumnDragEnd}>
-                      <SortableContext items={columns.map(c => c.id)} strategy={verticalListSortingStrategy}>
-                        <div className="max-h-80 overflow-y-auto space-y-0.5 pr-0.5">
-                          {columns.map((column) => (
-                            <ColumnReorderItem key={column.id} column={column} onToggle={toggleColumn} />
-                          ))}
-                        </div>
-                      </SortableContext>
-                    </DndContext>
-                  </PopoverContent>
-                </Popover>
+                <EstimateColumnsPicker
+                  columns={columns}
+                  onChange={(next) => { hasUserModifiedRef.current = true; setColumns(next); }}
+                />
 
                 <button
                   className="h-6 px-2 text-xs font-medium bg-card border border-border rounded-md text-foreground hover:bg-muted/50 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -5791,57 +5638,17 @@ export default function EstimateDetail() {
                       return (
                         <div style={{ minWidth: `${tableWidth}px` }}>
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
-                          {/* CSS Grid Header */}
-                          <div 
-                            className="bg-card border-b border-border sticky top-0 z-30 pl-px"
-                            role="row"
-                            style={{ 
-                              display: 'grid', 
-                              gridTemplateColumns: gridTemplate,
-                              width: `${tableWidth}px`,
-                              minWidth: `${tableWidth}px`
-                            }}
-                          >
-                            {/* Checkbox column — pl-5 aligns with the handle-lane-shifted row checkboxes */}
-                            <div className="h-9 pl-5 pr-1 flex items-center" role="columnheader">
-                              <Checkbox
-                                checked={selectedItems.size > 0 && selectedItems.size === items.length}
-                                onCheckedChange={handleSelectAll}
-                                aria-label="Select all items"
-                                data-testid="checkbox-select-all"
-                                disabled={estimate?.isLocked}
-                              />
-                            </div>
-                            {/* Dynamic columns with resize handles */}
-                            {visibleCols.map((column, index) => (
-                              <div 
-                                key={column.id}
-                                role="columnheader"
-                                className={`h-9 px-2 flex items-center relative group/header${
-                                  ['status', 'shownAs', 'allowance', 'type'].includes(column.id) ? ' justify-center' : ''
-                                }`}
-                              >
-                                <span className="truncate text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{column.label}</span>
-                                {/* Resize handle — hidden only on the last column */}
-                                {index < visibleCols.length - 1 && (
-                                  <div
-                                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize transition-all z-10 ${
-                                      resizingColumn === column.id 
-                                        ? 'opacity-100 bg-primary w-[3px]' 
-                                        : 'opacity-0 group-hover/header:opacity-100 hover:bg-primary bg-muted'
-                                    }`}
-                                    style={{ pointerEvents: 'auto', touchAction: 'none' }}
-                                    onMouseDown={(e) => handleResizeStart(e, column.id)}
-                                    data-testid={`resize-handle-${column.id}`}
-                                  />
-                                )}
-                              </div>
-                            ))}
-                            {/* Actions column */}
-                            <div className="h-9 px-2 flex items-center justify-center border-l border-border/50" role="columnheader">
-                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Actions</span>
-                            </div>
-                          </div>
+                          {/* Column headings — shared with the template page */}
+                          <EstimateGridHeader
+                            visibleCols={visibleCols}
+                            gridTemplate={gridTemplate}
+                            tableWidth={tableWidth}
+                            allSelected={selectedItems.size > 0 && selectedItems.size === items.length}
+                            onSelectAll={handleSelectAll}
+                            selectAllDisabled={estimate?.isLocked}
+                            onResizeStart={(columnId, e) => startColumnResize(columnId, e, columns.find((c) => c.id === columnId)?.widthPx ?? 100)}
+                            resizingColumn={resizingColumn}
+                          />
                           
                           <div className="space-y-2 py-2">
                             {/* Ungrouped items - CSS Grid based */}
@@ -7795,79 +7602,55 @@ export default function EstimateDetail() {
         />
       </div>
       
-      {/* Floating Bulk Action Bar — centred narrow pill */}
-      {(selectedItems.size > 0 || selectedGroups.size > 0) && (
-        <div
-          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-background border rounded-lg shadow-lg flex items-center gap-2 px-2 py-1.5"
-          data-testid="bulk-action-bar"
-        >
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleClearSelection}
-            data-testid="button-clear-selection"
-            title="Clear selection"
-          >
-            <X className="w-4 h-4" />
-          </Button>
-          <span className="text-sm font-medium whitespace-nowrap">
-            {selectedItems.size > 0 && `${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}`}
-            {selectedItems.size > 0 && selectedGroups.size > 0 && ', '}
-            {selectedGroups.size > 0 && `${selectedGroups.size} group${selectedGroups.size !== 1 ? 's' : ''}`}
-            {' selected'}
-          </span>
-          {selectedItems.size > 0 && effectiveEstimateId && (
-            <BulkEditDropdown
-              estimateId={effectiveEstimateId}
-              selectedItemIds={Array.from(selectedItems)}
-              groups={groups}
-              unitOptions={(estimateItemUnitCategory?.options as any) || []}
-              statusOptions={(estimateItemStatusCategory?.options as any) || []}
-              taxRate={Number(estimate?.taxRate ?? 10)}
-              // Not disabled on a contract any more: it drops to cost code
-              // only, which is the one field a locked estimate accepts.
-              lockedToCostCode={!!estimate?.isLocked}
-              onComplete={() => setSelectedItems(new Set())}
-            />
-          )}
-          {selectedItems.size > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={estimate?.isLocked}
-                  data-testid="button-create-from-estimate"
-                >
-                  <Plus className="w-3 h-3 mr-1" />
-                  Create
-                  <ChevronDown className="w-3 h-3 ml-1" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="center" side="top">
-                <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
-                  <ShoppingCart className="w-3.5 h-3.5 mr-2" />
-                  Purchase Order
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
-                  <Package className="w-3.5 h-3.5 mr-2" />
-                  RFQ
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsBulkDeleteDialogOpen(true)}
-            disabled={estimate?.isLocked}
-            data-testid="button-bulk-delete"
-            title="Delete selected"
-          >
-            <Trash2 className="w-4 h-4 text-destructive" />
-          </Button>
-        </div>
-      )}
+      {/* Floating bulk action pill — shared with the template page */}
+      <EstimateSelectionBar
+        itemCount={selectedItems.size}
+        groupCount={selectedGroups.size}
+        onClear={handleClearSelection}
+        onDelete={() => setIsBulkDeleteDialogOpen(true)}
+        deleteDisabled={estimate?.isLocked}
+      >
+        {selectedItems.size > 0 && effectiveEstimateId && (
+          <BulkEditDropdown
+            estimateId={effectiveEstimateId}
+            selectedItemIds={Array.from(selectedItems)}
+            groups={groups}
+            unitOptions={(estimateItemUnitCategory?.options as any) || []}
+            statusOptions={(estimateItemStatusCategory?.options as any) || []}
+            taxRate={Number(estimate?.taxRate ?? 10)}
+            // Not disabled on a contract any more: it drops to cost code
+            // only, which is the one field a locked estimate accepts.
+            lockedToCostCode={!!estimate?.isLocked}
+            onComplete={() => setSelectedItems(new Set())}
+          />
+        )}
+        {selectedItems.size > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={estimate?.isLocked}
+                data-testid="button-create-from-estimate"
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Create
+                <ChevronDown className="w-3 h-3 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="center" side="top">
+              <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
+                <ShoppingCart className="w-3.5 h-3.5 mr-2" />
+                Purchase Order
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
+                <Package className="w-3.5 h-3.5 mr-2" />
+                RFQ
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </EstimateSelectionBar>
 
       {/* Undo Toast */}
       {undoStack.showUndoToast && undoStack.lastAction && (
