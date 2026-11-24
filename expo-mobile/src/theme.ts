@@ -361,6 +361,8 @@ export const type = {
   cardTitle:     { fontFamily: fonts.bold,     fontSize: 16, lineHeight: 19 },
   sheetTitle:    { fontFamily: fonts.semibold, fontSize: 16, lineHeight: 19 },
   sectionTitle:  { fontFamily: fonts.semibold, fontSize: 15, lineHeight: 18 },
+  // Project overview card headers — a step up so the sections stand out.
+  sectionTitleProminent: { fontFamily: fonts.bold, fontSize: 17, lineHeight: 21 },
   rowTitle:      { fontFamily: fonts.regular,  fontSize: 15, lineHeight: 18 },
   rowTitleStrong:{ fontFamily: fonts.semibold, fontSize: 15, lineHeight: 18 },
   rowTitleMedium:{ fontFamily: fonts.medium,   fontSize: 15, lineHeight: 18 },
@@ -479,7 +481,7 @@ export const metrics = {
   sheetHeader: { height: 44, sideWidth: 70 },
   underlineTabs: { height: 27, gap: 20, underlineGap: 7, navGap: 14, navIcon: 16 },
   segmented: { height: 32, pad: 2, gap: 2, segPadY: 5, segPadX: 12 },
-  groupHeader: { height: 18, gap: 8, toggleGap: 4, collapsedRowPad: 11, sectionCardPad: 12, sectionIcon: 16 },
+  groupHeader: { height: 18, gap: 8, toggleGap: 4, collapsedRowPad: 11, sectionCardPad: 12, sectionIcon: 16, sectionIconProminent: 18 },
   listRow: { padY: 11, gap: 12, bodyGap: 2 },
   propertyRow: { padY: 9, gap: 10, labelWidth: 116, formValueMax: '62%' as const, formPadY: 12, copyIcon: 15, swatch: 12, avatar: 20, valueIcon: 15 },
   statusDot: { gap: 5 },
@@ -573,6 +575,7 @@ export const metrics = {
     cardPadBottom: 6,
     maxTaskRows: 5,
     maxDiaryRows: 3,
+    maxNoteRows: 3,
   },
   projectTasks: {
     headerTop: 6,

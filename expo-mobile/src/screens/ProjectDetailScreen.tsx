@@ -3,12 +3,12 @@ import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, 
 import * as ImagePicker from 'expo-image-picker';
 import {
   BookOpen, Calendar, Camera, ChevronLeft, ClipboardList, Clock, FileText, Hammer, Layers, ListChecks, MapPin, Package,
-  Palette, Receipt, SquareCheck, SquarePen, Circle, Ellipsis, Users,
+  Palette, Receipt, SquareCheck, SquarePen, Circle, Ellipsis, Users, Info, type LucideIcon,
 } from 'lucide-react-native';
 import { apiFetch, apiRequest } from '../services/api';
 import { formatShortCents } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RouteProp } from '@react-navigation/native';
+import { useFocusEffect, type RouteProp } from '@react-navigation/native';
 
 import { metrics, size, space, tabular, type, useColors } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
@@ -27,6 +27,14 @@ import {
   PropertyRow, SectionCardHeader, SectionTile, StatusDot, fallbackProjectColor,
 } from '../components/kit';
 import { scheduleDot } from '../lib/scheduleStatus';
+
+interface ProjectNote {
+  id: string;
+  title?: string | null;
+  pinned?: boolean;
+  updatedAt?: string;
+  archivedAt?: string | null;
+}
 
 interface Project {
   id: string;
@@ -172,6 +180,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   const [loadingChecklistItems, setLoadingChecklistItems] = useState<Record<string, boolean>>({});
   const [collapsedChecklistGroups, setCollapsedChecklistGroups] = useState<Record<string, boolean>>({});
   const [siteDiaryEntries, setSiteDiaryEntries] = useState<SiteDiaryEntry[]>([]);
+  const [notes, setNotes] = useState<ProjectNote[]>([]);
   const c = useColors();
   const captureSheetRef = useRef<SheetRef>(null);
   const moreSheetRef = useRef<SheetRef>(null);
@@ -191,6 +200,29 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
     if (!embedded) navigation.setOptions({ headerShown: false });
   }, [navigation, embedded]);
 
+
+  // Notes card: pinned first, then most recently edited. Refetched on focus so a
+  // note written from here shows when you come back.
+  const loadNotes = useCallback(async () => {
+    const list = await apiFetch<ProjectNote[]>(`/api/notes?projectId=${projectId}`).catch(() => null);
+    if (!list) return;
+    setNotes(
+      list
+        .filter(n => !n.archivedAt)
+        .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || (b.updatedAt || '').localeCompare(a.updatedAt || '')),
+    );
+  }, [projectId]);
+  const notesFocusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!notesFocusedOnce.current) {
+        notesFocusedOnce.current = true;
+        return;
+      }
+      loadNotes();
+    }, [loadNotes]),
+  );
+
   const fetchData = useCallback(async () => {
     try {
       const [projectData, tasksData, scheduleData, collapsedPrefs, checklistData, diaryData] = await Promise.all([
@@ -200,6 +232,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
         apiFetch<any>('/api/user-view-preferences/mobile-project-detail-collapsed').catch(() => null),
         apiFetch<ChecklistInstance[]>(`/api/checklist-instances?projectId=${projectId}`).catch(() => []),
         apiFetch<SiteDiaryEntry[]>(`/api/projects/${projectId}/site-diary-entries`).catch(() => []),
+        loadNotes(),
       ]);
       setProject(projectData);
       setTasks((tasksData || []).filter((t: Task) => (t as any).type === 'task'));
@@ -226,7 +259,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, loadNotes]);
 
   useEffect(() => {
     fetchData();
@@ -299,6 +332,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   const tiles = [
     { key: 'tasks', icon: SquareCheck, label: 'Tasks', count: openTasks.length, onPress: () => go('ProjectTasks') },
     { key: 'schedule', icon: Calendar, label: 'Schedule', count: nearScheduleItems.length, onPress: () => go('Schedule') },
+    { key: 'notes', icon: FileText, label: 'Notes', onPress: () => go('Notes') },
     // Only offered to roles that can view selections at all; what they then see
     // (approved-only, costs or not) is decided server-side.
     ...(canViewSelections ? [{ key: 'selections', icon: Palette, label: 'Selections', onPress: () => go('Selections') }] : []),
@@ -307,7 +341,6 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
     { key: 'checklists', icon: ClipboardList, label: 'Checklists', count: checklistInstances.length, onPress: () => go('Checklists') },
     ...(canViewDefects ? [{ key: 'defects', icon: Hammer, label: 'Defects', onPress: () => go('DefectsList') }] : []),
     ...(canViewDeliveries ? [{ key: 'deliveries', icon: Package, label: 'Deliveries', onPress: () => go('DeliveriesList') }] : []),
-    { key: 'notes', icon: FileText, label: 'Notes', onPress: () => go('Notes') },
     { key: 'receiptCapture', icon: Receipt, label: 'Receipt', onPress: () => go('ReceiptCapture') },
     // Only offered to users who can view the labour budget.
     ...(canViewLabourHours ? [{ key: 'labourHours', icon: Clock, label: 'Labour hours', onPress: () => go('LabourHours') }] : []),
@@ -477,13 +510,15 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
 
   /** A section card: header (+ caret when collapsible) and its rows. The card draws the dividers. */
   const sectionCard = (
-    opts: { id?: string; title: string; count?: number | string | null; onOpen?: () => void },
+    opts: { id?: string; title: string; icon?: LucideIcon; count?: number | string | null; onOpen?: () => void },
     rows?: ReactNode,
   ) => {
     const open = opts.id ? !collapsed[opts.id] : false;
     return (
       <Card variant="list" style={open ? styles.sectionCard : undefined}>
         <SectionCardHeader
+          prominent
+          icon={opts.icon}
           title={opts.title}
           count={opts.count === 0 ? undefined : opts.count}
           open={open}
@@ -533,7 +568,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   const sec_overview = (
     <>
         {/* Overview */}
-        {sectionCard({ id: 'projectInfo', title: 'Overview' }, [
+        {sectionCard({ id: 'projectInfo', title: 'Overview', icon: Info }, [
           stage ? <PropertyRow key="stage" label="Stage" value={stage} /> : null,
           start ? <PropertyRow key="start" label="Start" value={longDate(start)} /> : null,
           finish ? <PropertyRow key="finish" label="Est. completion" value={longDate(finish)} /> : null,
@@ -558,7 +593,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   const sec_tasks = (
     <>
         {/* Tasks */}
-        {sectionCard({ id: 'tasks', title: 'Tasks', count: openTasks.length, onOpen: () => go('ProjectTasks') }, [
+        {sectionCard({ id: 'tasks', title: 'Tasks', icon: SquareCheck, count: openTasks.length, onOpen: () => go('ProjectTasks') }, [
           todayTasks.length === 0 ? (
             <Text key="none" style={[type.body, styles.quietRow, { color: c.muted }]}>Nothing due today</Text>
           ) : null,
@@ -577,7 +612,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   const sec_schedule = (
     <>
         {/* Schedule: today & tomorrow */}
-        {sectionCard({ id: 'schedule', title: 'Schedule', count: nearScheduleItems.length, onOpen: () => go('Schedule') }, [
+        {sectionCard({ id: 'schedule', title: 'Schedule', icon: Calendar, count: nearScheduleItems.length, onOpen: () => go('Schedule') }, [
           nearScheduleItems.length === 0 ? (
             <Text key="none" style={[type.body, styles.quietRow, { color: c.muted }]}>Nothing scheduled today or tomorrow</Text>
           ) : null,
@@ -608,7 +643,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
     <>
         {/* Site diary */}
         {sectionCard(
-          { id: 'siteDiary', title: 'Site diary', count: siteDiaryEntries.length >= 8 ? '8+' : siteDiaryEntries.length, onOpen: () => go('SiteDiary') },
+          { id: 'siteDiary', title: 'Site diary', icon: BookOpen, count: siteDiaryEntries.length >= 8 ? '8+' : siteDiaryEntries.length, onOpen: () => go('SiteDiary') },
           siteDiaryEntries.length === 0 ? (
             <Text style={[type.body, styles.quietRow, { color: c.muted }]}>No diary entries yet</Text>
           ) : (
@@ -625,11 +660,36 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
         )}
     </>
   );
+  const sec_notes = (
+    <>
+        {/* Notes: latest few, › for the full list, and a quick way to add one. */}
+        {sectionCard(
+          { id: 'notes', title: 'Notes', icon: FileText, count: notes.length, onOpen: () => go('Notes') },
+          [
+            ...notes.slice(0, pd.maxNoteRows).map(note => (
+              <ListRow
+                key={note.id}
+                onPress={() => go('NoteEditor', { noteId: note.id, scope: 'project' })}
+                title={note.title || 'Untitled'}
+                titleLines={1}
+                trailing={note.updatedAt ? dayDate(note.updatedAt) : undefined}
+              />
+            )),
+            <ListRow
+              key="new"
+              onPress={() => go('NoteEditor', { scope: 'project' })}
+              lead={<SquarePen size={size.icon.row} color={c.accent} strokeWidth={metrics.iconStroke} />}
+              title="New note"
+            />,
+          ],
+        )}
+    </>
+  );
   const sec_checklists = (
     <>
         {/* Checklists (expand a checklist to tick items here) */}
         {sectionCard(
-          { id: 'checklists', title: 'Checklists', count: checklistInstances.length, onOpen: () => go('Checklists') },
+          { id: 'checklists', title: 'Checklists', icon: ClipboardList, count: checklistInstances.length, onOpen: () => go('Checklists') },
           checklistInstances.length === 0 ? (
             <Text style={[type.body, styles.quietRow, { color: c.muted }]}>No checklists</Text>
           ) : (
@@ -684,9 +744,9 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   const sec_links = (
     <>
         {/* Header-only cards: open the section */}
-        {canViewSelections ? sectionCard({ title: 'Selections', onOpen: () => go('Selections') }) : null}
-        {sectionCard({ title: 'Scope', onOpen: () => go('Scope') })}
-        {canViewDefects ? sectionCard({ title: 'Defects', onOpen: () => go('DefectsList') }) : null}
+        {canViewSelections ? sectionCard({ title: 'Selections', icon: Palette, onOpen: () => go('Selections') }) : null}
+        {sectionCard({ title: 'Scope', icon: Layers, onOpen: () => go('Scope') })}
+        {canViewDefects ? sectionCard({ title: 'Defects', icon: Hammer, onOpen: () => go('DefectsList') }) : null}
     </>
   );
 
@@ -743,6 +803,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
             <View style={styles.duoSide}>
               {sec_tasks}
               {sec_diary}
+              {sec_notes}
               {sec_links}
             </View>
           </View>
@@ -752,6 +813,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
             {sec_tasks}
             {sec_schedule}
             {sec_diary}
+            {sec_notes}
             {sec_checklists}
             {sec_links}
           </>

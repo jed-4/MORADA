@@ -111,6 +111,7 @@ export function SectionCardHeader({
   onOpen,
   inline,
   divider = true,
+  prominent,
 }: {
   title: string;
   count?: string | number | null;
@@ -122,8 +123,11 @@ export function SectionCardHeader({
   inline?: boolean;
   /** Draw the rule under an open header. Off when the card draws its own dividers. */
   divider?: boolean;
+  /** Project overview cards: bigger, bolder title and a plum icon. */
+  prominent?: boolean;
 }) {
   const c = useColors();
+  const iconSize = prominent ? metrics.groupHeader.sectionIconProminent : metrics.groupHeader.sectionIcon;
   return (
     <View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.gap, paddingVertical: inline ? 0 : metrics.groupHeader.sectionCardPad }}>
@@ -135,8 +139,8 @@ export function SectionCardHeader({
           accessibilityState={{ expanded: open }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.toggleGap, flexShrink: 1 }}
         >
-          {Glyph ? <Glyph size={metrics.groupHeader.sectionIcon} color={c.icon} strokeWidth={metrics.iconStroke} /> : null}
-          <Text numberOfLines={1} style={[type.sectionTitle, { color: c.text, flexShrink: 1, marginLeft: Glyph ? metrics.groupHeader.toggleGap : 0 }]}>
+          {Glyph ? <Glyph size={iconSize} color={prominent ? c.accent : c.icon} strokeWidth={metrics.iconStroke} /> : null}
+          <Text numberOfLines={1} style={[prominent ? type.sectionTitleProminent : type.sectionTitle, { color: c.text, flexShrink: 1, marginLeft: Glyph ? metrics.groupHeader.toggleGap : 0 }]}>
             {title}
           </Text>
           {onToggle ? <Caret open={open} /> : null}
