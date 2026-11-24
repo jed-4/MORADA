@@ -267,3 +267,43 @@ export function placeImportedGroups<T extends TemplateRowLike>(
   newGroups.forEach((name) => tree.parentOf.set(name, sheetParent.get(name) ?? null));
   return { items: layoutTemplateGroups(withNew, tree.parentOf, tree.orderOf, newId), leafOf };
 }
+
+/**
+ * Move one template LINE to where pickItemDropTarget says it lands.
+ *
+ * `target.id` is a line id (land above/below that line, in its group) or
+ * `group-<name>` (land at the end of that group — how a line gets into an
+ * empty group). Lines are re-numbered 0..n in their new order; group rows are
+ * returned untouched. Returns the input unchanged when the move is a no-op or
+ * can't be resolved.
+ */
+export function moveTemplateLine<T extends TemplateRowLike>(
+  items: T[],
+  activeId: string,
+  target: { id: string; position: "above" | "below" | "inside" },
+): T[] {
+  const lines = items.filter((i) => !i.isGroup).slice().sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const active = lines.find((l) => l.id === activeId);
+  if (!active || target.id === activeId) return items;
+  const rest = lines.filter((l) => l.id !== activeId);
+
+  let index: number;
+  let groupName: string | undefined;
+  if (target.id.startsWith("group-")) {
+    const name = target.id.slice("group-".length);
+    groupName = name === UNGROUPED ? undefined : name;
+    let last = -1;
+    rest.forEach((l, i) => { if ((l.groupName || UNGROUPED) === name) last = i; });
+    index = last >= 0 ? last + 1 : rest.length;
+  } else {
+    const t = rest.findIndex((l) => l.id === target.id);
+    if (t < 0) return items;
+    groupName = rest[t].groupName;
+    index = target.position === "above" ? t : t + 1;
+  }
+
+  const moved = { ...active, groupName } as T;
+  const ordered = [...rest.slice(0, index), moved, ...rest.slice(index)];
+  const byId = new Map(ordered.map((l, i) => [l.id, { ...l, sortOrder: i } as T]));
+  return items.map((i) => byId.get(i.id) ?? i);
+}
