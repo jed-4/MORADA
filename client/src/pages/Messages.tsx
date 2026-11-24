@@ -41,7 +41,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight, ListTodo, Calendar, Megaphone, X, Paperclip, FileText, Download, ZoomIn } from "lucide-react";
+import { Hash, Plus, Send, Loader2, Sparkles, MoreVertical, Bell, BellOff, Lock, Eye, Settings, User, Pin, PinOff, Filter, EyeOff, Clock, Trash2, ThumbsUp, Check, Heart, Smile, Flame, MessageSquare, ChevronDown, ChevronRight, ListTodo, Calendar, Megaphone, X, Paperclip, FileText, Download, ZoomIn, Search } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import {
   Popover,
@@ -59,6 +59,7 @@ import {
 import { format, isToday, isYesterday, isThisWeek, isSameDay, differenceInMinutes } from "date-fns";
 import type { Channel, Message, ChannelMember, MessageReaction, MessageAttachment } from "@shared/schema";
 import { ChannelEmojiPicker, ChannelEmoji } from "@/components/ChannelEmojiPicker";
+import { MessageSearchResults, type MessageSearchHit, type ConversationLike } from "@/components/messages/MessageSearchResults";
 
 // Messages augmented with attachments returned by the API
 interface MessageWithAttachments extends Message {
@@ -440,6 +441,20 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   // Highlighted message (scroll-to from pinned panel)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // Sidebar search: conversations by name + message hits (debounced)
+  const [sidebarSearch, setSidebarSearch] = useState("");
+  const [debouncedSidebarSearch, setDebouncedSidebarSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSidebarSearch(sidebarSearch.trim()), 300);
+    return () => clearTimeout(t);
+  }, [sidebarSearch]);
+  const clearSidebarSearch = useCallback(() => {
+    setSidebarSearch("");
+    setDebouncedSidebarSearch("");
+  }, []);
+  // A search hit to jump to once its channel's messages have rendered
+  const [pendingJump, setPendingJump] = useState<{ channelId: string; messageId: string } | null>(null);
+
   // Pinned messages panel collapsible state
   const [pinnedPanelOpen, setPinnedPanelOpen] = useState(true);
 
@@ -1182,6 +1197,26 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
     scrollToBottom();
   }, [localMessages]);
 
+  // Jump to a message opened from search. Declared after the scroll-to-bottom
+  // effect so it wins the same commit. Refs are attached before effects run, so
+  // once the row is in the feed it can be found here. A hit that never shows up
+  // in the main feed (a thread reply, or older than the loaded window) leaves
+  // the channel open at the bottom.
+  useEffect(() => {
+    if (!pendingJump) return;
+    if (pendingJump.channelId !== selectedChannelId) {
+      // The user moved to another conversation before the hit loaded.
+      setPendingJump(null);
+      return;
+    }
+    if (messageRefs.current[pendingJump.messageId]) {
+      scrollToMessage(pendingJump.messageId);
+      setPendingJump(null);
+    } else if (!messagesLoading && localMessages.some(m => m.channelId === pendingJump.channelId)) {
+      setPendingJump(null);
+    }
+  }, [pendingJump, selectedChannelId, localMessages, messagesLoading, scrollToMessage]);
+
   useEffect(() => {
     initFavicon();
     
@@ -1666,7 +1701,7 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
   };
 
   // Get DM display name - shows other participant's name
-  const getDmDisplayName = (channel: Channel) => {
+  const getDmDisplayName = (channel: Pick<Channel, "type" | "name" | "dmParticipants">) => {
     if (channel.type !== "dm" || !channel.dmParticipants) return channel.name;
 
     // A DM's stored name is generated — "dm-<uuid>-<uuid>" — so it is never
@@ -1685,6 +1720,13 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
       ? `${otherUser.firstName} ${otherUser.lastName}` 
       : otherUser.email || unnamed;
   };
+
+  // Stable for the search results' memo; reads the same users as the sidebar.
+  const getConversationName = useCallback(
+    (c: ConversationLike) => getDmDisplayName(c as Pick<Channel, "type" | "name" | "dmParticipants">),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allUsers, user?.id],
+  );
 
   useEffect(() => {
     if (channels.length === 0) return;
@@ -1901,9 +1943,56 @@ export default function Messages({ channelTypeFilter = "all", projectId }: Messa
             </div>
           </div>
 
+          <div className="px-2 pt-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                value={sidebarSearch}
+                onChange={(e) => setSidebarSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    clearSidebarSearch();
+                  }
+                }}
+                placeholder="Search conversations & messages"
+                className="h-8 pl-7 pr-7 text-xs"
+                aria-label="Search conversations and messages"
+                data-testid="input-message-search"
+              />
+              {sidebarSearch && (
+                <button
+                  type="button"
+                  onClick={clearSidebarSearch}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                  data-testid="button-clear-message-search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-0.5">
-              {channelsLoading ? (
+              {sidebarSearch.trim() ? (
+                <MessageSearchResults
+                  query={debouncedSidebarSearch}
+                  isDebouncing={sidebarSearch.trim() !== debouncedSidebarSearch}
+                  channels={channels}
+                  getConversationName={getConversationName}
+                  onOpenChannel={(channelId) => {
+                    setSelectedChannelId(channelId);
+                    clearSidebarSearch();
+                  }}
+                  onOpenMessage={(hit: MessageSearchHit) => {
+                    setSelectedChannelId(hit.channelId);
+                    setPendingJump({ channelId: hit.channelId, messageId: hit.id });
+                    clearSidebarSearch();
+                  }}
+                />
+              ) : channelsLoading ? (
                 <div className="flex items-center justify-center p-4">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
