@@ -51,6 +51,9 @@ interface Project {
   proposedEndDate?: string;
   // Financial fields — server stores ALL values in cents.
   contractPrice?: number;
+  /** Frozen at contract (projects.contractedAt): the agreed total, inc GST cents. */
+  contractedAt?: string | null;
+  contractedTotalIncGstCents?: number | null;
   contractCost?: number;
   clientBudget?: number;
   budget?: number;
@@ -165,6 +168,8 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
   const [clientContact, setClientContact] = useState<Contact | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  // Approved variations (inc GST cents) — added to the contract for the header price.
+  const [approvedVariationsCents, setApprovedVariationsCents] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
@@ -233,6 +238,14 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
         apiFetch<ChecklistInstance[]>(`/api/checklist-instances?projectId=${projectId}`).catch(() => []),
         apiFetch<SiteDiaryEntry[]>(`/api/projects/${projectId}/site-diary-entries`).catch(() => []),
         loadNotes(),
+        canViewFinancials
+          ? apiFetch<{ status?: string | null; totalAmount?: number | null }[]>(`/api/variations?projectId=${projectId}`)
+              .then(vs => setApprovedVariationsCents(
+                (vs || []).filter(v => v.status === 'approved' || v.status === 'released')
+                  .reduce((sum, v) => sum + (v.totalAmount ?? 0), 0),
+              ))
+              .catch(() => {})
+          : null,
       ]);
       setProject(projectData);
       setTasks((tasksData || []).filter((t: Task) => (t as any).type === 'task'));
@@ -259,7 +272,7 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
     } finally {
       setLoading(false);
     }
-  }, [projectId, loadNotes]);
+  }, [projectId, loadNotes, canViewFinancials]);
 
   useEffect(() => {
     fetchData();
@@ -481,9 +494,16 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
     );
   }
 
-  const price = canViewFinancials
-    ? formatShortCents(project.contractPrice ?? project.contractCost ?? project.clientBudget ?? project.budget)
-    : null;
+  // Revised contract price: the agreed contract (frozen at contract time, else
+  // the stamped contract price) plus approved variations — the web board's rule
+  // (shared/projectMetrics: approved = 'approved' | 'released'). No contract and
+  // no variations yet → no figure, rather than a budget passed off as a price.
+  const contractBase =
+    (project.contractedAt && project.contractedTotalIncGstCents != null ? Number(project.contractedTotalIncGstCents) : null)
+    ?? project.contractPrice
+    ?? 0;
+  const revisedCents = contractBase + approvedVariationsCents;
+  const price = canViewFinancials && revisedCents > 0 ? formatShortCents(revisedCents) : null;
   const stage = [PHASE_LABELS[project.currentSystemPhase ?? ''] ?? sentence(project.currentSystemPhase), sentence(project.projectSubStatus)]
     .filter(Boolean)
     .join(' · ');
@@ -505,7 +525,13 @@ export default function ProjectDetailScreen({ navigation, route, embedded }: Pro
     return !b || b === a ? a : `${a} – ${b}`;
   };
   const start = project.startDate ?? project.proposedStartDate;
-  const finish = project.proposedEndDate ?? project.endDate;
+  // Est. completion = the end of the schedule (latest item finish); before a
+  // schedule exists, the project's own end date, then the proposed one.
+  const scheduleEnd = scheduleItems.reduce<string>((max, item) => {
+    const end = dateOnlyStr(item.endDate) || dateOnlyStr(item.startDate);
+    return end > max ? end : max;
+  }, '');
+  const finish = scheduleEnd || project.endDate || project.proposedEndDate;
   const phone = clientContact?.phone || clientContact?.mobile;
 
   /** A section card: header (+ caret when collapsible) and its rows. The card draws the dividers. */
