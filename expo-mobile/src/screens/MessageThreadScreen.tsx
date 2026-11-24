@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
+  Pressable,
   StyleSheet,
   FlatList,
   ActivityIndicator,
@@ -11,7 +12,8 @@ import {
   type NativeScrollEvent,
 } from 'react-native';
 import { CheckCheck, Eye, Pin } from 'lucide-react-native';
-import { Card, DayDivider, SheetBody } from '../components/kit';
+import { Card, DayDivider, SheetBody, TextButton } from '../components/kit';
+import { CHANNEL_EMOJIS } from '../lib/channelEmojis';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -46,7 +48,7 @@ import type {
   MessageReaction,
   ChannelMember,
 } from '../components/messages/types';
-import { metrics, space, size, type, useColors, useTheme } from '../theme';
+import { metrics, radii, space, size, type, useColors, useTheme } from '../theme';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { readableFrame } from '../components/ui/ReadableColumn';
 
@@ -61,6 +63,8 @@ type Props = {
   route: { params?: { channelId?: string; channelName?: string } };
   /** D07: shown in the Messages right pane on the Duo (no back, wide header). */
   embedded?: boolean;
+  /** Told when the channel's emoji changes, so the Duo list beside it updates. */
+  onChannelChanged?: () => void;
 };
 
 /** Below this scroll offset the inverted list counts as "at the newest". */
@@ -107,7 +111,7 @@ type ListItem =
   | { kind: 'divider'; id: string; date: string }
   | { kind: 'seen'; id: string; label: string };
 
-export default function MessageThreadScreen({ navigation, route, embedded }: Props) {
+export default function MessageThreadScreen({ navigation, route, embedded, onChannelChanged }: Props) {
   // Both params are always supplied when this screen is opened (nav + deep links).
   const { channelId, channelName } = route.params as { channelId: string; channelName: string };
   const { user } = useAuth();
@@ -150,6 +154,7 @@ export default function MessageThreadScreen({ navigation, route, embedded }: Pro
   const flatListRef = useRef<FlatList<ListItem>>(null);
   const menuSheetRef = useRef<SheetRef>(null);
   const pinnedSheetRef = useRef<SheetRef>(null);
+  const emojiSheetRef = useRef<SheetRef>(null);
   // Local image assets per optimistic temp id, kept for retries.
   const tempImagesRef = useRef<Record<string, PendingImage[]>>({});
   const isFocused = useIsFocused();
@@ -228,6 +233,21 @@ export default function MessageThreadScreen({ navigation, route, embedded }: Pro
       // non-critical: presence dot and the CLIENT badge just won't render
     }
   }, [channelId]);
+
+  // Channel / DM icon. Saved straight away; put back if the save fails.
+  const setEmoji = useCallback(async (emoji: string | null) => {
+    emojiSheetRef.current?.dismiss();
+    const before = channelMeta?.emoji ?? null;
+    if (before === emoji) return;
+    setChannelMeta(m => ({ ...(m || {}), emoji }));
+    try {
+      await apiRequest(`/api/channels/${channelId}`, 'PATCH', { emoji });
+      onChannelChanged?.();
+    } catch {
+      setChannelMeta(m => ({ ...(m || {}), emoji: before }));
+      toast.error("Couldn't change the icon");
+    }
+  }, [channelId, channelMeta?.emoji, onChannelChanged, toast]);
 
   const fetchPinned = useCallback(async () => {
     try {
@@ -634,6 +654,7 @@ export default function MessageThreadScreen({ navigation, route, embedded }: Pro
         showPresence={dmOtherOnline}
         isClientFacing={!!channelMeta?.isClientFacing}
         emoji={channelMeta?.emoji}
+        onPressIcon={isClient || !channelMeta ? undefined : () => emojiSheetRef.current?.present()}
         theme={theme}
         paddingTop={embedded ? insets.top : insets.top + 8}
         onBack={embedded ? undefined : () => navigation.goBack()}
@@ -763,6 +784,34 @@ export default function MessageThreadScreen({ navigation, route, embedded }: Pro
         }}
       />
 
+      {/* Channel / DM icon picker — the same set as the web. */}
+      <Sheet ref={emojiSheetRef} title="Icon" scrollable>
+        <SheetBody>
+          <View style={styles.emojiGrid}>
+            {CHANNEL_EMOJIS.map(e => {
+              const on = channelMeta?.emoji === e;
+              return (
+                <Pressable
+                  key={e}
+                  onPress={() => setEmoji(e)}
+                  accessibilityRole="button"
+                  accessibilityLabel={e}
+                  accessibilityState={{ selected: on }}
+                  style={({ pressed }) => [
+                    styles.emojiCell,
+                    on && { backgroundColor: k.tint },
+                    pressed && { opacity: metrics.pressedOpacity },
+                  ]}
+                >
+                  <Text style={styles.emojiGlyph}>{e}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {channelMeta?.emoji ? <TextButton label="Remove icon" tone="danger" center onPress={() => setEmoji(null)} /> : null}
+        </SheetBody>
+      </Sheet>
+
       {/* Pinned message preview (when the message isn't in the loaded window) */}
       <Sheet ref={pinnedSheetRef} title="Pinned message" scrollable onDismiss={() => setPinnedPreview(null)}>
         <SheetBody>
@@ -782,7 +831,12 @@ export default function MessageThreadScreen({ navigation, route, embedded }: Pro
   );
 }
 
+const EM = metrics.messages;
+
 const styles = StyleSheet.create({
+  emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: EM.emojiGridGap, justifyContent: 'center' },
+  emojiCell: { width: EM.emojiCell, height: EM.emojiCell, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center' },
+  emojiGlyph: { fontSize: EM.emojiPick },
   container: { flex: 1 },
   skeletonThread: { flex: 1, paddingHorizontal: space.screenX, paddingTop: space.screenBottom, gap: metrics.sheet.gap },
   listWrap: { flex: 1 },

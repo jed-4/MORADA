@@ -288,7 +288,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
   const totalUnread = channels.reduce((sum, ch) => sum + unreadOf(ch.id), 0);
 
   const renderLead = (item: Channel, displayName: string) => {
-    if (item.type === 'dm') {
+    if (item.type === 'dm' && !item.emoji) {
       const otherId = (item.dmParticipants || []).find(id => id !== user?.id) || null;
       const online = !!otherId && onlineUserIds.has(otherId);
       return (
@@ -405,6 +405,7 @@ export default function MessagesScreen({ navigation, route }: Props) {
             <MessageThreadScreen
               key={selectedId}
               embedded
+              onChannelChanged={fetchChannels}
               navigation={navigation}
               route={{ params: { channelId: selectedId, channelName: namesRef.current[selectedId] ?? '' } }}
             />

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { ChevronLeft, Eye, Hash, type LucideIcon } from 'lucide-react-native';
 import { PresenceDot } from './PresenceDot';
@@ -25,6 +26,8 @@ interface ThreadHeaderProps {
   wide?: boolean;
   /** Channel emoji (set on the web); replaces the # when present. */
   emoji?: string | null;
+  /** Tap the channel / DM icon to change its emoji. Omitted for clients. */
+  onPressIcon?: () => void;
   memberCount?: number;
   actions?: { icon: LucideIcon; label: string; onPress: () => void }[];
 }
@@ -46,10 +49,20 @@ export function ThreadHeader({
   onBack,
   wide,
   emoji,
+  onPressIcon,
   memberCount,
   actions,
 }: ThreadHeaderProps) {
   const c = useColors();
+  // The icon is a button when the emoji can be changed from here.
+  const iconWrap = (node: ReactNode) =>
+    onPressIcon ? (
+      <Pressable onPress={onPressIcon} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Change icon">
+        {node}
+      </Pressable>
+    ) : (
+      node
+    );
   const title = formatThreadTitle(channelName, isDm).replace(/^#/, '');
   if (wide) {
     return (
@@ -59,15 +72,17 @@ export function ThreadHeader({
             <ChevronLeft size={metrics.pageHeader.back} color={c.accent} strokeWidth={metrics.iconStroke} />
           </Pressable>
         ) : null}
-        {isDm ? (
-          <View>
-            <Avatar name={title} size="duo" />
-            {showPresence ? <PresenceDot theme={theme} ringColor={c.bg} size={9} /> : null}
-          </View>
-        ) : (
-          <View style={[styles.wideHash, { backgroundColor: c.greyFill }]}>
-            {emoji ? <Text style={{ fontSize: M.emojiDuo }}>{emoji}</Text> : <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
-          </View>
+        {iconWrap(
+          isDm && !emoji ? (
+            <View>
+              <Avatar name={title} size="duo" />
+              {showPresence ? <PresenceDot theme={theme} ringColor={c.bg} size={9} /> : null}
+            </View>
+          ) : (
+            <View style={[styles.wideHash, { backgroundColor: c.greyFill }]}>
+              {emoji ? <Text style={{ fontSize: M.emojiDuo }}>{emoji}</Text> : <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
+            </View>
+          ),
         )}
         <View style={styles.title}>
           <View style={styles.nameLine}>
@@ -95,15 +110,17 @@ export function ThreadHeader({
           <ChevronLeft size={metrics.pageHeader.back} color={c.accent} strokeWidth={metrics.iconStroke} />
         </Pressable>
       ) : null}
-      {isDm ? (
-        <View>
-          <Avatar name={title} />
-          {showPresence ? <PresenceDot theme={theme} ringColor={c.bg} size={9} /> : null}
-        </View>
-      ) : (
-        <View style={[styles.hash, { backgroundColor: c.greyFill }]}>
-          {emoji ? <Text style={{ fontSize: M.emojiHeader }}>{emoji}</Text> : <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
-        </View>
+      {iconWrap(
+        isDm && !emoji ? (
+          <View>
+            <Avatar name={title} />
+            {showPresence ? <PresenceDot theme={theme} ringColor={c.bg} size={9} /> : null}
+          </View>
+        ) : (
+          <View style={[styles.hash, { backgroundColor: c.greyFill }]}>
+            {emoji ? <Text style={{ fontSize: M.emojiHeader }}>{emoji}</Text> : <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
+          </View>
+        ),
       )}
       <Text style={[type.sectionTitle, styles.title, { color: c.text }]} numberOfLines={1} accessibilityRole="header">
         {title}

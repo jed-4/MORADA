@@ -757,6 +757,9 @@ export const metrics = {
     emoji: 20,
     emojiHeader: 16,
     emojiDuo: 20,
+    emojiCell: 44,
+    emojiPick: 26,
+    emojiGridGap: 4,
     seedPadX: 24,
   },
   labourDetail: {
