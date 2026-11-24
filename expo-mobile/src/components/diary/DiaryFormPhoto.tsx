@@ -2,6 +2,7 @@ import { Image, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { UploadProgress } from '../photo/UploadProgress';
 import type { PhotoUploadItem } from '../../lib/photosUpload';
+import { diaryPhotoSource } from './diaryPhotoPath';
 
 /** Edge of a photo thumbnail in the diary entry form (also the "Add" tile). */
 export const DIARY_FORM_THUMB = 104;
@@ -24,7 +25,7 @@ export function DiaryFormPhoto({
   dangerColor,
   index,
 }: {
-  /** Resolved URI to display (local file or server URL). */
+  /** Display path (see diaryPhotoPath): a local file URI or a server object path. */
   imageUri: string;
   /** Upload state, for a local photo being tracked. */
   item?: PhotoUploadItem;
@@ -42,7 +43,7 @@ export function DiaryFormPhoto({
   return (
     <View style={styles.container}>
       <View style={styles.frame}>
-        <Image source={{ uri: imageUri }} style={styles.image} />
+        <Image source={diaryPhotoSource(imageUri)} style={styles.image} />
         {item && (
           <UploadProgress
             status={item.status}

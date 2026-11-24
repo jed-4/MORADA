@@ -22,7 +22,8 @@ import { usePersistedState } from '../lib/usePersistedState';
 import { useAuth } from '../contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RouteProp } from '@react-navigation/native';
+import { usePreventRemove, type RouteProp } from '@react-navigation/native';
+import { goBackOrHome } from '../navigation/back';
 
 import { useTheme, useColors, lightTheme, metrics, radii, size, space, tabular, type } from '../theme';
 import { Sheet, type SheetRef } from '../components/ui/Sheet';
@@ -185,6 +186,14 @@ export default function ChecklistsScreen({ navigation, route }: Props) {
     return () => sub.remove();
   }, [isWide, expandedId]);
 
+  // Phone: the iOS edge swipe (and any other pop of this screen) closes the
+  // open checklist first instead of leaving Checklists. Android's hardware
+  // back is caught by the BackHandler above before navigation sees it, so the
+  // two never both fire.
+  usePreventRemove(!isWide && !!expandedId, () => {
+    setExpandedId(null);
+  });
+
   const theme = useTheme();
 const colors = {
     bg: theme.background,
@@ -226,6 +235,12 @@ const colors = {
   useEffect(() => {
     fetchInstances().finally(() => setLoading(false));
   }, [fetchInstances]);
+
+  // The open checklist is gone after a refresh (deleted on the web, or the
+  // filter changed): close it rather than leave a blank page with no back.
+  useEffect(() => {
+    if (expandedId && !loading && !instances.some(i => i.id === expandedId)) setExpandedId(null);
+  }, [expandedId, instances, loading]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -746,7 +761,7 @@ const colors = {
     <PageHeader
       title="Checklists"
       project={headerProject}
-      onBack={() => navigation.goBack()}
+      onBack={() => goBackOrHome(navigation)}
       onProjectPress={!projectId && projects.length > 0 ? () => projectSheetRef.current?.present() : undefined}
       actions={[
         searchVisible

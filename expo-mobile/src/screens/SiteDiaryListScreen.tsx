@@ -23,7 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, apiRequest, API_BASE_URL, isPermanentError } from '../services/api';
+import { apiFetch, apiRequest, isPermanentError } from '../services/api';
 import { isOnline, addToQueue, getQueue, saveQueue, syncQueue, addSyncListener } from '../services/offlineQueue';
 import {
   getOfflineDiaryEntries,
@@ -50,6 +50,7 @@ import { haptic } from '../lib/haptics';
 import { PhotoUploadError } from '../lib/photosUpload';
 import { useDiaryPhotos, collectLocalPhotoUris, mapPhotoUris, isLocalPhotoUri } from '../components/diary/useDiaryPhotos';
 import { DiaryFormPhoto, DIARY_FORM_THUMB } from '../components/diary/DiaryFormPhoto';
+import { diaryPhotoList, diaryPhotoPath, isDiaryPhotoArray, withPhotoObjectsPreserved } from '../components/diary/diaryPhotoPath';
 import { useDiaryWeatherPrefill } from '../components/diary/diaryWeather';
 import { useFieldFocusChain } from '../components/diary/useFieldFocusChain';
 import { PendingUploadsBanner } from '../components/photo/PendingUploadsBanner';
@@ -197,9 +198,8 @@ function countPhotos(entry: SiteDiaryEntry): number {
   if (entry.fieldValues) {
     Object.entries(entry.fieldValues).forEach(([key, val]) => {
       if (key.startsWith('_')) return; // internal keys are not photos
-      if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && (val[0].startsWith('http') || val[0].startsWith('file') || val[0].startsWith('/'))) {
-        count += val.length;
-      }
+      // Strings (mobile) or { objectPath } file objects (web photo-gallery).
+      if (isDiaryPhotoArray(val)) count += diaryPhotoList(val).length;
     });
   }
   return count;
@@ -853,19 +853,24 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
     }
   };
 
-  const renderFormPhoto = (fieldId: string | null, uri: string, idx: number) => (
-    <DiaryFormPhoto
-      key={`${idx}:${uri}`}
-      index={idx}
-      imageUri={getPhotoUrl(uri)}
-      item={diaryPhotos.itemFor(uri)}
-      busy={submitting}
-      dangerColor={colors.danger}
-      onRemove={() => removePhoto(fieldId, idx)}
-      onRetry={() => { haptic.light(); diaryPhotos.retry(uri); }}
-      onMarkup={diaryPhotos.canMarkup && isLocalPhotoUri(uri) ? () => markupPhotoAt(fieldId, idx, uri) : undefined}
-    />
-  );
+  // `value` is a stored photo: a string, or a web { objectPath } file object
+  // (kept as-is in form state so a save doesn't rewrite it).
+  const renderFormPhoto = (fieldId: string | null, value: unknown, idx: number) => {
+    const uri = diaryPhotoPath(value) ?? '';
+    return (
+      <DiaryFormPhoto
+        key={`${idx}:${uri}`}
+        index={idx}
+        imageUri={uri}
+        item={diaryPhotos.itemFor(uri)}
+        busy={submitting}
+        dangerColor={colors.danger}
+        onRemove={() => removePhoto(fieldId, idx)}
+        onRetry={() => { haptic.light(); diaryPhotos.retry(uri); }}
+        onMarkup={diaryPhotos.canMarkup && isLocalPhotoUri(value) ? () => markupPhotoAt(fieldId, idx, uri) : undefined}
+      />
+    );
+  };
 
   const removePhoto = (fieldId: string | null, index: number) => {
     const list = fieldId ? formFieldValues[fieldId] : formOverallPhotos;
@@ -884,11 +889,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
         return copy;
       });
     }
-  };
-
-  const getPhotoUrl = (path: string): string => {
-    if (path.startsWith('http') || path.startsWith('file://') || path.startsWith('content://')) return path;
-    return `${API_BASE_URL}/api/uploads/serve/${encodeURIComponent(path)}`;
   };
 
   // Build the entry payload from the current form state.
@@ -990,7 +990,7 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
       // (PhotoUploadError) before anything is saved if a photo fails — a
       // device-local URI must never reach the server.
       const uploadedMap = await diaryPhotos.uploadLocal(collectLocalPhotoUris(formPayload));
-      const body: any = mapPhotoUris(formPayload, uploadedMap);
+      const body: any = withPhotoObjectsPreserved(mapPhotoUris(formPayload, uploadedMap));
 
       if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
         await apiRequest(`/api/site-diary-entries/${selectedEntry.id}`, 'PATCH', body);
@@ -1292,7 +1292,7 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
         );
 
       case 'photo-gallery':
-        const photos: string[] = Array.isArray(value) ? value : [];
+        const photos: unknown[] = Array.isArray(value) ? value : [];
         const maxPhotos = field.maxPhotos || 3;
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
@@ -1325,14 +1325,15 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
     if (value === undefined || value === null || value === '') return null;
     if (Array.isArray(value) && value.length === 0) return null;
     if (field.type === 'photo-gallery') {
-      if (!Array.isArray(value)) return null;
+      // Strings or web { objectPath } file objects → display paths.
+      const uris = diaryPhotoList(value);
+      if (uris.length === 0) return null;
       return (
         <View key={field.id} style={lx.block}>
-          <Text style={[type.caption, { color: k.muted }]}>{`${field.title} · ${value.length}`}</Text>
+          <Text style={[type.caption, { color: k.muted }]}>{`${field.title} · ${uris.length}`}</Text>
           <DiaryPhotoGallery
-            uris={value}
-            getUrl={getPhotoUrl}
-            onOpen={index => setViewer({ uris: value, index })}
+            uris={uris}
+            onOpen={index => setViewer({ uris, index })}
             thumbStyle={lx.photo}
             scrollStyle={styles.photoScroll}
           />
@@ -1460,13 +1461,12 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
           </Card>
         ) : null}
 
-        {selectedEntry.overallPhotos && selectedEntry.overallPhotos.length > 0 ? (
+        {diaryPhotoList(selectedEntry.overallPhotos).length > 0 ? (
           <View style={lx.block}>
-            <Text style={[type.caption, { color: k.muted }]}>{`Photos · ${selectedEntry.overallPhotos.length}`}</Text>
+            <Text style={[type.caption, { color: k.muted }]}>{`Photos · ${diaryPhotoList(selectedEntry.overallPhotos).length}`}</Text>
             <DiaryPhotoGallery
-              uris={selectedEntry.overallPhotos}
-              getUrl={getPhotoUrl}
-              onOpen={index => setViewer({ uris: selectedEntry.overallPhotos || [], index })}
+              uris={diaryPhotoList(selectedEntry.overallPhotos)}
+              onOpen={index => setViewer({ uris: diaryPhotoList(selectedEntry.overallPhotos), index })}
               thumbStyle={lx.photo}
               scrollStyle={styles.photoScroll}
             />
@@ -1483,7 +1483,6 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
       visible={show && !!viewer}
       uris={viewer?.uris ?? []}
       index={viewer?.index ?? 0}
-      getUrl={getPhotoUrl}
       onIndexChange={index => setViewer(v => (v ? { ...v, index } : v))}
       onClose={() => setViewer(null)}
     />

@@ -21,7 +21,7 @@ import { BookOpen, Camera, Check, ChevronDown, Cloud, CloudLightning, CloudOff, 
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, apiRequest, API_BASE_URL, isPermanentError } from '../services/api';
+import { apiFetch, apiRequest, isPermanentError } from '../services/api';
 import { isOnline, addToQueue, getQueue, saveQueue, syncQueue, addSyncListener } from '../services/offlineQueue';
 import {
   getOfflineDiaryEntries,
@@ -51,6 +51,8 @@ import { haptic } from '../lib/haptics';
 import { PhotoUploadError } from '../lib/photosUpload';
 import { useDiaryPhotos, collectLocalPhotoUris, mapPhotoUris, isLocalPhotoUri } from '../components/diary/useDiaryPhotos';
 import { DiaryFormPhoto, DIARY_FORM_THUMB } from '../components/diary/DiaryFormPhoto';
+import { goBackOrHome } from '../navigation/back';
+import { diaryPhotoList, diaryPhotoPath, isDiaryPhotoArray, withPhotoObjectsPreserved } from '../components/diary/diaryPhotoPath';
 import { useDiaryWeatherPrefill } from '../components/diary/diaryWeather';
 import { useFieldFocusChain } from '../components/diary/useFieldFocusChain';
 import { PendingUploadsBanner } from '../components/photo/PendingUploadsBanner';
@@ -119,9 +121,8 @@ function countPhotos(entry: SiteDiaryEntry): number {
   if (entry.fieldValues) {
     Object.entries(entry.fieldValues).forEach(([key, val]) => {
       if (key.startsWith('_')) return; // internal keys are not photos
-      if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && (val[0].startsWith('http') || val[0].startsWith('file') || val[0].startsWith('/'))) {
-        count += val.length;
-      }
+      // Strings (mobile) or { objectPath } file objects (web photo-gallery).
+      if (isDiaryPhotoArray(val)) count += diaryPhotoList(val).length;
     });
   }
   return count;
@@ -621,19 +622,24 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
     }
   };
 
-  const renderFormPhoto = (fieldId: string | null, uri: string, idx: number) => (
-    <DiaryFormPhoto
-      key={`${idx}:${uri}`}
-      index={idx}
-      imageUri={getPhotoUrl(uri)}
-      item={diaryPhotos.itemFor(uri)}
-      busy={submitting}
-      dangerColor={colors.danger}
-      onRemove={() => removePhoto(fieldId, idx)}
-      onRetry={() => { haptic.light(); diaryPhotos.retry(uri); }}
-      onMarkup={diaryPhotos.canMarkup && isLocalPhotoUri(uri) ? () => markupPhotoAt(fieldId, idx, uri) : undefined}
-    />
-  );
+  // `value` is a stored photo: a string, or a web { objectPath } file object
+  // (kept as-is in form state so a save doesn't rewrite it).
+  const renderFormPhoto = (fieldId: string | null, value: unknown, idx: number) => {
+    const uri = diaryPhotoPath(value) ?? '';
+    return (
+      <DiaryFormPhoto
+        key={`${idx}:${uri}`}
+        index={idx}
+        imageUri={uri}
+        item={diaryPhotos.itemFor(uri)}
+        busy={submitting}
+        dangerColor={colors.danger}
+        onRemove={() => removePhoto(fieldId, idx)}
+        onRetry={() => { haptic.light(); diaryPhotos.retry(uri); }}
+        onMarkup={diaryPhotos.canMarkup && isLocalPhotoUri(value) ? () => markupPhotoAt(fieldId, idx, uri) : undefined}
+      />
+    );
+  };
 
   // Build the entry payload from the current form state.
   const buildEntryPayload = () => {
@@ -728,7 +734,7 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
       // (PhotoUploadError) before anything is saved if a photo fails — a
       // device-local URI must never reach the server.
       const uploadedMap = await diaryPhotos.uploadLocal(collectLocalPhotoUris(formPayload));
-      const body: any = mapPhotoUris(formPayload, uploadedMap);
+      const body: any = withPhotoObjectsPreserved(mapPhotoUris(formPayload, uploadedMap));
 
       if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
         await apiRequest(`/api/site-diary-entries/${selectedEntry.id}`, 'PATCH', body);
@@ -874,11 +880,6 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
         },
       },
     ]);
-  };
-
-  const getPhotoUrl = (path: string): string => {
-    if (path.startsWith('http') || path.startsWith('file://') || path.startsWith('content://')) return path;
-    return `${API_BASE_URL}/api/uploads/serve/${encodeURIComponent(path)}`;
   };
 
   const allEntries = [
@@ -1045,7 +1046,7 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
         );
 
       case 'photo-gallery':
-        const photos: string[] = Array.isArray(value) ? value : [];
+        const photos: unknown[] = Array.isArray(value) ? value : [];
         const maxPhotos = field.maxPhotos || 3;
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
@@ -1079,14 +1080,15 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
     if (Array.isArray(value) && value.length === 0) return null;
 
     if (field.type === 'photo-gallery') {
-      if (!Array.isArray(value)) return null;
+      // Strings or web { objectPath } file objects → display paths.
+      const uris = diaryPhotoList(value);
+      if (uris.length === 0) return null;
       return (
         <View key={field.id} style={dd.block}>
-          <Text style={[type.caption, { color: k.muted }]}>{`${field.title} · ${value.length}`}</Text>
+          <Text style={[type.caption, { color: k.muted }]}>{`${field.title} · ${uris.length}`}</Text>
           <DiaryPhotoGallery
-            uris={value}
-            getUrl={getPhotoUrl}
-            onOpen={index => setViewer({ uris: value, index })}
+            uris={uris}
+            onOpen={index => setViewer({ uris, index })}
             thumbStyle={dd.photo}
           />
         </View>
@@ -1170,13 +1172,13 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
           .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
       </View>
     ) : null;
-    const photos = selectedEntry.overallPhotos && selectedEntry.overallPhotos.length > 0 ? (
+    const overallUris = diaryPhotoList(selectedEntry.overallPhotos);
+    const photos = overallUris.length > 0 ? (
       <View style={dd.block}>
-        <Text style={[type.caption, { color: k.muted }]}>{`Photos · ${selectedEntry.overallPhotos.length}`}</Text>
+        <Text style={[type.caption, { color: k.muted }]}>{`Photos · ${overallUris.length}`}</Text>
         <DiaryPhotoGallery
-          uris={selectedEntry.overallPhotos}
-          getUrl={getPhotoUrl}
-          onOpen={index => setViewer({ uris: selectedEntry.overallPhotos || [], index })}
+          uris={overallUris}
+          onOpen={index => setViewer({ uris: overallUris, index })}
           thumbStyle={dd.photo}
         />
       </View>
@@ -1193,6 +1195,9 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
             </Pressable>
             <Pressable onPress={entryActions} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Entry actions">
               <Ellipsis size={DY.duoMoreIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+            <Pressable onPress={closeDetail} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Close entry">
+              <X size={DY.duoMoreIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
             </Pressable>
           </View>
           {pendingBadge}
@@ -1242,7 +1247,6 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
       visible={show && !!viewer}
       uris={viewer?.uris ?? []}
       index={viewer?.index ?? 0}
-      getUrl={getPhotoUrl}
       onIndexChange={index => setViewer(v => (v ? { ...v, index } : v))}
       onClose={() => setViewer(null)}
     />
@@ -1267,7 +1271,7 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
       <PageHeader
         title="Site diary"
         project={projectName ? { name: projectName, color: projectColor ?? null, id: projectId } : null}
-        onBack={() => navigation.goBack()}
+        onBack={() => goBackOrHome(navigation)}
         actions={[
           searchVisible
             ? { icon: X, label: 'Close search', onPress: () => { setSearch(''); setSearchVisible(false); } }
