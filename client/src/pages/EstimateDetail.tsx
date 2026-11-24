@@ -103,6 +103,8 @@ import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
+import { EstimateGridHeader } from "@/components/estimates/EstimateGridHeader";
+import { EstimateSelectionBar } from "@/components/estimates/EstimateSelectionBar";
 import { linesForApply } from "@/components/estimates/templateGroupTree";
 import {
   renderEstimateItemWithSubItems,
@@ -5791,57 +5793,17 @@ export default function EstimateDetail() {
                       return (
                         <div style={{ minWidth: `${tableWidth}px` }}>
                         <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
-                          {/* CSS Grid Header */}
-                          <div 
-                            className="bg-card border-b border-border sticky top-0 z-30 pl-px"
-                            role="row"
-                            style={{ 
-                              display: 'grid', 
-                              gridTemplateColumns: gridTemplate,
-                              width: `${tableWidth}px`,
-                              minWidth: `${tableWidth}px`
-                            }}
-                          >
-                            {/* Checkbox column — pl-5 aligns with the handle-lane-shifted row checkboxes */}
-                            <div className="h-9 pl-5 pr-1 flex items-center" role="columnheader">
-                              <Checkbox
-                                checked={selectedItems.size > 0 && selectedItems.size === items.length}
-                                onCheckedChange={handleSelectAll}
-                                aria-label="Select all items"
-                                data-testid="checkbox-select-all"
-                                disabled={estimate?.isLocked}
-                              />
-                            </div>
-                            {/* Dynamic columns with resize handles */}
-                            {visibleCols.map((column, index) => (
-                              <div 
-                                key={column.id}
-                                role="columnheader"
-                                className={`h-9 px-2 flex items-center relative group/header${
-                                  ['status', 'shownAs', 'allowance', 'type'].includes(column.id) ? ' justify-center' : ''
-                                }`}
-                              >
-                                <span className="truncate text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{column.label}</span>
-                                {/* Resize handle — hidden only on the last column */}
-                                {index < visibleCols.length - 1 && (
-                                  <div
-                                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize transition-all z-10 ${
-                                      resizingColumn === column.id 
-                                        ? 'opacity-100 bg-primary w-[3px]' 
-                                        : 'opacity-0 group-hover/header:opacity-100 hover:bg-primary bg-muted'
-                                    }`}
-                                    style={{ pointerEvents: 'auto', touchAction: 'none' }}
-                                    onMouseDown={(e) => handleResizeStart(e, column.id)}
-                                    data-testid={`resize-handle-${column.id}`}
-                                  />
-                                )}
-                              </div>
-                            ))}
-                            {/* Actions column */}
-                            <div className="h-9 px-2 flex items-center justify-center border-l border-border/50" role="columnheader">
-                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Actions</span>
-                            </div>
-                          </div>
+                          {/* Column headings — shared with the template page */}
+                          <EstimateGridHeader
+                            visibleCols={visibleCols}
+                            gridTemplate={gridTemplate}
+                            tableWidth={tableWidth}
+                            allSelected={selectedItems.size > 0 && selectedItems.size === items.length}
+                            onSelectAll={handleSelectAll}
+                            selectAllDisabled={estimate?.isLocked}
+                            onResizeStart={(columnId, e) => handleResizeStart(e, columnId)}
+                            resizingColumn={resizingColumn}
+                          />
                           
                           <div className="space-y-2 py-2">
                             {/* Ungrouped items - CSS Grid based */}
@@ -7795,79 +7757,55 @@ export default function EstimateDetail() {
         />
       </div>
       
-      {/* Floating Bulk Action Bar — centred narrow pill */}
-      {(selectedItems.size > 0 || selectedGroups.size > 0) && (
-        <div
-          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-background border rounded-lg shadow-lg flex items-center gap-2 px-2 py-1.5"
-          data-testid="bulk-action-bar"
-        >
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleClearSelection}
-            data-testid="button-clear-selection"
-            title="Clear selection"
-          >
-            <X className="w-4 h-4" />
-          </Button>
-          <span className="text-sm font-medium whitespace-nowrap">
-            {selectedItems.size > 0 && `${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''}`}
-            {selectedItems.size > 0 && selectedGroups.size > 0 && ', '}
-            {selectedGroups.size > 0 && `${selectedGroups.size} group${selectedGroups.size !== 1 ? 's' : ''}`}
-            {' selected'}
-          </span>
-          {selectedItems.size > 0 && effectiveEstimateId && (
-            <BulkEditDropdown
-              estimateId={effectiveEstimateId}
-              selectedItemIds={Array.from(selectedItems)}
-              groups={groups}
-              unitOptions={(estimateItemUnitCategory?.options as any) || []}
-              statusOptions={(estimateItemStatusCategory?.options as any) || []}
-              taxRate={Number(estimate?.taxRate ?? 10)}
-              // Not disabled on a contract any more: it drops to cost code
-              // only, which is the one field a locked estimate accepts.
-              lockedToCostCode={!!estimate?.isLocked}
-              onComplete={() => setSelectedItems(new Set())}
-            />
-          )}
-          {selectedItems.size > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={estimate?.isLocked}
-                  data-testid="button-create-from-estimate"
-                >
-                  <Plus className="w-3 h-3 mr-1" />
-                  Create
-                  <ChevronDown className="w-3 h-3 ml-1" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="center" side="top">
-                <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
-                  <ShoppingCart className="w-3.5 h-3.5 mr-2" />
-                  Purchase Order
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
-                  <Package className="w-3.5 h-3.5 mr-2" />
-                  RFQ
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsBulkDeleteDialogOpen(true)}
-            disabled={estimate?.isLocked}
-            data-testid="button-bulk-delete"
-            title="Delete selected"
-          >
-            <Trash2 className="w-4 h-4 text-destructive" />
-          </Button>
-        </div>
-      )}
+      {/* Floating bulk action pill — shared with the template page */}
+      <EstimateSelectionBar
+        itemCount={selectedItems.size}
+        groupCount={selectedGroups.size}
+        onClear={handleClearSelection}
+        onDelete={() => setIsBulkDeleteDialogOpen(true)}
+        deleteDisabled={estimate?.isLocked}
+      >
+        {selectedItems.size > 0 && effectiveEstimateId && (
+          <BulkEditDropdown
+            estimateId={effectiveEstimateId}
+            selectedItemIds={Array.from(selectedItems)}
+            groups={groups}
+            unitOptions={(estimateItemUnitCategory?.options as any) || []}
+            statusOptions={(estimateItemStatusCategory?.options as any) || []}
+            taxRate={Number(estimate?.taxRate ?? 10)}
+            // Not disabled on a contract any more: it drops to cost code
+            // only, which is the one field a locked estimate accepts.
+            lockedToCostCode={!!estimate?.isLocked}
+            onComplete={() => setSelectedItems(new Set())}
+          />
+        )}
+        {selectedItems.size > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={estimate?.isLocked}
+                data-testid="button-create-from-estimate"
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Create
+                <ChevronDown className="w-3 h-3 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="center" side="top">
+              <DropdownMenuItem onClick={() => setIsCreatePOOpen(true)}>
+                <ShoppingCart className="w-3.5 h-3.5 mr-2" />
+                Purchase Order
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setIsCreateRFQOpen(true)}>
+                <Package className="w-3.5 h-3.5 mr-2" />
+                RFQ
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </EstimateSelectionBar>
 
       {/* Undo Toast */}
       {undoStack.showUndoToast && undoStack.lastAction && (

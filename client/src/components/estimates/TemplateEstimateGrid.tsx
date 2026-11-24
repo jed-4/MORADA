@@ -39,7 +39,7 @@ import {
 import { computeEstimateItemPrice, round2 } from "@shared/pricing";
 import type { CostCode, CostCategory, EstimateItem, EstimateGroup, FieldCategoryWithOptions } from "@shared/schema";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
-import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
+import { useResizableColumns } from "@/components/useResizableColumns";
 import {
   renderEstimateItemWithSubItems,
   type EstimateGridCtx,
@@ -54,9 +54,11 @@ import { CostCodeSelect } from "@/components/CostCodeSelect";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
+import { EstimateGridHeader } from "@/components/estimates/EstimateGridHeader";
+import { EstimateSelectionBar } from "@/components/estimates/EstimateSelectionBar";
 import { priceListItemToLineFields, priceListSelectToast } from "@/components/estimates/PriceListItemPicker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Columns3, Trash2 } from "lucide-react";
+import { Columns3 } from "lucide-react";
 import { useCommitOnDismiss } from "@/hooks/useCommitOnDismiss";
 
 // ─── The template's own row shape ────────────────────────────────────────────
@@ -302,7 +304,9 @@ export function TemplateEstimateGrid({
     TEMPLATE_DEFAULT_COLUMNS.filter((c) => columnVisibility[c.id] !== false).map((c) => ({
       key: c.id,
       defaultWidth: c.widthPx,
-      flex: c.id === "item",     // the item name soaks up the leftover width
+      // No `flex` column. A 1fr column stretched the HEADING row to the window
+      // while the group cards beneath stay at the table width, so every heading
+      // sat right of its column. Fixed widths, as on the estimate page.
     })),
     0,
     { reorderable: true },
@@ -570,12 +574,66 @@ export function TemplateEstimateGrid({
     [items],
   );
 
+  /**
+   * Delete everything ticked: lines, and whole groups (with their subgroups and
+   * lines), as the estimate page's bulk delete does. Confirmed first — it used
+   * to go straight through.
+   */
   const deleteSelected = useCallback(() => {
     const ids = selectedItems;
-    if (ids.size === 0) return;
-    commit((current) => current.filter((i) => !ids.has(i.id) || i.isGroup));
+    const groupNames = selectedGroups;
+    if (ids.size === 0 && groupNames.size === 0) return;
+    commit((current) => {
+      const parents = templateGroupParents(current);
+      const doomedGroups = new Set<string>();
+      groupNames.forEach((g) => {
+        doomedGroups.add(g);
+        templateDescendants(parents, g).forEach((d) => doomedGroups.add(d));
+      });
+      return current.filter((i) =>
+        i.isGroup
+          ? !doomedGroups.has(i.name || UNGROUPED)
+          : !ids.has(i.id) && !doomedGroups.has(i.groupName || UNGROUPED),
+      );
+    });
     setSelectedItems(new Set());
-  }, [commit, selectedItems]);
+    setSelectedGroups(new Set());
+  }, [commit, selectedItems, selectedGroups]);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+
+  const clearSelection = useCallback(() => {
+    setSelectedItems(new Set());
+    setSelectedGroups(new Set());
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedItems((prev) =>
+      prev.size === lineItems.length ? new Set() : new Set(lineItems.map((i) => i.id)),
+    );
+  }, [lineItems]);
+
+  /**
+   * Ticking a group ticks its lines, exactly as on the estimate page. It used to
+   * record the group and nothing else, so no line was selected and the bulk
+   * bar never appeared — ticking a group looked like it did nothing.
+   */
+  const handleToggleGroupSelection = useCallback(
+    (groupName: string) => {
+      const lineIds = lineItems.filter((i) => (i.groupName || UNGROUPED) === groupName).map((i) => i.id);
+      const selecting = !selectedGroups.has(groupName);
+      setSelectedGroups((prev) => {
+        const next = new Set(prev);
+        selecting ? next.add(groupName) : next.delete(groupName);
+        return next;
+      });
+      setSelectedItems((prev) => {
+        const next = new Set(prev);
+        lineIds.forEach((id) => (selecting ? next.add(id) : next.delete(id)));
+        return next;
+      });
+    },
+    [lineItems, selectedGroups],
+  );
 
   const patchItem = useCallback(
     (itemId: string, data: Record<string, any>) => {
@@ -1080,8 +1138,9 @@ export function TemplateEstimateGrid({
     [taskCols.cols, labelFor],
   );
   const visibleCols = columns;
-  const gridTemplate = `40px ${taskCols.gridTemplate} 80px`;
-  const tableWidth = 40 + taskCols.minWidth + 80;
+  // Same shape as the estimate page: checkbox lane, fixed-width columns, actions.
+  const gridTemplate = `40px ${columns.map((c) => `${c.widthPx}px`).join(" ")} 80px`;
+  const tableWidth = 40 + columns.reduce((sum, c) => sum + c.widthPx, 0) + 80;
 
   const ctx: EstimateGridCtx = {
     editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell,
@@ -1145,72 +1204,22 @@ export function TemplateEstimateGrid({
   return (
     <div className="flex-1 min-h-0 overflow-auto" ref={gridRef} tabIndex={-1}>
       <div style={{ width: tableWidth, minWidth: "100%" }}>
-        {/* Column headings — the group cards draw their own rows beneath.
-            Laid out exactly as the live estimate's header, which sits over the
-            same EstimateGroupCard:
-            - OPAQUE. bg-muted/50 was a half-transparent fill on a sticky header,
-              so rows showed through it as they scrolled up underneath.
-            - pl-px, and no padding around the cards below. The cards were
-              wrapped in p-1.5 on top of their own 1px border, so every body
-              column sat 7px right of its heading; the live estimate offsets the
-              header by just the border. */}
-        {/* Columns picker. The header row itself reorders and resizes; this is
-            what turns a column on or off, which this grid had no way to do. */}
-        <div className="sticky top-0 z-40 flex items-center gap-2 bg-card px-2 py-1 border-b border-border">
-          {/* Selection bar, mirroring the estimate page. Nothing consumed the
-              selection before, so the checkboxes were decoration. */}
-          {selectedItems.size > 0 && (
-            // Pinned LEFT as well as top: this bar lives inside the grid's
-            // horizontal scroller, so without it the selection controls slide
-            // off the screen the moment you scroll right to reach the columns
-            // you wanted to bulk-edit.
-            <div className="sticky left-0 flex items-center gap-2 bg-card pr-2">
-              <span className="text-xs font-medium whitespace-nowrap" data-testid="text-selected-count">
-                {selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} selected
-              </span>
-              <BulkEditDropdown
-                // No estimate behind a template, so the route is never used —
-                // onApply takes over. The id is still required by the props.
-                estimateId=""
-                selectedItemIds={Array.from(selectedItems)}
-                groups={templateGroupsForBulk}
-                unitOptions={(unitCategory?.options as any) || []}
-                statusOptions={[]}
-                taxRate={TAX_RATE}
-                // A template has no per-line workflow and no tax of its own:
-                // it is cost data that gets priced when it is used.
-                omitFields={["status", "unitCostIncTax"]}
-                onApply={applyBulk}
-                onComplete={() => setSelectedItems(new Set())}
-              />
-              <button
-                className="h-6 w-auto px-2 text-xs border border-destructive/30 text-destructive rounded-md hover-elevate active-elevate-2 flex items-center gap-1"
-                onClick={deleteSelected}
-                data-testid="button-bulk-delete"
-              >
-                <Trash2 className="w-3 h-3" />
-                Delete
-              </button>
-              <button
-                className="h-6 w-auto px-2 text-xs border border-border/50 text-muted-foreground rounded-md hover-elevate active-elevate-2"
-                onClick={() => setSelectedItems(new Set())}
-                data-testid="button-clear-selection"
-              >
-                Clear
-              </button>
-            </div>
-          )}
+        {/* Columns picker. Not sticky: the heading row below is the one that
+            pins to the top, and two sticky rows at top-0 sat on each other. */}
+        <div className="flex items-center gap-2 bg-card px-2 py-1 border-b border-border" style={{ width: tableWidth, minWidth: "100%" }}>
           <div className="ml-auto" />
           <Popover>
             <PopoverTrigger asChild>
-              <button
-                className="h-6 w-6 text-xs border rounded-md hover-elevate active-elevate-2 flex items-center justify-center"
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-7 w-7"
                 title="Columns"
                 aria-label="Columns"
                 data-testid="button-template-column-visibility"
               >
-                <Columns3 className="w-3 h-3" />
-              </button>
+                <Columns3 className="w-3.5 h-3.5" />
+              </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-60 p-2" data-testid="popover-template-columns">
               <div className="px-1.5 pt-1 text-sm font-semibold">Columns</div>
@@ -1236,35 +1245,25 @@ export function TemplateEstimateGrid({
           </Popover>
         </div>
 
-        <div
-          className="grid items-center h-7 bg-card border-b border-border sticky top-0 z-30 pl-px text-data font-semibold uppercase tracking-wide text-muted-foreground select-none"
-          style={{ gridTemplateColumns: gridTemplate }}
-        >
-          <div />
-          {visibleCols.map((c) => (
-            <div
-              key={c.id}
-              {...taskCols.headerDragProps(c.id)}
-              style={{ opacity: taskCols.draggingKey === c.id ? 0.4 : 1 }}
-              title="Drag to move · drag the edge to resize"
-              data-testid={`tpl-col-${c.id}`}
-              className={`relative px-2 truncate select-none cursor-grab active:cursor-grabbing transition-opacity ${
-                ["quantity", "unitCostExTax", "markup", "builderCost", "clientPriceExTax", "clientPriceIncTax"].includes(c.id)
-                  ? "text-right"
-                  : ["type", "allowance", "wastage"].includes(c.id)
-                    ? "text-center"
-                    : ""
-              }`}
-            >
-              {c.label}
-              <ColResizeHandle
-                onStart={(e) => taskCols.startResize(c.id, e.clientX, c.widthPx)}
-                testId={`tpl-col-resize-${c.id}`}
-              />
-            </div>
-          ))}
-          <div />
-        </div>
+        {/* The estimate page's own heading row, so the two can't drift apart. */}
+        <EstimateGridHeader
+          visibleCols={visibleCols}
+          gridTemplate={gridTemplate}
+          tableWidth={tableWidth}
+          allSelected={selectedItems.size > 0 && selectedItems.size === lineItems.length}
+          onSelectAll={handleSelectAll}
+          onResizeStart={(id, e) => {
+            const col = columns.find((c) => c.id === id);
+            taskCols.startResize(id, e.clientX, col?.widthPx ?? 100);
+          }}
+          columnHeaderProps={(c) => ({
+            ...taskCols.headerDragProps(c.id),
+            title: "Drag to move · drag the edge to resize",
+            className: `cursor-grab active:cursor-grabbing select-none transition-opacity${
+              taskCols.draggingKey === c.id ? " opacity-40" : ""
+            }`,
+          })}
+        />
 
         <DndContext
           sensors={sensors}
@@ -1304,13 +1303,7 @@ export function TemplateEstimateGrid({
                   isLocked={false}
                   selectedItems={selectedItems}
                   selectedGroups={selectedGroups}
-                  onToggleGroupSelection={(id) =>
-                    setSelectedGroups((prev) => {
-                      const next = new Set(prev);
-                      next.has(id) ? next.delete(id) : next.add(id);
-                      return next;
-                    })
-                  }
+                  onToggleGroupSelection={handleToggleGroupSelection}
                   groupTotals={groupTotalsMap[group.id]}
                   groupTotalsMap={groupTotalsMap}
                   formatCurrency={formatCurrency}
@@ -1324,6 +1317,63 @@ export function TemplateEstimateGrid({
           </SortableContext>
         </DndContext>
       </div>
+
+      {/* The estimate page's selection pill. */}
+      <EstimateSelectionBar
+        itemCount={selectedItems.size}
+        groupCount={selectedGroups.size}
+        onClear={clearSelection}
+        onDelete={() => setIsBulkDeleteOpen(true)}
+      >
+        {selectedItems.size > 0 && (
+          <BulkEditDropdown
+            // No estimate behind a template, so the route is never used —
+            // onApply takes over. The id is still required by the props.
+            estimateId=""
+            selectedItemIds={Array.from(selectedItems)}
+            groups={templateGroupsForBulk}
+            unitOptions={(unitCategory?.options as any) || []}
+            statusOptions={[]}
+            taxRate={TAX_RATE}
+            // A template has no per-line workflow and no tax of its own:
+            // it is cost data that gets priced when it is used.
+            omitFields={["status", "unitCostIncTax"]}
+            onApply={applyBulk}
+            onComplete={clearSelection}
+          />
+        )}
+      </EstimateSelectionBar>
+
+      <Dialog open={isBulkDeleteOpen} onOpenChange={setIsBulkDeleteOpen}>
+        <DialogContent className="max-w-md rounded-xl">
+          <DialogHeader>
+            <DialogTitle>Delete {selectedGroups.size > 0 ? "groups and lines" : "lines"}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This removes
+            {selectedItems.size > 0 && ` ${selectedItems.size} line${selectedItems.size !== 1 ? "s" : ""}`}
+            {selectedItems.size > 0 && selectedGroups.size > 0 && " and"}
+            {selectedGroups.size > 0 &&
+              ` ${selectedGroups.size} group${selectedGroups.size !== 1 ? "s" : ""} (with everything in ${selectedGroups.size !== 1 ? "them" : "it"})`}{" "}
+            from this template.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBulkDeleteOpen(false)} data-testid="button-cancel-bulk-delete">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                deleteSelected();
+                setIsBulkDeleteOpen(false);
+              }}
+              data-testid="button-confirm-bulk-delete"
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete group — confirm, with what goes with it. */}
       <Dialog open={!!groupToDelete} onOpenChange={(open) => { if (!open) setGroupToDelete(null); }}>
