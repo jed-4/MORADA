@@ -1150,27 +1150,22 @@ export default function PurchaseOrderDetail() {
     },
   });
 
-  const bulkItemsMutation = useMutation({
-    mutationFn: async (newItems: any[]) => {
-      return apiRequest(
-        `/api/purchase-orders/${poId}/items/bulk`,
-        "POST",
-        { items: newItems },
-      );
-    },
+  const importTimesheetsMutation = useMutation({
+    mutationFn: async (timesheetIds: string[]) =>
+      apiRequest(`/api/purchase-orders/${poId}/items/from-timesheets`, "POST", { timesheetIds }),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/purchase-orders", poId, "items"],
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets/subcontractor/awaiting-po"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
       const count = Array.isArray(data) ? data.length : 0;
-      toast({ title: `${count} item${count === 1 ? "" : "s"} added` });
+      toast({ title: `${count} line${count === 1 ? "" : "s"} added` });
       setIsImportTimesheetsOpen(false);
     },
     onError: (error: any) => {
       toast({
         title: "Failed to import timesheets",
-        description: error.message,
+        description: error?.payload?.message || error.message,
         variant: "destructive",
       });
     },
@@ -1553,30 +1548,12 @@ export default function PurchaseOrderDetail() {
     reorderItemsMutation.mutate(newItems.map((item) => item.id));
   };
 
+  // The server builds the lines (profile cost rate, one line per cost-code
+  // split, job named) and puts the timesheets on this PO — the same lines
+  // "Generate PO" makes.
   const handleImportTimesheets = (selected: any[]) => {
     if (!poId || selected.length === 0) return;
-    const baseOrder = items.length;
-    const newItems = selected.map((ts, i) => {
-      const hourlyRate = parseFloat(ts.hourlyRate || "0");
-      const qty = parseFloat(ts.duration || "0");
-      const unitPriceCents = Math.round(hourlyRate * 100);
-      const totalCents = Math.round(qty * unitPriceCents);
-      const dateStr = ts.date
-        ? format(new Date(ts.date), "dd MMM")
-        : "Timesheet";
-      return {
-        description: `${dateStr} — ${ts.description || "Timesheet"}`,
-        quantity: ts.duration || "0",
-        unit: "hours",
-        unitPrice: unitPriceCents,
-        total: totalCents,
-        isGstFree: false,
-        gstAmount: 0,
-        sourceTimesheetId: ts.id,
-        displayOrder: baseOrder + i,
-      };
-    });
-    bulkItemsMutation.mutate(newItems);
+    importTimesheetsMutation.mutate(selected.map((ts) => ts.id));
   };
 
   const handleFileSelect = async (
@@ -2678,7 +2655,7 @@ export default function PurchaseOrderDetail() {
         open={isImportTimesheetsOpen}
         onOpenChange={setIsImportTimesheetsOpen}
         onImport={handleImportTimesheets}
-        isPending={bulkItemsMutation.isPending}
+        isPending={importTimesheetsMutation.isPending}
       />
 
       {/* Xero contact link */}

@@ -27833,6 +27833,192 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Shared by "Generate PO" and the PO page's "Import timesheets": the caller's
+  // own awaiting-PO timesheets for ONE person, plus that person's profile cost
+  // rate. Sends the error response itself and returns null when it refuses.
+  async function loadSubPoTimesheets(req: any, res: any, timesheetIds: unknown) {
+    if (!Array.isArray(timesheetIds) || timesheetIds.length === 0) {
+      res.status(400).json({ error: "At least one timesheet ID is required" });
+      return null;
+    }
+    const fetched = await storage.getTimesheetsByIds(timesheetIds as string[]);
+    // Tenancy: timesheets resolve company through their owning user — batch
+    // the owner lookups and drop anything outside the caller's company.
+    const ownerIds = Array.from(new Set(fetched.map((ts) => ts.userId)));
+    const owners = await Promise.all(ownerIds.map((uid) => storage.getUser(uid)));
+    const ownCompanyUserIds = new Set(
+      owners.filter((u) => u?.companyId === req.user.companyId).map((u) => u!.id)
+    );
+    const timesheets = fetched.filter(
+      (ts) => ts.poStatus === "awaiting_po" && ownCompanyUserIds.has(ts.userId)
+    );
+    if (timesheets.length === 0) {
+      res.status(400).json({ error: "No valid timesheets found with 'Awaiting PO' status" });
+      return null;
+    }
+
+    // All lines are priced at one person's rate, so a mixed-user selection would
+    // silently bill everyone at the first person's rate. A subcontractor PO
+    // is per-person by definition — reject the mix rather than misprice it.
+    const distinctUserIds = Array.from(new Set(timesheets.map((ts) => ts.userId)));
+    if (distinctUserIds.length > 1) {
+      res.status(400).json({
+        error: "Multiple team members selected",
+        message: "A subcontractor PO covers one person. Select timesheets for a single team member and generate a separate PO for each.",
+      });
+      return null;
+    }
+
+    const subUser = await storage.getUser(timesheets[0].userId);
+    // The PO prices every line off the subcontractor's PROFILE cost rate
+    // (their timesheets are intentionally $0 — the cost comes from the bill).
+    // With no rate on the profile this used to build a PO of $0 lines with no
+    // warning, which is impossible to spot until the PO is opened.
+    const profileRate = subUser?.hourlyRate ? parseFloat(subUser.hourlyRate) : 0;
+    if (!(profileRate > 0)) {
+      const who = subUser
+        ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() || subUser.email || "This team member"
+        : "This team member";
+      res.status(400).json({
+        error: "Missing cost rate",
+        message: `${who} has no cost rate set on their user profile, so every line on this PO would be $0. Add their cost rate in user settings, then try again.`,
+      });
+      return null;
+    }
+    return { timesheets, subUser, profileRate };
+  }
+
+  // One PO line per timesheet — or per cost-code split when the timesheet is
+  // split, so the PO and the bill raised from it carry the same breakdown as
+  // the timesheet. Every line keeps sourceTimesheetId, so one timesheet can own
+  // several. `projects` must already be filtered to the caller's company.
+  async function buildSubPoLineItems(
+    companyId: string,
+    timesheets: any[],
+    payRate: number,
+    projects: any[],
+    firstDisplayOrder: number,
+  ) {
+    const allCostCodes = await storage.getCostCodes(companyId);
+    const allSplits = await storage.getTimesheetCostCodesByTimesheetIds(timesheets.map((ts) => ts.id));
+    const lineItems: Array<{
+      description: string;
+      quantity: string;
+      unit: string;
+      unitPrice: number;
+      total: number;
+      costCodeId: string | null;
+      sourceTimesheetId: string;
+      displayOrder: number;
+    }> = [];
+
+    for (const ts of timesheets) {
+      const project = projects.find((p: any) => p.id === ts.projectId);
+      const splits = allSplits.filter((s) => s.timesheetId === ts.id);
+      const tsHours = parseFloat(ts.duration || "0");
+
+      const dateStr = ts.date ? new Date(ts.date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "";
+      const timeRange = `${ts.startTime || "?"} - ${ts.endTime || "?"}`;
+      const breakStr = ts.breakDuration ? ` (${ts.breakDuration}hr break)` : "";
+
+      for (const part of subPoLineParts(ts, splits)) {
+        const costCode = part.costCodeId ? allCostCodes.find((cc: any) => cc.id === part.costCodeId) : null;
+        const costCodeStr = costCode ? `${costCode.code} - ${costCode.title}` : "";
+        // The job goes on EVERY line, first, because a PO does not belong to one
+        // job. Timesheets are gathered by "awaiting PO" and subcontractor, not by
+        // project, so a single PO routinely carries a week split across several
+        // sites — and the header can only name the one it was raised against.
+        // Naming it once up there left every other line unattributable, and a
+        // returning invoice impossible to match back without opening the app.
+        const descParts: string[] = [];
+        if (project?.name) descParts.push(project.name);
+        descParts.push(`${dateStr} -- ${timeRange}${breakStr}`);
+        if (part.splitOf) {
+          descParts.push(`${costCodeStr || "No cost code"} (split ${part.splitOf.index} of ${part.splitOf.count}: ${part.hours.toFixed(2)} of ${tsHours.toFixed(2)} hrs)`);
+        } else if (costCodeStr) {
+          descParts.push(costCodeStr);
+        }
+        if (ts.description) descParts.push(ts.description);
+
+        lineItems.push({
+          description: descParts.join("\n"),
+          quantity: part.hours.toFixed(2),
+          unit: "hours",
+          unitPrice: Math.round(payRate * 100),
+          total: Math.round(part.hours * payRate * 100),
+          costCodeId: part.costCodeId,
+          sourceTimesheetId: ts.id,
+          displayOrder: firstDisplayOrder + lineItems.length,
+        });
+      }
+    }
+    return lineItems;
+  }
+
+  async function companyProjectsById(companyId: string | null | undefined, ids: (string | null | undefined)[]) {
+    if (!companyId) return [];
+    const unique = Array.from(new Set(ids.filter(Boolean))) as string[];
+    return (await Promise.all(unique.map((id) => storage.getProject(id))))
+      .filter((p): p is NonNullable<typeof p> => !!p && p.companyId === companyId);
+  }
+
+  // The PO page's "Import timesheets": adds awaiting-PO timesheets to an
+  // existing draft PO with the same lines Generate builds (profile rate, one
+  // line per split, job named) and puts them on this PO. It used to post
+  // client-built lines to /items/bulk — priced at the timesheet's own rate
+  // ($0 for subbies), with no cost code, and the timesheets were never marked
+  // on_po, so they stayed in the queue and could be put on a second PO.
+  app.post("/api/purchase-orders/:poId/items/from-timesheets", async (req, res) => {
+    try {
+      if (!req.user?.companyId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const po = await storage.getPurchaseOrder(req.params.poId);
+      if (!po || po.companyId !== req.user.companyId) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      const loaded = await loadSubPoTimesheets(req, res, req.body?.timesheetIds);
+      if (!loaded) return;
+      const { timesheets, subUser, profileRate } = loaded;
+
+      // One person per subcontractor PO, here too.
+      const existingItems = await storage.getPurchaseOrderItems(po.id);
+      const existingTsIds = Array.from(new Set(existingItems.map((i) => i.sourceTimesheetId).filter(Boolean))) as string[];
+      const existingUserIds = new Set(
+        (existingTsIds.length ? await storage.getTimesheetsByIds(existingTsIds) : []).map((ts) => ts.userId),
+      );
+      if (po.supplierUserId) existingUserIds.add(po.supplierUserId);
+      if (existingUserIds.size > 0 && !existingUserIds.has(subUser!.id)) {
+        return res.status(400).json({
+          error: "Different team member",
+          message: "This PO is for another team member. A subcontractor PO covers one person — generate a separate PO for these timesheets.",
+        });
+      }
+
+      const projects = await companyProjectsById(req.user.companyId, timesheets.map((ts: any) => ts.projectId));
+      const firstOrder = existingItems.reduce((m, i) => Math.max(m, (i.displayOrder ?? 0) + 1), 0);
+      const lineItems = await buildSubPoLineItems(req.user.companyId, timesheets, profileRate, projects, firstOrder);
+
+      const created = [];
+      for (const item of lineItems) {
+        created.push(await storage.createPurchaseOrderItem({ purchaseOrderId: po.id, ...item } as any));
+      }
+      await syncPOTotals(po.id);
+
+      for (const ts of timesheets) {
+        await storage.updateTimesheet(ts.id, {
+          poStatus: "on_po",
+          linkedPurchaseOrderId: po.id,
+        });
+      }
+
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Failed to import timesheets onto PO:", error);
+      res.status(500).json({ error: "Failed to import timesheets" });
+    }
+  });
+
   app.post("/api/purchase-orders/generate-from-timesheets", async (req, res) => {
     try {
       if (!req.user?.companyId) {
@@ -27847,61 +28033,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Project ID is required" });
       }
 
-      const fetched = await storage.getTimesheetsByIds(timesheetIds);
-      // Tenancy: timesheets resolve company through their owning user — batch
-      // the owner lookups and drop anything outside the caller's company.
-      const ownerIds = Array.from(new Set(fetched.map((ts) => ts.userId)));
-      const owners = await Promise.all(ownerIds.map((uid) => storage.getUser(uid)));
-      const ownCompanyUserIds = new Set(
-        owners.filter((u) => u?.companyId === (req.user as any).companyId).map((u) => u!.id)
-      );
-      const timesheets = fetched.filter(
-        (ts) => ts.poStatus === "awaiting_po" && ownCompanyUserIds.has(ts.userId)
-      );
-      if (timesheets.length === 0) {
-        return res.status(400).json({ error: "No valid timesheets found with 'Awaiting PO' status" });
-      }
-
-      const subUser = await storage.getUser(timesheets[0].userId);
-
-      // The PO prices every line off the subcontractor's PROFILE cost rate
-      // (their timesheets are intentionally $0 — the cost comes from the bill).
-      // With no rate on the profile this used to build a PO of $0 lines with no
-      // warning, which is impossible to spot until the PO is opened.
-      const profileRate = subUser?.hourlyRate ? parseFloat(subUser.hourlyRate) : 0;
-      if (!(profileRate > 0)) {
-        const who = subUser
-          ? `${subUser.firstName || ""} ${subUser.lastName || ""}`.trim() || subUser.email || "This team member"
-          : "This team member";
-        return res.status(400).json({
-          error: "Missing cost rate",
-          message: `${who} has no cost rate set on their user profile, so every line on this PO would be $0. Add their cost rate in user settings, then generate the PO again.`,
-        });
-      }
-
-      // All lines are priced at subUser's rate, so a mixed-user selection would
-      // silently bill everyone at the first person's rate. A subcontractor PO
-      // is per-person by definition — reject the mix rather than misprice it.
-      const distinctUserIds = Array.from(new Set(timesheets.map((ts) => ts.userId)));
-      if (distinctUserIds.length > 1) {
-        return res.status(400).json({
-          error: "Multiple team members selected",
-          message: "A subcontractor PO covers one person. Select timesheets for a single team member and generate a separate PO for each.",
-        });
-      }
+      const loaded = await loadSubPoTimesheets(req, res, timesheetIds);
+      if (!loaded) return;
+      const { timesheets, subUser, profileRate } = loaded;
 
       const poNumber = await storage.getNextPONumber(req.user.companyId, "main");
-      
-      const lineItems: Array<{
-        description: string;
-        quantity: string;
-        unit: string;
-        unitPrice: number;
-        total: number;
-        costCodeId: string | null;
-        sourceTimesheetId: string;
-        displayOrder: number;
-      }> = [];
 
       // Only the jobs these timesheets actually touch, fetched by id and checked
       // against the caller's company.
@@ -27912,61 +28048,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // project on each line and the one on the PO header. The previous attempt
       // to name the job blamed a field nothing populated; the field was fine,
       // the lookup never returned anything to populate it with.
-      const poCompanyId = getSessionCompanyId(req);
-      const neededProjectIds = Array.from(new Set(
-        [projectId, ...timesheets.map((ts: any) => ts.projectId)].filter(Boolean),
-      )) as string[];
-      const allProjects = (await Promise.all(neededProjectIds.map(id => storage.getProject(id))))
-        .filter((p): p is NonNullable<typeof p> => !!p && p.companyId === poCompanyId);
-      const allCostCodes = await storage.getCostCodes(req.user.companyId);
+      const allProjects = await companyProjectsById(
+        getSessionCompanyId(req),
+        [projectId, ...timesheets.map((ts: any) => ts.projectId)],
+      );
       const poProject = allProjects.find((p: any) => p.id === projectId);
-
-      // A timesheet split across cost codes gets one line per split, so the PO
-      // and the bill raised from it carry the same breakdown as the timesheet.
-      // Every line keeps sourceTimesheetId, so one timesheet can own several.
-      const allSplits = await storage.getTimesheetCostCodesByTimesheetIds(timesheets.map((ts) => ts.id));
-      const payRate = profileRate; // validated non-zero above
-
-      for (const ts of timesheets) {
-        const project = allProjects.find((p: any) => p.id === ts.projectId);
-        const splits = allSplits.filter((s) => s.timesheetId === ts.id);
-        const tsHours = parseFloat(ts.duration || "0");
-
-        const dateStr = ts.date ? new Date(ts.date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "";
-        const timeRange = `${ts.startTime || "?"} - ${ts.endTime || "?"}`;
-        const breakStr = ts.breakDuration ? ` (${ts.breakDuration}hr break)` : "";
-
-        for (const part of subPoLineParts(ts, splits)) {
-          const costCode = part.costCodeId ? allCostCodes.find((cc: any) => cc.id === part.costCodeId) : null;
-          const costCodeStr = costCode ? `${costCode.code} - ${costCode.title}` : "";
-          // The job goes on EVERY line, first, because a PO does not belong to one
-          // job. Timesheets are gathered by "awaiting PO" and subcontractor, not by
-          // project, so a single PO routinely carries a week split across several
-          // sites — and the header can only name the one it was raised against.
-          // Naming it once up there left every other line unattributable, and a
-          // returning invoice impossible to match back without opening the app.
-          const descParts: string[] = [];
-          if (project?.name) descParts.push(project.name);
-          descParts.push(`${dateStr} -- ${timeRange}${breakStr}`);
-          if (part.splitOf) {
-            descParts.push(`${costCodeStr || "No cost code"} (split ${part.splitOf.index} of ${part.splitOf.count}: ${part.hours.toFixed(2)} of ${tsHours.toFixed(2)} hrs)`);
-          } else if (costCodeStr) {
-            descParts.push(costCodeStr);
-          }
-          if (ts.description) descParts.push(ts.description);
-
-          lineItems.push({
-            description: descParts.join("\n"),
-            quantity: part.hours.toFixed(2),
-            unit: "hours",
-            unitPrice: Math.round(payRate * 100),
-            total: Math.round(part.hours * payRate * 100),
-            costCodeId: part.costCodeId,
-            sourceTimesheetId: ts.id,
-            displayOrder: lineItems.length,
-          });
-        }
-      }
+      const lineItems = await buildSubPoLineItems(req.user.companyId, timesheets, profileRate, allProjects, 0);
 
       const headerTotals = computePOTotalsCents(lineItems, "exclusive");
 
@@ -32115,8 +32202,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Same rule as PATCH: a bill going for approval needs a due date. The page
+      // sends the one on screen, since a read bill often has none saved yet.
+      const sentDue = req.body?.dueDate ? new Date(req.body.dueDate) : null;
+      const dueDate = sentDue && !isNaN(sentDue.getTime()) ? sentDue : bill.dueDate;
+      if (!dueDate) {
+        return res.status(400).json({
+          error: "Set a due date — a bill needs one to go for approval or to Xero.",
+          code: "DUE_DATE_REQUIRED",
+        });
+      }
+
       const updated = await storage.updateBill(req.params.id, {
         status: "awaiting_approval",
+        dueDate,
       });
       res.json(updated);
     } catch (error: any) {

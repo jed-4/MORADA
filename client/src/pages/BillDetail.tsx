@@ -1912,8 +1912,17 @@ export default function BillDetail() {
         throw new Error("Please set cost codes for all line items");
       }
       
+      // Send the due date with the status. The check above (and the button's)
+      // reads the FORM, but the server checks the SAVED bill — an email or
+      // AI-read draft arrives with none, so a date picked or auto-filled here
+      // but not yet saved got "Set a due date" while one sat on screen.
+      const dueDate = form.getValues("dueDate");
+      if (!dueDate) {
+        throw new Error("Please set a due date");
+      }
       const response = await apiRequest(`/api/bills/${id}`, "PATCH", {
-        status: "awaiting_approval"
+        status: "awaiting_approval",
+        dueDate: new Date(dueDate),
       });
       return response;
     },
@@ -2744,7 +2753,9 @@ export default function BillDetail() {
 
   const confirmExtractionMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest(`/api/bills/${id}/confirm-extraction`, "POST");
+      const dueDate = form.getValues("dueDate");
+      if (!dueDate) throw new Error("Please set a due date");
+      return await apiRequest(`/api/bills/${id}/confirm-extraction`, "POST", { dueDate: new Date(dueDate) });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
