@@ -4167,6 +4167,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Everything after a task update is a side effect: the task is already saved.
+  // A notification or activity-log failure (a notification edge case, schema
+  // drift on a table it touches) used to reach the route's catch and answer
+  // 500, so the Kanban rolled the card back and said "Failed to move task" for
+  // a move that had in fact been saved. Log it; never fail the request on it.
+  async function bestEffort(label: string, taskId: string, fn: () => unknown): Promise<void> {
+    try {
+      await fn();
+    } catch (err) {
+      console.error(`[tasks] ${label} failed after task ${taskId} was saved:`, err);
+    }
+  }
+
   app.patch("/api/tasks/:id", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
@@ -4232,7 +4245,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const actorName = user.firstName && user.lastName
           ? `${user.firstName} ${user.lastName}`
           : user.email || "Someone";
-        await notifyTaskCompleted({ task, actorUserId: user.id, companyId: user.companyId, actorName });
+        await bestEffort("notifyTaskCompleted", task.id, () =>
+          notifyTaskCompleted({ task, actorUserId: user.id, companyId: user.companyId, actorName }));
         fireWorkflowEvent({ type: "task_completed", companyId: user.companyId, taskId: task.id, taskTitle: task.title, templateId: task.templateId ?? null, projectId: task.projectId ?? null, actor: actorFrom(user) });
       }
 
@@ -4241,19 +4255,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const actorName = user.firstName && user.lastName
           ? `${user.firstName} ${user.lastName}`
           : user.email || "Someone";
-        await notifyTaskAssignment({
-          task,
-          previousTask: existingTask,
-          actorUserId: user.id,
-          companyId: user.companyId,
-          actorName,
-        });
+        await bestEffort("notifyTaskAssignment", task.id, () =>
+          notifyTaskAssignment({
+            task,
+            previousTask: existingTask,
+            actorUserId: user.id,
+            companyId: user.companyId,
+            actorName,
+          }));
       }
 
       // Record auto-activity for meaningful field changes (best-effort).
-      await recordTaskActivity(req, existingTask, task);
+      await bestEffort("recordTaskActivity", task.id, () => recordTaskActivity(req, existingTask, task));
 
-      emitTaskUpdated(user.companyId, task, user.id);
+      await bestEffort("emitTaskUpdated", task.id, () => emitTaskUpdated(user.companyId, task, user.id));
       res.json(task);
     } catch (error) {
       console.error("Error updating task:", error);
@@ -4306,12 +4321,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const actorName = user.firstName && user.lastName
           ? `${user.firstName} ${user.lastName}`
           : user.email || "Someone";
-        await notifyTaskCompleted({ task, actorUserId: user.id, companyId: user.companyId, actorName });
+        await bestEffort("notifyTaskCompleted", task.id, () =>
+          notifyTaskCompleted({ task, actorUserId: user.id, companyId: user.companyId, actorName }));
         fireWorkflowEvent({ type: "task_completed", companyId: user.companyId, taskId: task.id, taskTitle: task.title, templateId: task.templateId ?? null, projectId: task.projectId ?? null, actor: actorFrom(user) });
       }
 
       // Record auto-activity for the status change (best-effort).
-      await recordTaskActivity(req, existingTask, task);
+      await bestEffort("recordTaskActivity", task.id, () => recordTaskActivity(req, existingTask, task));
 
       res.json(task);
     } catch (error) {
