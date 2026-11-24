@@ -39,7 +39,6 @@ import {
 import { computeEstimateItemPrice, round2 } from "@shared/pricing";
 import type { CostCode, CostCategory, EstimateItem, EstimateGroup, FieldCategoryWithOptions } from "@shared/schema";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
-import { useResizableColumns } from "@/components/useResizableColumns";
 import {
   renderEstimateItemWithSubItems,
   type EstimateGridCtx,
@@ -51,14 +50,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { CostCodeSelect } from "@/components/CostCodeSelect";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
 import { EstimateGridHeader } from "@/components/estimates/EstimateGridHeader";
 import { EstimateSelectionBar } from "@/components/estimates/EstimateSelectionBar";
+import {
+  EstimateColumnsPicker,
+  TEMPLATE_DEFAULT_COLUMNS,
+  gridLayout,
+  mergeSavedColumns,
+  useColumnResize,
+} from "@/components/estimates/estimateColumns";
 import { priceListItemToLineFields, priceListSelectToast } from "@/components/estimates/PriceListItemPicker";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Columns3 } from "lucide-react";
 import { useCommitOnDismiss } from "@/hooks/useCommitOnDismiss";
 
 // ─── The template's own row shape ────────────────────────────────────────────
@@ -202,63 +205,19 @@ const CELL_FIELD_SOURCE: Record<string, string> = {
 };
 
 // ─── Columns ─────────────────────────────────────────────────────────────────
-/**
- * Every column this grid can draw, and which of them start on.
- *
- * The list used to be fixed and entirely visible, with no picker: the four
- * derived money columns the estimate offers simply did not exist here, and the
- * ones that did could not be turned off. The estimate's own toggles live on
- * `visible`, so the same shape is kept and a picker drives it.
- */
-const TEMPLATE_DEFAULT_COLUMNS: ColumnConfig[] = [
-  { id: "item", label: "Item", visible: true, widthPx: 240 },
-  { id: "description", label: "Description", visible: true, widthPx: 180 },
-  { id: "costCode", label: "Cost Code", visible: true, widthPx: 120 },
-  { id: "type", label: "Type", visible: true, widthPx: 100 },
-  { id: "proposalVisible", label: "Proposal", visible: true, widthPx: 72 },
-  { id: "shownAs", label: "Shown As", visible: true, widthPx: 84 },
-  { id: "allowance", label: "Allowance", visible: true, widthPx: 84 },
-  { id: "quantity", label: "Qty", visible: true, widthPx: 64 },
-  { id: "wastage", label: "Waste", visible: true, widthPx: 60 },
-  { id: "unitType", label: "Unit", visible: true, widthPx: 60 },
-  { id: "unitCostExTax", label: "Unit Cost", visible: true, widthPx: 92 },
-  { id: "markup", label: "Markup", visible: true, widthPx: 72 },
-  { id: "builderCost", label: "Builder Cost", visible: true, widthPx: 100 },
-  { id: "clientPriceExTax", label: "Client (ex)", visible: true, widthPx: 100 },
-  { id: "clientPriceIncTax", label: "Client (inc)", visible: true, widthPx: 100 },
-  // Derived from what is already on the row, so they cost nothing to carry and
-  // are off until asked for — the same defaults the estimate uses.
-  { id: "unitCostIncTax", label: "Unit Cost (inc)", visible: false, widthPx: 92 },
-  { id: "builderCostIncTax", label: "Builder Cost (inc)", visible: false, widthPx: 105 },
-  { id: "markupDollarAmount", label: "Markup $", visible: false, widthPx: 90 },
-  { id: "clientTax", label: "Tax", visible: false, widthPx: 70 },
-];
+// The estimate's own columns (estimateColumns.tsx), minus Status and Notes,
+// which a template has no use for. Saved per browser under its own key, so a
+// layout here doesn't reach into the estimate page.
+const COLUMNS_KEY = "estimate-template-grid:columns-v2";
 
-const COLUMN_VISIBILITY_KEY = "estimate-template-grid:columns";
-
-/**
- * Which columns are on, read from localStorage and MERGED against the list
- * above rather than trusted wholesale.
- *
- * A stored array is a snapshot of the columns that existed when it was saved:
- * taken as-is, a column added later is missing from it, missing reads as off,
- * and its checkbox appears to do nothing forever. Unknown ids fall back to
- * their default and ids that no longer exist are dropped.
- */
-function readColumnVisibility(): Record<string, boolean> {
-  const merged: Record<string, boolean> = {};
-  for (const c of TEMPLATE_DEFAULT_COLUMNS) merged[c.id] = c.visible;
+function readColumns(): ColumnConfig[] {
   try {
-    const raw = localStorage.getItem(COLUMN_VISIBILITY_KEY);
-    if (!raw) return merged;
-    const saved = JSON.parse(raw) as Record<string, boolean>;
-    for (const c of TEMPLATE_DEFAULT_COLUMNS) {
-      if (typeof saved[c.id] === "boolean") merged[c.id] = saved[c.id];
-    }
+    const raw = localStorage.getItem(COLUMNS_KEY);
+    return mergeSavedColumns(raw ? JSON.parse(raw) : null, TEMPLATE_DEFAULT_COLUMNS);
   } catch {
     // A private window, or something else wrote nonsense there. Defaults.
+    return mergeSavedColumns(null, TEMPLATE_DEFAULT_COLUMNS);
   }
-  return merged;
 }
 
 interface Props {
@@ -284,33 +243,17 @@ export function TemplateEstimateGrid({
   formatCurrency,
   onRequestDelete,
 }: Props) {
-  // Order and widths come from useResizableColumns — the same hook the allowance
-  // detail and price-list tables use — so this grid gets drag-to-reorder and
-  // drag-to-resize headers instead of a fixed layout, and behaves like the rest
-  // of the app's bespoke grids rather than being a third way of doing columns.
-  // Read once, synchronously, so the first paint already has the right columns.
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(readColumnVisibility);
-
-  const toggleColumn = useCallback((id: string) => {
-    setColumnVisibility((prev) => {
-      const next = { ...prev, [id]: !prev[id] };
-      try { localStorage.setItem(COLUMN_VISIBILITY_KEY, JSON.stringify(next)); } catch { /* not worth an error */ }
-      return next;
+  // Column order, visibility and widths: the same model, picker and resizing
+  // as the estimate page.
+  const [columns, setColumnsState] = useState<ColumnConfig[]>(readColumns);
+  const setColumns = useCallback((next: React.SetStateAction<ColumnConfig[]>) => {
+    setColumnsState((prev) => {
+      const value = typeof next === "function" ? (next as (p: ColumnConfig[]) => ColumnConfig[])(prev) : next;
+      try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(value)); } catch { /* not worth an error */ }
+      return value;
     });
   }, []);
-
-  const taskCols = useResizableColumns(
-    "estimate-template-grid",
-    TEMPLATE_DEFAULT_COLUMNS.filter((c) => columnVisibility[c.id] !== false).map((c) => ({
-      key: c.id,
-      defaultWidth: c.widthPx,
-      // No `flex` column. A 1fr column stretched the HEADING row to the window
-      // while the group cards beneath stay at the table width, so every heading
-      // sat right of its column. Fixed widths, as on the estimate page.
-    })),
-    0,
-    { reorderable: true },
-  );
+  const { resizingColumn, startResize } = useColumnResize(setColumns);
   /**
    * The newest copy of the lines, including edits not yet drawn.
    *
@@ -1122,25 +1065,7 @@ export function TemplateEstimateGrid({
   );
 
   // ── Layout ─────────────────────────────────────────────────────────────────
-  // EstimateGroupCard and the shared cell renderer both take ColumnConfig[], and
-  // they map over it — so reordering here reorders the data with it, for free.
-  const labelFor = useMemo(
-    () => new Map(TEMPLATE_DEFAULT_COLUMNS.map((c) => [c.id, c.label])),
-    [],
-  );
-  const columns: ColumnConfig[] = useMemo(
-    () => taskCols.cols.map((c) => ({
-      id: c.key,
-      label: labelFor.get(c.key) ?? c.key,
-      visible: true,
-      widthPx: c.width,
-    })),
-    [taskCols.cols, labelFor],
-  );
-  const visibleCols = columns;
-  // Same shape as the estimate page: checkbox lane, fixed-width columns, actions.
-  const gridTemplate = `40px ${columns.map((c) => `${c.widthPx}px`).join(" ")} 80px`;
-  const tableWidth = 40 + columns.reduce((sum, c) => sum + c.widthPx, 0) + 80;
+  const { visibleCols, gridTemplate, tableWidth } = gridLayout(columns);
 
   const ctx: EstimateGridCtx = {
     editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell,
@@ -1208,41 +1133,7 @@ export function TemplateEstimateGrid({
             pins to the top, and two sticky rows at top-0 sat on each other. */}
         <div className="flex items-center gap-2 bg-card px-2 py-1 border-b border-border" style={{ width: tableWidth, minWidth: "100%" }}>
           <div className="ml-auto" />
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-7 w-7"
-                title="Columns"
-                aria-label="Columns"
-                data-testid="button-template-column-visibility"
-              >
-                <Columns3 className="w-3.5 h-3.5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-60 p-2" data-testid="popover-template-columns">
-              <div className="px-1.5 pt-1 text-sm font-semibold">Columns</div>
-              <p className="px-1.5 pb-2 text-xs text-muted-foreground">
-                Drag a heading to reorder · toggle to show or hide.
-              </p>
-              <div className="max-h-80 overflow-y-auto space-y-0.5 pr-0.5">
-                {TEMPLATE_DEFAULT_COLUMNS.map((c) => (
-                  <label
-                    key={c.id}
-                    className="flex items-center gap-2 px-1.5 py-1 rounded-sm hover-elevate cursor-pointer text-sm"
-                    data-testid={`template-column-toggle-${c.id}`}
-                  >
-                    <Checkbox
-                      checked={columnVisibility[c.id] !== false}
-                      onCheckedChange={() => toggleColumn(c.id)}
-                    />
-                    <span className="truncate">{c.label}</span>
-                  </label>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
+          <EstimateColumnsPicker columns={columns} onChange={setColumns} />
         </div>
 
         {/* The estimate page's own heading row, so the two can't drift apart. */}
@@ -1252,17 +1143,8 @@ export function TemplateEstimateGrid({
           tableWidth={tableWidth}
           allSelected={selectedItems.size > 0 && selectedItems.size === lineItems.length}
           onSelectAll={handleSelectAll}
-          onResizeStart={(id, e) => {
-            const col = columns.find((c) => c.id === id);
-            taskCols.startResize(id, e.clientX, col?.widthPx ?? 100);
-          }}
-          columnHeaderProps={(c) => ({
-            ...taskCols.headerDragProps(c.id),
-            title: "Drag to move · drag the edge to resize",
-            className: `cursor-grab active:cursor-grabbing select-none transition-opacity${
-              taskCols.draggingKey === c.id ? " opacity-40" : ""
-            }`,
-          })}
+          onResizeStart={(id, e) => startResize(id, e, columns.find((c) => c.id === id)?.widthPx ?? 100)}
+          resizingColumn={resizingColumn}
         />
 
         <DndContext
@@ -1336,8 +1218,10 @@ export function TemplateEstimateGrid({
             statusOptions={[]}
             taxRate={TAX_RATE}
             // A template has no per-line workflow and no tax of its own:
-            // it is cost data that gets priced when it is used.
-            omitFields={["status", "unitCostIncTax"]}
+            // it is cost data that gets priced when it is used. The last
+            // three are flags a template line has nowhere to keep, so the
+            // menu offered them and applying one quietly did nothing.
+            omitFields={["status", "unitCostIncTax", "trackLabourHours", "requestForQuote", "isSelection"]}
             onApply={applyBulk}
             onComplete={clearSelection}
           />
