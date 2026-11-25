@@ -99,7 +99,7 @@ import { ImportEstimateItemsDialog } from "@/components/estimates/ImportEstimate
 import { exportEstimateRows, downloadBlankImportTemplate, type EstimateExportRow } from "@/lib/estimateSpreadsheet";
 import { formatGroupPath } from "@shared/import";
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
-import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
+import { AssemblyPickerDialog } from "@/components/estimates/AssemblyPickerDialog";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, pickItemDropTarget, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
@@ -898,7 +898,7 @@ export default function EstimateDetail() {
   // Native DOM ghost refs — updated directly without React re-render for lag-free drag feedback
   const stopGhostRef = React.useRef<(() => void) | null>(null);
   
-  // Catalog Sidebar state
+  // Assembly picker (AssemblyPickerDialog)
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   
   // Undo stack
@@ -5051,7 +5051,7 @@ export default function EstimateDetail() {
                   data-testid="button-open-catalog"
                 >
                   <Package className="w-3.5 h-3.5 text-muted-foreground" />
-                  Browse catalog
+                  Add assembly
                 </button>
                 <button
                   className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
@@ -5508,7 +5508,7 @@ export default function EstimateDetail() {
                         "data-testid": "button-load-template-empty",
                       },
                       {
-                        label: "Catalog",
+                        label: "Assembly",
                         onClick: () => setIsCatalogOpen(true),
                         icon: Package,
                         disabled: estimate?.isLocked,
@@ -7479,65 +7479,15 @@ export default function EstimateDetail() {
         estimateName={estimate?.name || ""}
       />
       
-      {/* Catalog Sidebar */}
-      <div className="fixed top-0 right-0 h-full z-50">
-        <CatalogSidebar
-          isOpen={isCatalogOpen}
-          onClose={() => setIsCatalogOpen(false)}
-          onAddAssembly={async (assemblyId) => {
-            if (!effectiveEstimateId) return;
-            
-            try {
-              // Mock assembly data - in production, fetch from API
-              const assemblyItems = {
-                'slab-pour': [
-                  { description: 'Concrete - 20 MPa', quantity: 12.5, unit: 'm³', rate: 185 },
-                  { description: 'Steel mesh - SL82', quantity: 125, unit: 'm²', rate: 8.50 },
-                  { description: 'Vapor barrier', quantity: 125, unit: 'm²', rate: 2.75 },
-                  { description: 'Labour - concrete pour', quantity: 8, unit: 'hr', rate: 85 },
-                ],
-                'framing': [
-                  { description: 'Pine framing timber - 90x45', quantity: 450, unit: 'lm', rate: 4.20 },
-                  { description: 'Steel fixing plates', quantity: 85, unit: 'ea', rate: 3.50 },
-                  { description: 'Galv bolts M12x100', quantity: 120, unit: 'ea', rate: 1.80 },
-                  { description: 'Labour - framing', quantity: 24, unit: 'hr', rate: 75 },
-                ],
-              };
-              
-              const items = assemblyItems[assemblyId as keyof typeof assemblyItems] || [];
-              
-              // Add each item to the estimate
-              for (const item of items) {
-                await apiRequest('/api/estimate-items', 'POST', {
-                  estimateId: effectiveEstimateId,
-                  description: item.description,
-                  quantity: item.quantity,
-                  unit: item.unit,
-                  rate: item.rate,
-                  amount: item.quantity * item.rate,
-                });
-              }
-              
-              // Refresh data
-              await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
-              await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
-              
-              toast({
-                title: "Assembly Added",
-                description: `Added ${items.length} items from assembly to your estimate`,
-              });
-              
-              setIsCatalogOpen(false);
-            } catch (error: any) {
-              toast({
-                title: "Error",
-                description: error.message || "Failed to add assembly items",
-                variant: "destructive",
-              });
-            }
-          }}
+      {/* Assemblies: pick one from the Library and drop it in as one line with its components. */}
+      {effectiveEstimateId && !isNewEstimate && (
+        <AssemblyPickerDialog
+          open={isCatalogOpen}
+          onOpenChange={setIsCatalogOpen}
+          estimateId={effectiveEstimateId}
+          groups={groups}
         />
-      </div>
+      )}
       
       {/* Floating bulk action pill — shared with the template page */}
       <EstimateSelectionBar

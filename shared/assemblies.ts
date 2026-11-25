@@ -218,6 +218,25 @@ export function componentLineFields(
 }
 
 /**
+ * An assembly's price in the two parts that mean something to an estimator:
+ * the rate per assembly unit (from per-unit components) and the fixed costs
+ * that land once whatever the quantity. DOLLARS ex GST, before the builder's
+ * margin, line markup and wastage included.
+ */
+export function assemblyRateBreakdown(
+  components: Array<Pick<AssemblyComponentSource, "unitCostCents" | "qtyMode" | "qtyFactor" | "wastagePercent" | "markupPercent">>,
+): { perUnitExTax: number; fixedExTax: number } {
+  const perUnit = components.filter((c) => c.qtyMode !== "fixed");
+  const fixed = components.filter((c) => c.qtyMode === "fixed");
+  // Priced at 1 000 units and divided back down, so a 0.105 factor isn't
+  // rounded to the cent per line before it is multiplied out.
+  return {
+    perUnitExTax: round2(previewAssemblyCostExTax(perUnit, 1000) / 1000),
+    fixedExTax: previewAssemblyCostExTax(fixed, 0),
+  };
+}
+
+/**
  * What an assembly costs at a given quantity, before the builder's margin, in
  * DOLLARS ex GST — the Library editor's preview. Line markup and wastage
  * included, exactly as the components will price once dropped in.

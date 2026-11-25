@@ -10,6 +10,7 @@
 import assert from "node:assert/strict";
 import {
   assemblyLineFields,
+  assemblyRateBreakdown,
   componentLineFields,
   componentQuantity,
   groupAssemblyComponents,
@@ -119,6 +120,13 @@ test("Library preview matches the dropped-in components ex GST", () => {
     projectMarkupPercent: 0, taxRate: 10, wastagePercent: k.wastagePercent,
   }).lineExTax, 0);
   assert.equal(preview, Math.round(ex * 100) / 100);
+});
+
+test("rate breakdown splits per-unit and fixed", () => {
+  const { perUnitExTax, fixedExTax } = assemblyRateBreakdown(slab.components);
+  // 0.105 × $285 + 1.1 × $9.40 × 1.10 markup = 29.925 + 11.374
+  assert.equal(perUnitExTax, 41.3);
+  assert.equal(fixedExTax, 1100);
 });
 
 console.log(`\n${passed} passed`);
