@@ -79,6 +79,10 @@ import {
   listBackcharges,
 } from "./services/defectHandover";
 import { registerDeliveryRoutes, deliverySummaryFor } from "./deliveries";
+import {
+  registerAssemblyRoutes, applyAssemblyPatchRules, applyAssemblyBulkRules, afterAssemblyLineSaved,
+  copyAssemblyComponents,
+} from "./assemblies";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
 import { statusOnReinstate, endOfDay } from "@shared/proposalExpiry";
@@ -8859,6 +8863,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   };
 
+  // Estimate assemblies: Library CRUD + dropping one into an estimate
+  // (server/assemblies.ts). Registered here because it needs the recalc above.
+  registerAssemblyRoutes(app, { onEstimateItemsChanged: triggerBudgetAutoRecalc });
+
   // Estimate Items API Routes
   app.get("/api/estimates/:id/items", async (req, res) => {
     try {
@@ -9582,6 +9590,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!item) continue;
 
         const next: Record<string, any> = { ...cleanPatch };
+        // Assembly lines carry no money of their own; a component given a
+        // quantity in bulk stops following its assembly line (server/assemblies.ts).
+        applyAssemblyBulkRules(next, item as any);
 
         // Setting a quantity in bulk is a hand-typed quantity like any other:
         // it takes the line off the take-off rather than leaving a formula
@@ -9611,8 +9622,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         next.taxAmount = taxAmount;
         next.priceIncTax = priceIncTax;
 
-        await storage.updateEstimateItem(itemId, next);
+        const saved = await storage.updateEstimateItem(itemId, next);
         if (next.quantityFormula === null) await syncItemRefs(itemId, null);
+        await afterAssemblyLineSaved(item as any, saved as any);
         updated++;
       }
 
@@ -9774,6 +9786,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const updateData: any = { ...req.body };
 
+      // Assemblies: an assembly line has no money of its own, and a component
+      // typed by hand stops following it (server/assemblies.ts).
+      const assemblyRefusal = await applyAssemblyPatchRules(updateData, existingItem as any);
+      if (assemblyRefusal) {
+        return res.status(400).json({ error: assemblyRefusal });
+      }
+
       // A supplied catalogue link must be one of THIS company's items. Estimate item
       // ids say nothing about the catalogue, so without this an id from another
       // tenant's price book would be stored verbatim.
@@ -9875,6 +9894,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (updateData.quantityFormula !== undefined && !(formulaWas === null && formulaNow === null)) {
         await syncItemRefs(item.id, formulaNow);
       }
+      await afterAssemblyLineSaved(existingItem as any, item as any);
       triggerBudgetAutoRecalc(existingItem.estimateId);
       res.json(item);
     } catch (error: any) {
@@ -10014,7 +10034,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!newItem) {
         return res.status(404).json({ error: "Failed to duplicate item" });
       }
-      
+      // An assembly line brings its components with it.
+      await copyAssemblyComponents(req.params.id, newItem as any);
+
       if (newItem.estimateId) {
         triggerBudgetAutoRecalc(newItem.estimateId);
       }
@@ -10058,7 +10080,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!newItem) {
         return res.status(404).json({ error: "Failed to copy item" });
       }
-      
+      // An assembly line brings its components with it.
+      await copyAssemblyComponents(req.params.id, newItem as any);
+
       triggerBudgetAutoRecalc(validationResult.data.targetEstimateId);
       res.status(201).json(newItem);
     } catch (error: any) {
