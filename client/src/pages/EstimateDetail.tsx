@@ -89,7 +89,7 @@ import {
   ExternalLink,
   Archive
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection, type TakeoffMeasurement, type TakeoffCategory } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection, type TakeoffMeasurement, type TakeoffCategory, type AssemblyWithComponents } from "@shared/schema";
 import { computeEstimateItemPrice, isFixedPriceLine, round2, computeEstimateSummary } from "@shared/pricing";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -3022,6 +3022,40 @@ export default function EstimateDetail() {
     toast(priceListSelectToast(picked, estimateUnitNames));
   };
 
+  /**
+   * An assembly was picked from the name cell's typeahead: this line becomes the
+   * assembly line, where it sits, with the components dropped in under it. A
+   * quantity already on the line carries over (the server decides that).
+   */
+  const assemblyIntoLineMutation = useMutation({
+    mutationFn: ({ item, assembly }: { item: EstimateItem; assembly: AssemblyWithComponents }) =>
+      apiRequest(`/api/estimates/${effectiveEstimateId}/assemblies`, "POST", { assemblyId: assembly.id, intoItemId: item.id }),
+    // The round trip is a couple of seconds on Neon; show the picked name at once
+    // rather than the old one. Components appear when the refetch lands.
+    onMutate: ({ item, assembly }) => {
+      queryClient.setQueryData<EstimateItem[]>(["/api/estimates", effectiveEstimateId, "items"], (old) =>
+        old?.map((i) => i.id === item.id
+          ? { ...i, name: assembly.name, assemblyId: assembly.id, unitType: assembly.unitType, unitCostExTax: 0, priceIncTax: 0, priceListItemId: null }
+          : i));
+    },
+    onSuccess:(lines: unknown[], { assembly }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
+      const n = Math.max(0, (lines?.length ?? 1) - 1);
+      toast({
+        title: `${assembly.name} added`,
+        description: `${n} component${n === 1 ? "" : "s"} under this line, hidden from the client. Change its quantity and they rescale.`,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't add the assembly", description: e.message, variant: "destructive" }),
+  });
+  const handleAssemblySelect = (item: EstimateItem, assembly: AssemblyWithComponents) => {
+    setEditingCell(null);
+    setEditingValue('');
+    assemblyIntoLineMutation.mutate({ item, assembly });
+  };
+
   /** The units this estimate's own Field Settings list actually offers. */
   const estimateUnitNames = useMemo(
     () => (estimateItemUnitCategory?.options ?? []).map(o => o.name).filter(Boolean) as string[],
@@ -4553,7 +4587,7 @@ export default function EstimateDetail() {
   // close over when they lived in this file.
   const gridCtx: EstimateGridCtx = {
     editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell,
-    handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect,
+    handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, handleAssemblySelect,
     estimate, columns, costCodes, costCategories, priceListItemMap, poLinkMap,
     selectionByEstimateItemId, estimateItemStatusCategory, estimateItemUnitCategory,
     calculatePricingValues, formatCurrency, getSubItems,

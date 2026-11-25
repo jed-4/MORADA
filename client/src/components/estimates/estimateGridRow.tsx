@@ -270,6 +270,8 @@ export interface EstimateGridCtx {
   /** Shared caret placement for every cell editor — see EstimateDetail. */
   handleEditorFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   handlePriceListSelect: (item: EstimateItem, picked: any) => void;
+  /** A Library assembly was picked in a line's name cell: the line becomes it. */
+  handleAssemblySelect?: (item: EstimateItem, assembly: any) => void;
 
   // data
   estimate: any;
@@ -346,7 +348,7 @@ const ASSEMBLY_ROLLUP_COLUMNS = new Set([
 ]);
 
 export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, columnId: string) {
-  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
+  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, handleAssemblySelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
     // The name is edited as the field "name" but lives in the column "item",
     // so both checks below match on the field the column actually edits.
     const cursorField = columnId === 'item' ? 'name' : columnId;
@@ -603,6 +605,11 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 value={editingValue}
                 onChange={setEditingValue}
                 onSelect={(picked) => handlePriceListSelect(item, picked)}
+                // Only a plain top-level line can become an assembly: not a
+                // sub-item, not one that already has sub-items, not an assembly.
+                onSelectAssembly={handleAssemblySelect && !isSubItem && !hasSubItems && !isAssemblyLine(item)
+                  ? (assembly) => handleAssemblySelect(item, assembly)
+                  : undefined}
                 onCommit={() => handleCellSave(item, 'name')}
                 onCancel={handleCellCancel}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}

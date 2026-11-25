@@ -214,7 +214,7 @@ function toSource(a: AssemblyWithComponents): AssemblySource {
 export async function insertAssemblyIntoEstimate(
   estimate: schema.Estimate,
   assembly: AssemblyWithComponents,
-  opts: { quantity: number; groupId: string | null },
+  opts: { quantity: number; groupId: string | null; into?: schema.EstimateItem },
 ): Promise<schema.EstimateItem[]> {
   const source = toSource(assembly);
   const linked = source.components.map((c) => c.priceListItemId).filter((x): x is string => !!x);
@@ -222,6 +222,19 @@ export async function insertAssemblyIntoEstimate(
   const pricing = { projectMarkupPercent: estimate.projectMarkupPercent, taxRate: estimate.taxRate };
 
   return db.transaction(async (tx) => {
+    let parent: schema.EstimateItem;
+    if (opts.into) {
+      // Turn an existing line into the assembly line, where it already sits — the
+      // name-cell autocomplete path. Its own cost and price-list link go: the
+      // assembly line carries no money of its own. A take-off formula stays, so
+      // a measured line keeps driving the quantity.
+      const fields = assemblyLineFields(source, opts.quantity);
+      [parent] = await tx
+        .update(schema.estimateItems)
+        .set({ ...fields, priceListItemId: null })
+        .where(eq(schema.estimateItems.id, opts.into.id))
+        .returning();
+    } else {
     const [{ maxOrder }] = await tx
       .select({ maxOrder: sql<number>`coalesce(max(${schema.estimateItems.order}), -1)` })
       .from(schema.estimateItems)
@@ -231,7 +244,7 @@ export async function insertAssemblyIntoEstimate(
         isNull(schema.estimateItems.parentItemId),
       ));
 
-    const [parent] = await tx
+    [parent] = await tx
       .insert(schema.estimateItems)
       .values({
         ...assemblyLineFields(source, opts.quantity),
@@ -240,6 +253,7 @@ export async function insertAssemblyIntoEstimate(
         order: Number(maxOrder) + 1,
       })
       .returning();
+    }
 
     if (source.components.length === 0) return [parent];
 
@@ -599,7 +613,7 @@ export function registerAssemblyRoutes(
     }
   });
 
-  /** Drop an assembly into an estimate. Body: { assemblyId, quantity?, groupId? } */
+  /** Drop an assembly into an estimate. Body: { assemblyId, quantity?, groupId?, intoItemId? } */
   app.post("/api/estimates/:id/assemblies", requireAuth, requireTeamMember, async (req, res) => {
     const companyId = company(req, res);
     if (!companyId) return;
@@ -613,12 +627,35 @@ export function registerAssemblyRoutes(
       const assembly = assemblyId ? await getAssembly(assemblyId, companyId) : null;
       if (!assembly) return res.status(404).json({ error: "Assembly not found" });
 
-      const quantity = req.body?.quantity === undefined ? 1 : Number(req.body.quantity);
+      let quantity = req.body?.quantity === undefined ? 1 : Number(req.body.quantity);
       if (!Number.isFinite(quantity) || quantity < 0) {
         return res.status(400).json({ error: "Quantity must be zero or more" });
       }
-      const groupId = typeof req.body?.groupId === "string" && req.body.groupId ? req.body.groupId : null;
-      if (groupId) {
+      // intoItemId: turn this existing line into the assembly line (name-cell pick).
+      const intoItemId = typeof req.body?.intoItemId === "string" ? req.body.intoItemId : "";
+      let into: schema.EstimateItem | undefined;
+      if (intoItemId) {
+        const [line] = await db
+          .select()
+          .from(schema.estimateItems)
+          .where(and(eq(schema.estimateItems.id, intoItemId), eq(schema.estimateItems.estimateId, estimate.id)));
+        if (!line) return res.status(404).json({ error: "Line not found" });
+        if (line.parentItemId) {
+          return res.status(400).json({ error: "A sub-item can't become an assembly — add it as its own line" });
+        }
+        if (line.assemblyId) return res.status(400).json({ error: "This line is already an assembly" });
+        const [child] = await db
+          .select({ id: schema.estimateItems.id })
+          .from(schema.estimateItems)
+          .where(eq(schema.estimateItems.parentItemId, line.id))
+          .limit(1);
+        if (child) return res.status(400).json({ error: "This line already has sub-items — add the assembly as a new line" });
+        into = line;
+      }
+      const groupId = into
+        ? into.groupId
+        : typeof req.body?.groupId === "string" && req.body.groupId ? req.body.groupId : null;
+      if (groupId && !into) {
         const [group] = await db
           .select({ id: schema.estimateGroups.id })
           .from(schema.estimateGroups)
@@ -626,7 +663,9 @@ export function registerAssemblyRoutes(
         if (!group) return res.status(404).json({ error: "Group not found" });
       }
 
-      const lines = await insertAssemblyIntoEstimate(estimate, assembly, { quantity, groupId });
+      // A line that already had a quantity keeps it; a blank one starts at 1.
+      if (into && req.body?.quantity === undefined && Number(into.quantity) > 0) quantity = Number(into.quantity);
+      const lines = await insertAssemblyIntoEstimate(estimate, assembly, { quantity, groupId, into });
       hooks.onEstimateItemsChanged(estimate.id);
       res.status(201).json(lines);
     } catch (error: any) {
