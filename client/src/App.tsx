@@ -115,6 +115,7 @@ const NotFound = lazy(() => import("@/pages/not-found"));
 const SuggestionsReview = lazy(() => import("@/pages/SuggestionsReview"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
+const Support = lazy(() => import("@/pages/Support"));
 const LandingPage = lazy(() => import("@/pages/landing"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
@@ -160,6 +161,7 @@ function Router() {
       <Route path="/accept-invite/:token" component={AcceptInvitation} />
       <Route path="/privacy" component={PrivacyPolicy} />
       <Route path="/terms" component={TermsOfService} />
+      <Route path="/support" component={Support} />
       <Route path="/portal/rfq/:token" component={RFQPortal} />
       <Route path="/portal/po/:token" component={POPortal} />
       <Route path="/portal/variation/:token" component={VariationPortal} />
@@ -409,6 +411,7 @@ function UnauthenticatedRoutes() {
         <Route path="/auth" component={AuthPage} />
         <Route path="/privacy" component={PrivacyPolicy} />
         <Route path="/terms" component={TermsOfService} />
+        <Route path="/support" component={Support} />
         <Route path="/accept-invite/:token" component={AcceptInvitation} />
         <Route path="/portal/rfq/:token" component={RFQPortal} />
       <Route path="/portal/po/:token" component={POPortal} />
