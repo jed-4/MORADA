@@ -20,7 +20,7 @@ import { useClientPortal } from "@/hooks/use-client-portal";
  */
 
 /** Paths a client may reach outside their project. */
-const CLIENT_GLOBAL_PATHS = ["/", "/profile", "/privacy", "/terms"];
+const CLIENT_GLOBAL_PATHS = ["/", "/profile", "/privacy", "/terms", "/support"];
 
 function deniedSection(pathname: string, canSeeTab: (id: string) => boolean): boolean {
   // Public portal links are token-authenticated and are not part of the app's
