@@ -100,6 +100,7 @@ import { exportEstimateRows, downloadBlankImportTemplate, type EstimateExportRow
 import { formatGroupPath } from "@shared/import";
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
 import { AssemblyPickerDialog } from "@/components/estimates/AssemblyPickerDialog";
+import { componentQuantity, isAssemblyLine } from "@shared/assemblies";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, pickItemDropTarget, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
@@ -2502,7 +2503,22 @@ export default function EstimateDetail() {
       // Optimistically update to the new value
       queryClient.setQueryData<EstimateItem[]>(
         ["/api/estimates", effectiveEstimateId, "items"],
-        (old) => old?.map(item => item.id === itemId ? { ...item, ...optimisticData } : item)
+        (old) => {
+          if (!old) return old;
+          const target = old.find(item => item.id === itemId);
+          const nextQty = (data as any).quantity;
+          // An assembly line's components follow its quantity. The server does
+          // the real rescale; this only shows it now instead of after the
+          // refetch (several seconds against Neon). Overridden ones stay put.
+          const rescale = isAssemblyLine(target) && nextQty !== undefined && !Number.isNaN(Number(nextQty));
+          return old.map(item => {
+            if (item.id === itemId) return { ...item, ...optimisticData };
+            if (rescale && item.parentItemId === itemId && (item as any).assemblyQtyMode && !(item as any).assemblyQtyOverridden) {
+              return { ...item, quantity: componentQuantity((item as any).assemblyQtyMode, (item as any).assemblyQtyFactor, Number(nextQty)) };
+            }
+            return item;
+          });
+        }
       );
       
       // Return context with the previous value

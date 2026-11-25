@@ -90,12 +90,13 @@ function NumberCell({
       onBlur={() => {
         const t = text.trim().replace(/[$,\s]/g, "");
         if (t === "") {
-          onCommit(allowEmpty ? null : 0);
+          const empty = allowEmpty ? null : 0;
+          if (empty !== (value ?? null)) onCommit(empty);
           return;
         }
         const n = Number(t);
-        if (Number.isFinite(n) && n >= 0) onCommit(n);
-        else setText(shown);
+        if (!Number.isFinite(n) || n < 0) setText(shown);
+        else if (n !== value) onCommit(n); // blur alone is not an edit
       }}
       onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
       className={`h-7 text-xs text-right tabular-nums ${className ?? ""}`}
@@ -151,8 +152,11 @@ export default function AssemblyDetail() {
     setDraft((d) => (d ? fn(d) : d));
     setDirty(true);
   };
-  const updateComponent = (key: string, patch: Partial<DraftComponent>) =>
+  const updateComponent = (key: string, patch: Partial<DraftComponent>) => {
+    const current = draft?.components.find((c) => c.key === key);
+    if (current && Object.entries(patch).every(([k, v]) => (current as any)[k] === v)) return; // nothing changed
     update((d) => ({ ...d, components: d.components.map((c) => (c.key === key ? { ...c, ...patch } : c)) }));
+  };
 
   const save = useMutation({
     mutationFn: async () => {
@@ -328,18 +332,18 @@ export default function AssemblyDetail() {
         <div className="px-4 pb-6">
           <div className="text-xs font-medium mb-2">Components</div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs min-w-[1000px]">
+            <table className="w-full text-xs min-w-[1180px]">
               <thead className="text-muted-foreground border-b border-border">
                 <tr className="h-8">
                   <th className="w-5" />
-                  <th className="text-left font-medium px-1.5">Component</th>
+                  <th className="text-left font-medium px-1.5 min-w-[240px]">Component</th>
                   <th className="text-left font-medium px-1.5 w-28">Type</th>
                   <th className="text-left font-medium px-1.5 w-32">Quantity</th>
                   <th className="text-left font-medium px-1.5 w-20">Unit</th>
                   <th className="text-right font-medium px-1.5 w-24">Unit cost (ex)</th>
                   <th className="text-right font-medium px-1.5 w-16">Waste %</th>
                   <th className="text-right font-medium px-1.5 w-16">Markup %</th>
-                  <th className="text-left font-medium px-1.5 w-44">Cost code</th>
+                  <th className="text-left font-medium px-1.5 w-40">Cost code</th>
                   <th className="text-right font-medium px-1.5 w-24">At {previewQty}</th>
                   <th className="w-8" />
                 </tr>

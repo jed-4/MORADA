@@ -217,6 +217,15 @@ export function componentLineFields(
   };
 }
 
+/** What pricing a component needs — loose enough for a half-edited draft. */
+export interface PricedComponent {
+  unitCostCents: number;
+  qtyMode: string;
+  qtyFactor: number;
+  wastagePercent?: number | null;
+  markupPercent?: number | null;
+}
+
 /**
  * An assembly's price in the two parts that mean something to an estimator:
  * the rate per assembly unit (from per-unit components) and the fixed costs
@@ -224,7 +233,7 @@ export function componentLineFields(
  * margin, line markup and wastage included.
  */
 export function assemblyRateBreakdown(
-  components: Array<Pick<AssemblyComponentSource, "unitCostCents" | "qtyMode" | "qtyFactor" | "wastagePercent" | "markupPercent">>,
+  components: PricedComponent[],
 ): { perUnitExTax: number; fixedExTax: number } {
   const perUnit = components.filter((c) => c.qtyMode !== "fixed");
   const fixed = components.filter((c) => c.qtyMode === "fixed");
@@ -242,7 +251,7 @@ export function assemblyRateBreakdown(
  * included, exactly as the components will price once dropped in.
  */
 export function previewAssemblyCostExTax(
-  components: Array<Pick<AssemblyComponentSource, "unitCostCents" | "qtyMode" | "qtyFactor" | "wastagePercent" | "markupPercent">>,
+  components: PricedComponent[],
   quantity: number,
 ): number {
   let total = 0;
