@@ -1489,11 +1489,37 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
     return 10;
   }, [zoomLevel]);
 
+  /**
+   * Scroll the timeline to compensate for days added (or removed) at its
+   * left edge, without moving an in-progress drag.
+   *
+   * The drag measures its offset as cursor movement PLUS scroll movement since
+   * it began. A compensation scroll is not the user moving anything — every bar
+   * shifts by the same pixels because the timeline now starts earlier — so it
+   * must not count. It used to: holding a bar at the left edge extended the
+   * timeline by 14 days, and the drop landed 14 days later than the cursor.
+   * Rebasing the drag's start scroll by the ACTUAL change (scrollLeft clamps)
+   * cancels it out.
+   */
+  const shiftScrollKeepingDrag = (px: number) => {
+    const el = timelineRef.current;
+    if (!el || px === 0) return;
+    const before = el.scrollLeft;
+    el.scrollLeft = before + px;
+    const actual = el.scrollLeft - before;
+    const drag = draggingRef.current;
+    if (drag && actual !== 0) {
+      const rebased = { ...drag, startScrollLeft: drag.startScrollLeft + actual };
+      draggingRef.current = rebased; // pointerup may read this before the re-render
+      setDragging(prev => prev ? { ...prev, startScrollLeft: prev.startScrollLeft + actual } : null);
+    }
+  };
+
   useEffect(() => {
     if (prevTimelineStartRef.current && timelineRef.current && pendingScrollAdjustEarly.current === 0) {
       const shiftDays = differenceInDays(prevTimelineStartRef.current, timelineStart);
       if (shiftDays !== 0) {
-        timelineRef.current.scrollLeft += shiftDays * pixelsPerDay;
+        shiftScrollKeepingDrag(shiftDays * pixelsPerDay);
       }
     }
     prevTimelineStartRef.current = timelineStart;
@@ -2232,11 +2258,22 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
           variant: "destructive",
         });
       } finally {
-        setDragging(null);
-        setHoveredAnchor(null);
-        setTimeout(() => {
-          dragHappened.current = false;
-        }, 50);
+        // This runs after the network wait above, and the user may have
+        // started ANOTHER drag in the meantime (the visual was dropped before
+        // the wait so they can). Clearing unconditionally killed that new
+        // drag mid-gesture: its pointerup then found no drag, saved nothing,
+        // and the bar snapped back. Only clear if this gesture is still the
+        // live one.
+        const live = draggingRef.current;
+        const stillThisGesture = !!live && live.id === drag.id && live.startX === drag.startX && live.startY === drag.startY;
+        if (!live || stillThisGesture) {
+          if (live) setDragging(null);
+          setHoveredAnchor(null);
+          setTimeout(() => {
+            // Same rule for the click guard: don't reset it under a new drag.
+            if (!draggingRef.current) dragHappened.current = false;
+          }, 50);
+        }
       }
     };
 
@@ -2537,7 +2574,7 @@ export default function Gantt({ onEditItem, baselineItems = [], nonWorkingDays =
   // Effect to adjust scroll position after extending left
   useEffect(() => {
     if (pendingScrollAdjustEarly.current > 0 && timelineRef.current) {
-      timelineRef.current.scrollLeft += pendingScrollAdjustEarly.current;
+      shiftScrollKeepingDrag(pendingScrollAdjustEarly.current);
       pendingScrollAdjustEarly.current = 0;
       lastExtensionDirection.current = null;
     }

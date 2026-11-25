@@ -363,6 +363,7 @@ import { refuseDecision, buildDecisionSnapshot, normaliseDecisionComment, decisi
 import { shouldRaiseVariation, buildVariationForReview } from "./reviews/variationHook";
 import { parseLayerKeys, getLayer, type BusinessCalendarLayerEvent } from "@shared/businessCalendarLayers";
 import { reflowLinkedTasks, scheduleDatesChanged, SCHEDULE_BOOKING_REFERENCE } from "./utils/scheduleTaskLinks";
+import { hasDependencyCycle, buildDependencyGraph, referencedTaskIds } from "./utils/scheduleRefs";
 import { scheduleDayString, scheduleDayUTC } from "@shared/scheduleDates";
 import { storedDay } from "@shared/scheduleTemplateDates";
 import { z } from "zod";
@@ -8401,6 +8402,129 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }, "Schedule item not found");
 
   const ownsAllTasks = makeOwnsAllVia(getOwnedTask as any, "Task not found");
+
+  /** The ids in `ids` that are tasks of `companyId` — one query, whatever the count. */
+  const ownedTaskIdSet = async (companyId: string, ids: string[]): Promise<Set<string>> => {
+    if (ids.length === 0) return new Set();
+    const rows = await db
+      .select({ id: schema.notes.id })
+      .from(schema.notes)
+      .where(and(inArray(schema.notes.id, ids), eq(schema.notes.companyId, companyId)));
+    return new Set(rows.map((r: any) => String(r.id)));
+  };
+
+  /**
+   * Every id a schedule-item write can point at, checked before the write.
+   *
+   * Item ownership alone is not enough: the server later ACTS on these ids.
+   * `taskLinkOffsets` make every move rewrite those tasks' due dates, a parent
+   * gets its dates and progress rolled up from the child, and `dependencies`
+   * drive the cascade. Unchecked, an owned item could reach into another
+   * company's tasks or schedule rows.
+   *
+   * `writes` is the batch: each item's schedule, its own id (absent on create)
+   * and the validated payload. Returns an error message, or null when safe.
+   *
+   * Id LISTS are filtered rather than rejected: rows already hold ids of
+   * deleted tasks and items (deletes never cleaned them up), and the client
+   * sends those lists back whole, so a reject would break ordinary saves.
+   * Dropping an id that isn't ours only removes a link that could never work.
+   * The payload is edited in place.
+   */
+  const checkScheduleItemRefs = async (
+    req: any,
+    writes: Array<{ scheduleId: string; selfId?: string; data: any }>,
+  ): Promise<string | null> => {
+    const companyId = req.user?.companyId;
+    if (!companyId) return "Not authorised";
+
+    // Parents: on the same schedule, and never the item itself.
+    for (const w of writes) {
+      const parentId = w.data?.parentItemId;
+      if (!parentId) continue;
+      if (parentId === w.selfId) return "Item cannot be its own parent";
+      const parent = await storage.getScheduleItem(parentId);
+      if (!parent || parent.scheduleId !== w.scheduleId) {
+        return "Parent must be an item on the same schedule";
+      }
+    }
+
+    // Dependencies: on the same schedule, not the item itself, and no cycle
+    // across the schedule once every write in the batch is applied.
+    const depWrites = writes.filter((w) => Array.isArray(w.data?.dependencies));
+    const bySchedule = new Map<string, typeof depWrites>();
+    for (const w of depWrites) {
+      const list = bySchedule.get(w.scheduleId) ?? [];
+      list.push(w);
+      bySchedule.set(w.scheduleId, list);
+    }
+    for (const [scheduleId, list] of Array.from(bySchedule.entries())) {
+      const items = await storage.getScheduleItems(scheduleId);
+      const onSchedule = new Set(items.map((i: any) => String(i.id)));
+      const overrides = new Map<string, string[]>();
+      for (const w of list) {
+        if ((w.data.dependencies as any[]).some((d) => String(d?.id) === w.selfId)) {
+          return "Item cannot depend on itself";
+        }
+        w.data.dependencies = (w.data.dependencies as any[]).filter((d) => onSchedule.has(String(d?.id)));
+        if (w.selfId) overrides.set(w.selfId, (w.data.dependencies as any[]).map((d) => String(d.id)));
+      }
+      // Only a cycle THIS write introduces is refused. The old check missed
+      // long cycles, so a schedule may already hold one; refusing every later
+      // save on it would lock the user out of fixing it.
+      if (
+        overrides.size > 0 &&
+        hasDependencyCycle(buildDependencyGraph(items as any, overrides)) &&
+        !hasDependencyCycle(buildDependencyGraph(items as any))
+      ) {
+        return "This would create a circular dependency";
+      }
+    }
+
+    // Linked tasks (taskIds + taskLinkOffsets): this company's tasks only.
+    const taskIds = Array.from(new Set(writes.flatMap((w) => referencedTaskIds(w.data ?? {}))));
+    if (taskIds.length > 0) {
+      const owned = await ownedTaskIdSet(companyId, taskIds);
+      for (const w of writes) {
+        if (Array.isArray(w.data?.taskIds)) {
+          w.data.taskIds = (w.data.taskIds as any[]).filter((id) => owned.has(String(id)));
+        }
+        if (Array.isArray(w.data?.taskLinkOffsets)) {
+          w.data.taskLinkOffsets = (w.data.taskLinkOffsets as any[]).filter((o) => owned.has(String(o?.taskId)));
+        }
+      }
+    }
+
+    // Linked checklists: this company's checklists only.
+    const checklistIds = Array.from(new Set(writes.flatMap((w) =>
+      Array.isArray(w.data?.checklistIds) ? (w.data.checklistIds as any[]).map(String) : [])));
+    if (checklistIds.length > 0) {
+      const rows = await db
+        .select({ id: schema.checklistInstances.id })
+        .from(schema.checklistInstances)
+        .where(and(inArray(schema.checklistInstances.id, checklistIds), eq(schema.checklistInstances.companyId, companyId)));
+      const owned = new Set(rows.map((r: any) => String(r.id)));
+      for (const w of writes) {
+        if (Array.isArray(w.data?.checklistIds)) {
+          w.data.checklistIds = (w.data.checklistIds as any[]).filter((id) => owned.has(String(id)));
+        }
+      }
+    }
+
+    return null;
+  };
+
+  /**
+   * Re-run the linked-task reflow, touching only this company's tasks.
+   * A row saved before the checks above existed may still carry a foreign
+   * task id; this keeps a move from ever writing to it.
+   */
+  const reflowOwnedLinkedTasks = async (req: any, item: any) => {
+    const ids = referencedTaskIds(item ?? {});
+    if (ids.length === 0) return 0;
+    const owned = await ownedTaskIdSet(req.user?.companyId, ids);
+    return reflowLinkedTasks(item, storage, owned);
+  };
 
   /**
    * Every project id in one round trip. Used by the bulk project-access route,
@@ -39572,11 +39696,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Handle business assignee (company:xxx format)
       const createData = { ...validationResult.data } as any;
+
+      // Parent, dependencies, linked tasks and checklists must all be ours.
+      // The parent check matters most here: PATCH always had it, create never
+      // did, and a foreign parent then had its dates and progress rolled up
+      // from this item — and returned in the response.
+      const refError = await checkScheduleItemRefs(req, [{ scheduleId: createData.scheduleId, data: createData }]);
+      if (refError) return res.status(400).json({ error: refError });
+
       // "No colour" is null. An empty string reads as "has a colour" to any
       // `??` fallback and hid the assignee's colour behind it.
       if (createData.color === "") createData.color = null;
       if (createData.assignedToId && createData.assignedToId.startsWith('company:')) {
+        // Only the caller's own business can be the assignee. Any other id
+        // copied that company's name onto this item.
         const companyId = createData.assignedToId.replace('company:', '');
+        if (companyId !== (req.user as any)?.companyId) {
+          return res.status(400).json({ error: "Assignee not found" });
+        }
         const company = await storage.getCompany(companyId);
         if (company) {
           createData.assignedToName = company.nickname || company.name;
@@ -39596,7 +39733,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Copy contact's scheduleColor and name to assignedTo fields when assigning a contact
       if (createData.assignedToId && !createData.assignedToId.startsWith('company:')) {
         try {
-          const [contact] = await db.select().from(contacts).where(eq(contacts.id, createData.assignedToId)).limit(1);
+          // Company-scoped, like PATCH: unscoped, any company's contact name
+          // and colour were copied onto the item.
+          const [contact] = await db.select().from(contacts)
+            .where(and(eq(contacts.id, createData.assignedToId), eq(contacts.companyId, (req.user as any).companyId)))
+            .limit(1);
           if (contact) {
             createData.assignedToColor = contact.scheduleColor || null;
             createData.assignedToName = contact.company || contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || null;
@@ -39737,8 +39878,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       delete updateData.scheduleId;
       if (updateData.color === "") updateData.color = null;
       const wasCompanyAssigned = !!(updateData.assignedToId && updateData.assignedToId.startsWith('company:'));
+
+      // Parent, dependencies, linked tasks and checklists must all be ours
+      // (parent cycle + descendant checks stay below).
+      const refError = await checkScheduleItemRefs(req, [
+        { scheduleId: originalItem.scheduleId, selfId: req.params.id, data: updateData },
+      ]);
+      if (refError) return res.status(400).json({ error: refError });
+
       if (wasCompanyAssigned) {
+        // Only the caller's own business can be the assignee.
         const companyId = updateData.assignedToId.replace('company:', '');
+        if (companyId !== (req.user as any)?.companyId) {
+          return res.status(400).json({ error: "Assignee not found" });
+        }
         const company = await storage.getCompany(companyId);
         if (company) {
           updateData.assignedToName = company.nickname || company.name;
@@ -39841,7 +39994,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // moving the item still has to move the task.
       if (scheduleDatesChanged(originalItem as any, item as any) || updateData.taskLinkOffsets !== undefined) {
         try {
-          await reflowLinkedTasks(item as any, storage);
+          await reflowOwnedLinkedTasks(req, item as any);
         } catch (reflowError) {
           console.error("Failed to reflow tasks linked to schedule item:", reflowError);
         }
@@ -40349,6 +40502,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Dependencies, linked tasks and checklists — the same checks as PATCH,
+      // across the whole batch (so two rows can't form a cycle together).
+      const refError = await checkScheduleItemRefs(
+        req,
+        validatedItems
+          .filter((v) => originalItemsMap.has(v.id))
+          .map((v) => ({ scheduleId: originalItemsMap.get(v.id).scheduleId, selfId: v.id, data: v.updates })),
+      );
+      if (refError) return res.status(400).json({ error: refError });
+
       const updatedItems = await storage.bulkUpdateScheduleItems(validatedItems);
 
       // Same linked-task reflow as the single-item PATCH — the Gantt drives
@@ -40357,7 +40520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const original = originalItemsMap.get(updated.id);
         if (original && scheduleDatesChanged(original, updated as any)) {
           try {
-            await reflowLinkedTasks(updated as any, storage);
+            await reflowOwnedLinkedTasks(req, updated as any);
           } catch (reflowError) {
             console.error("Failed to reflow tasks linked to schedule item:", reflowError);
           }
@@ -41042,27 +41205,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Item cannot depend on itself" });
       }
 
-      // Check for circular dependency chains using depth-first search
-      const wouldCreateCycle = (startId: string, targetId: string, visited = new Set<string>()): boolean => {
-        if (startId === targetId) return true;
-        if (visited.has(startId)) return false;
-        visited.add(startId);
-
-        const predDeps = (predecessor.dependencies as any[]) || [];
-        for (const dep of predDeps) {
-          if (wouldCreateCycle(dep.id, targetId, visited)) {
-            return true;
-          }
-        }
-        return false;
-      };
-
-      if (wouldCreateCycle(predecessorId, req.params.id)) {
-        return res.status(400).json({ error: "This would create a circular dependency" });
-      }
-
       const parsedLag = parseInt(lag) || 0;
       const updatedDependencies = [...dependencies, { id: predecessorId, type, lag: parsedLag }];
+
+      // Circular chains, followed all the way. The old check re-read the
+      // predecessor's own list at every level, so it only ever looked one
+      // step deep: A→B→C plus "A depends on C" was accepted.
+      const scheduleRows = await storage.getScheduleItems(item.scheduleId);
+      const withNewLink = buildDependencyGraph(
+        scheduleRows as any,
+        new Map([[String(req.params.id), updatedDependencies.map((d: any) => String(d.id))]]),
+      );
+      if (hasDependencyCycle(withNewLink) && !hasDependencyCycle(buildDependencyGraph(scheduleRows as any))) {
+        return res.status(400).json({ error: "This would create a circular dependency" });
+      }
       
       const updateData: any = { dependencies: updatedDependencies };
       
@@ -41367,15 +41523,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/activity-notes/:id", requireAuth, async (req, res) => {
     try {
+      // Ownership first, same chain as DELETE (note → item → schedule → company).
+      if (!(await getOwnedActivityNote(req, res, req.params.id))) return;
+
       // Check if user can edit (5-minute window)
       const canEdit = await storage.canEditActivityNote(req.params.id, req.user!.id);
       if (!canEdit) {
-        return res.status(403).json({ 
-          error: "Cannot edit note. Notes can only be edited within 5 minutes of creation by the author." 
+        return res.status(403).json({
+          error: "Cannot edit note. Notes can only be edited within 5 minutes of creation by the author."
         });
       }
 
-      const validationResult = insertActivityNoteSchema.partial().safeParse(req.body);
+      // Editing a note changes its words and mentions — nothing else. The full
+      // partial schema let the author move the note onto any schedule item
+      // (another company's included) or rewrite its author and type.
+      const validationResult = insertActivityNoteSchema
+        .pick({ content: true, mentionedUserIds: true })
+        .partial()
+        .strict()
+        .safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
           error: "Validation failed", 
