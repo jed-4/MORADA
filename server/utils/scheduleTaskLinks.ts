@@ -52,7 +52,9 @@ export function scheduleDatesChanged(before: ScheduleItemDates, after: ScheduleI
  */
 export async function reflowLinkedTasks(
   item: ScheduleItemDates,
-  storage: TaskUpdater
+  storage: TaskUpdater,
+  /** When given, only these task ids are touched — the caller's own tasks. */
+  allowedTaskIds?: Set<string>
 ): Promise<number> {
   const offsets = Array.isArray(item.taskLinkOffsets)
     ? (item.taskLinkOffsets as TaskLinkOffset[])
@@ -63,6 +65,7 @@ export async function reflowLinkedTasks(
 
   for (const offset of offsets) {
     if (!offset?.taskId) continue;
+    if (allowedTaskIds && !allowedTaskIds.has(String(offset.taskId))) continue;
 
     const reference = offset.offsetFrom === "end" ? item.endDate : item.startDate;
     if (!reference) continue;

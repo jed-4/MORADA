@@ -212,6 +212,26 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
   // Generic confirmation dialog (replaces native confirm() calls).
   const [confirmAction, setConfirmAction] = useState<{ title: string; description?: string; confirmLabel?: string; destructive?: boolean; run: () => void } | null>(null);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
+  // See the "Load editing item into form" effect: in-dialog updates to the
+  // open item must not reset the form.
+  const inDialogPatchRef = useRef(false);
+  const hydratedIdRef = useRef<string | null>(null);
+  const patchEditingItem = (next: ScheduleItem) => {
+    // Adding a predecessor can move the item server-side. Take the saved
+    // dates when the server changed them — otherwise Save would send the old
+    // ones back — but leave every other field the user typed alone.
+    const prev = editingItem as any;
+    const day = (v: any) => (v ? new Date(v).toISOString().split('T')[0] : "");
+    const n = next as any;
+    if (prev && n && (day(n.startDate) !== day(prev.startDate) || day(n.endDate) !== day(prev.endDate))) {
+      setFormData((f) => ({ ...f, startDate: day(n.startDate), endDate: day(n.endDate) }));
+      if (n.startDate && n.endDate) {
+        setDurationInput(countWorkingDays(new Date(n.startDate), new Date(n.endDate)).toString());
+      }
+    }
+    inDialogPatchRef.current = true;
+    setEditingItem(next);
+  };
   const [pendingAutoLink, setPendingAutoLink] = useState<{ successorId?: string; predecessorId?: string; insertAfterItemId?: string; lag?: number } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -983,7 +1003,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
       return { task, updatedItem: await linkRes.json() as ScheduleItem };
     },
     onSuccess: ({ task, updatedItem }) => {
-      setEditingItem(updatedItem);
+      patchEditingItem(updatedItem);
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/tasks`] });
       invalidateScheduleItems();
       toast({ title: "Task created", description: `"${task.title}" linked to this schedule item.` });
@@ -1512,8 +1532,23 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
     toast({ title: "Schedule exported", description: "CSV file downloaded." });
   };
 
-  // Load editing item into form
+  // Load editing item into form — once per item opened, NOT on every change.
+  //
+  // Actions inside the open dialog (add/remove a predecessor, type a lag,
+  // link a checklist or task, Create Task) replace `editingItem` with the
+  // saved row so the dialog shows the new links. Re-hydrating on those reset
+  // the whole form to the saved values: a name, dates or notes typed but not
+  // yet saved were silently thrown away. Those calls go through
+  // `patchEditingItem`, which marks the change as in-dialog so it is skipped.
+  // The id check means a stale mark can never swallow a different item.
   useEffect(() => {
+    const id = editingItem ? ((editingItem as any).id ?? null) : undefined;
+    if (inDialogPatchRef.current && editingItem && id === hydratedIdRef.current) {
+      inDialogPatchRef.current = false;
+      return;
+    }
+    inDialogPatchRef.current = false;
+    hydratedIdRef.current = id ?? null;
     if (editingItem) {
       setFormData({
         name: editingItem.name || "",
@@ -2767,7 +2802,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                   : newItemDependencies;
               const setActiveDeps = (deps: any[]) => {
                 if (isEditingExisting || isNewViaInsert) {
-                  setEditingItem({ ...editingItem!, dependencies: deps } as any);
+                  patchEditingItem({ ...editingItem!, dependencies: deps } as any);
                 } else {
                   setNewItemDependencies(deps);
                 }
@@ -2808,7 +2843,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                                     predecessorId: item.id,
                                     type: "FS",
                                   });
-                                  setEditingItem(updatedItem);
+                                  patchEditingItem(updatedItem);
                                   invalidateScheduleItems();
                                   toast({ title: "Dependency added" });
                                 } catch (error: any) {
@@ -2872,7 +2907,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                                       `/api/schedule-items/${editingId}/dependencies/${dep.id}`,
                                       "DELETE"
                                     );
-                                    setEditingItem(updatedItem);
+                                    patchEditingItem(updatedItem);
                                     invalidateScheduleItems();
                                     toast({ title: "Dependency removed" });
                                   } catch (error) {
@@ -2940,12 +2975,12 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                                         startDate: startStr,
                                         endDate: endStr,
                                       });
-                                      setEditingItem({ ...dateUpdatedItem, dependencies: updatedDeps });
+                                      patchEditingItem({ ...dateUpdatedItem, dependencies: updatedDeps });
                                       setFormData(prev => ({ ...prev, startDate: startStr, endDate: endStr }));
                                       invalidateScheduleItems();
                                       toast({ title: "Lag updated and dates adjusted" });
                                     } else {
-                                      setEditingItem({ ...updatedItem, dependencies: updatedDeps });
+                                      patchEditingItem({ ...updatedItem, dependencies: updatedDeps });
                                     }
                                   } catch (error) {
                                     toast({
@@ -3183,7 +3218,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                                       onClick={() => {
                                         const newIds = [...(editingItem.checklistIds as string[] || []), cl.id];
                                         updateItemLinksMutation.mutate({ id: editingItem.id, checklistIds: newIds });
-                                        setEditingItem({ ...editingItem, checklistIds: newIds });
+                                        patchEditingItem({ ...editingItem, checklistIds: newIds });
                                       }}
                                     >
                                       {cl.name || cl.title}
@@ -3209,7 +3244,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                                       onClick={() => {
                                         const newIds = ((editingItem.checklistIds as string[]) || []).filter(id => id !== clId);
                                         updateItemLinksMutation.mutate({ id: editingItem.id, checklistIds: newIds });
-                                        setEditingItem({ ...editingItem, checklistIds: newIds });
+                                        patchEditingItem({ ...editingItem, checklistIds: newIds });
                                       }}
                                     >
                                       <X className="h-3 w-3" />
@@ -3253,7 +3288,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                                         onClick={() => {
                                           const newIds = [...(editingItem.taskIds as string[] || []), t.id];
                                           updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
-                                          setEditingItem({ ...editingItem, taskIds: newIds });
+                                          patchEditingItem({ ...editingItem, taskIds: newIds });
                                           setTaskLinkOffsetsLocal(prev => [...prev, { taskId: t.id, offsetDays: 0, offsetFrom: "end" as const }]);
                                         }}
                                       >
@@ -3283,7 +3318,7 @@ export default function Schedule({ templateId, templateHeader }: { templateId?: 
                                         onClick={() => {
                                           const newIds = ((editingItem.taskIds as string[]) || []).filter(id => id !== taskId);
                                           updateItemLinksMutation.mutate({ id: editingItem.id, taskIds: newIds });
-                                          setEditingItem({ ...editingItem, taskIds: newIds });
+                                          patchEditingItem({ ...editingItem, taskIds: newIds });
                                           setTaskLinkOffsetsLocal(prev => prev.filter(o => o.taskId !== taskId));
                                         }}
                                       >
