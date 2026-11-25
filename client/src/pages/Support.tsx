@@ -96,7 +96,7 @@ export default function Support() {
         <section className="rounded-lg border bg-card p-5 mb-10">
           <h2 className="text-lg font-semibold mb-2">Contact us</h2>
           <p className="text-muted-foreground leading-relaxed">
-            Email <EmailLink />. We aim to reply within one business day, Monday to Friday, Australian Eastern time.
+            Email <EmailLink /> and we&apos;ll get back to you.
           </p>
         </section>
 
