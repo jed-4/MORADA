@@ -125,6 +125,7 @@ import { db } from "./db";
 import { eq, or, and, desc, asc, gte, lte, sql, inArray, notInArray, isNull, isNotNull, gt, lt, not, ne, arrayContains, max } from "drizzle-orm";
 import { resolveTimesheetViewScope } from "./timesheet-view-scope";
 import { isApprovedVariationStatus } from "@shared/projectMetrics";
+import { getAllowanceUsage } from "./services/allowanceUsage";
 import * as schema from "@shared/schema";
 import { priceListSearchTokens } from "@shared/priceListSearch";
 import { orderGroups } from "@shared/templateGroupOrder";
@@ -11845,40 +11846,47 @@ export class DbStorage implements IStorage {
         .where(inArray(schema.estimateGroups.estimateId, estimateIds));
       const groupsMap = new Map(groupsRows.map(g => [g.id, g]));
       
-      // For each item, calculate actual costs from bills and timesheets
-      const allowancesWithCosts = await Promise.all(
-        allowanceItems.map(async (item) => {
+      // Actual costs from bills, timesheets and custom lines — one query per
+      // source for the whole project, summed in memory. This used to run three
+      // queries PER allowance (~400ms each to Neon), so a job with 60
+      // allowances made 180 round trips to open the Allowances page.
+      const itemIds = allowanceItems.map(i => i.id);
+      const sumBy = <T extends { estimateItemId: string | null }>(rows: T[], val: (r: T) => number) => {
+        const m = new Map<string, number>();
+        for (const r of rows) {
+          if (!r.estimateItemId) continue;
+          m.set(r.estimateItemId, (m.get(r.estimateItemId) ?? 0) + (val(r) || 0));
+        }
+        return m;
+      };
+      const [billRows, timesheetRows, customRows, usage] = itemIds.length === 0
+        ? [[], [], [], new Map()] as const
+        : await Promise.all([
+            db.select({ estimateItemId: schema.billLineItemAllowances.estimateItemId, amount: schema.billLineItemAllowances.amount })
+              .from(schema.billLineItemAllowances)
+              .where(inArray(schema.billLineItemAllowances.estimateItemId, itemIds)),
+            db.select({ estimateItemId: schema.timesheetAllowances.estimateItemId, amount: schema.timesheetAllowances.amount })
+              .from(schema.timesheetAllowances)
+              .where(inArray(schema.timesheetAllowances.estimateItemId, itemIds)),
+            // Custom lines / PC cost entries (allowance_items) are part of actual
+            // spend too — totalPrice is inc GST cents.
+            db.select({ estimateItemId: schema.allowanceItems.estimateItemId, totalPrice: schema.allowanceItems.totalPrice })
+              .from(schema.allowanceItems)
+              .where(inArray(schema.allowanceItems.estimateItemId, itemIds)),
+            // Where each allowance is used (variations / client invoices) — drives
+            // the lock on the allowance page and the greyed rows in the pickers.
+            getAllowanceUsage(allowanceItems.map(i => ({ id: i.id, name: i.name, projectId }))),
+          ]);
+      const billCostById = sumBy(billRows as any[], (r: any) => r.amount);
+      const timesheetCostById = sumBy(timesheetRows as any[], (r: any) => r.amount);
+      const customCostById = sumBy(customRows as any[], (r: any) => r.totalPrice);
+
+      const allowancesWithCosts = allowanceItems.map((item) => {
           const estimate = estimates.find(e => e.id === item.estimateId);
           const group = item.groupId ? groupsMap.get(item.groupId) : undefined;
-          
-          // Get bill line item allocations
-          const billAllocations = await db.select({
-            amount: schema.billLineItemAllowances.amount,
-          })
-          .from(schema.billLineItemAllowances)
-          .where(eq(schema.billLineItemAllowances.estimateItemId, item.id));
-          
-          const billCost = billAllocations.reduce((sum, a) => sum + (a.amount || 0), 0);
-          
-          // Get timesheet allocations
-          const timesheetAllocations = await db.select({
-            amount: schema.timesheetAllowances.amount,
-          })
-          .from(schema.timesheetAllowances)
-          .where(eq(schema.timesheetAllowances.estimateItemId, item.id));
-          
-          const timesheetCost = timesheetAllocations.reduce((sum, a) => sum + (a.amount || 0), 0);
-
-          // Custom lines / PC cost entries (allowance_items) are part of actual
-          // spend too — totalPrice is inc GST cents. Previously these were never
-          // summed, so saved PC entries left the actual cost at $0.
-          const itemAllocations = await db.select({
-            totalPrice: schema.allowanceItems.totalPrice,
-          })
-          .from(schema.allowanceItems)
-          .where(eq(schema.allowanceItems.estimateItemId, item.id));
-
-          const itemCostIncGst = itemAllocations.reduce((sum, a) => sum + (a.totalPrice || 0), 0);
+          const billCost = billCostById.get(item.id) ?? 0;
+          const timesheetCost = timesheetCostById.get(item.id) ?? 0;
+          const itemCostIncGst = customCostById.get(item.id) ?? 0;
 
           // Bills are stored inc GST; timesheet allocations are EX GST (labour =
           // hours × rate, wages carry no GST). Gross labour up for the inc-GST
@@ -11931,9 +11939,9 @@ export class DbStorage implements IStorage {
             itemCostIncGst,
             itemCostExGst,
             variance,
+            usedOn: (usage as Map<string, any[]>).get(item.id) ?? [],
           };
-        })
-      );
+        });
       
       return allowancesWithCosts;
     } catch (error) {

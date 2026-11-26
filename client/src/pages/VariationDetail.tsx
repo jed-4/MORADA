@@ -151,6 +151,8 @@ type AllowanceLine = {
   amount: number; // ex-GST dollars (legacy rows loaded with taxable=false hold inc-GST amounts)
   taxable: boolean;
   sortOrder: number;
+  /** The allowance this line was imported from (null = typed by hand / pre-0143). */
+  sourceEstimateItemId?: string | null;
 };
 
 type VariationColumnConfig = {
@@ -582,6 +584,7 @@ export default function VariationDetail() {
           // flipping them on load would change their client total.
           taxable: item.taxable !== false,
           sortOrder: item.sortOrder,
+          sourceEstimateItemId: (item as any).sourceEstimateItemId ?? null,
         }))
       );
 
@@ -713,6 +716,27 @@ export default function VariationDetail() {
       ...allowanceLines,
       { description: prefill?.description ?? "", amount: prefill?.amount ?? 0, taxable: true, sortOrder: allowanceLines.length },
     ]);
+  };
+
+  // Lines from the Import Allowances picker: each remembers its allowance so
+  // the same one can't be imported twice (here or onto another variation).
+  const importAllowanceLines = (
+    lines: Array<{ description: string; amount: number; sourceEstimateItemId: string }>,
+  ) => {
+    const have = new Set(allowanceLines.map((l) => l.sourceEstimateItemId).filter(Boolean));
+    const fresh = lines.filter((l) => !have.has(l.sourceEstimateItemId));
+    if (fresh.length === 0) return;
+    setAllowanceLines([
+      ...allowanceLines,
+      ...fresh.map((l, i) => ({
+        description: l.description,
+        amount: l.amount,
+        taxable: true,
+        sortOrder: allowanceLines.length + i,
+        sourceEstimateItemId: l.sourceEstimateItemId,
+      })),
+    ]);
+    setAllowancesCollapsed(false);
   };
 
   const updateAllowanceLine = (index: number, field: keyof AllowanceLine, value: any) => {
@@ -1269,6 +1293,7 @@ export default function VariationDetail() {
           taxable: item.taxable,
           sortOrder: i,
           itemType: "allowance",
+          sourceEstimateItemId: item.sourceEstimateItemId ?? null,
         });
       }
 
@@ -1277,6 +1302,9 @@ export default function VariationDetail() {
     },
     onSuccess: (newVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
+      // The allowances list carries where each allowance is used (and locks).
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${newVariation.projectId}/allowances`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", newVariation.projectId, "allowances"] });
       toast({ title: "Success", description: "Variation created successfully" });
       if (user?.id) {
         logActivity({
@@ -1363,6 +1391,7 @@ export default function VariationDetail() {
           taxable: item.taxable,
           sortOrder: i,
           itemType: "allowance",
+          sourceEstimateItemId: item.sourceEstimateItemId ?? null,
         };
         if (item.id) {
           await apiRequest(`/api/variation-items/${item.id}`, "PATCH", itemData);
@@ -1376,6 +1405,8 @@ export default function VariationDetail() {
     },
     onSuccess: (updatedVariation) => {
       queryClient.invalidateQueries({ queryKey: ["/api/variations"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${updatedVariation.projectId ?? watchedProjectId}/allowances`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", updatedVariation.projectId ?? watchedProjectId, "allowances"] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}`] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}/items`] });
       queryClient.invalidateQueries({ queryKey: [`/api/variations/${effectiveVariationId}/bills`] });
@@ -2996,8 +3027,12 @@ export default function VariationDetail() {
       <ImportAllowancesDialog
         open={allowancesModalOpen}
         onOpenChange={setAllowancesModalOpen}
+        projectId={watchedProjectId}
         allowances={projectAllowances}
-        onSelect={addAllowanceLine}
+        variationId={effectiveVariationId ?? null}
+        onThisVariation={allowanceLines.map((l) => l.sourceEstimateItemId).filter((x): x is string => !!x)}
+        onThisVariationDescriptions={allowanceLines.map((l) => l.description)}
+        onConfirm={importAllowanceLines}
       />
 
       {/* ── Approve Dialog ── */}

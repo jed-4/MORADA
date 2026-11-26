@@ -1528,6 +1528,9 @@ function ClientInvoiceDetailInner() {
   const invalidateProjectClaimQueries = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/invoice-variations/by-project"] });
     queryClient.invalidateQueries({ queryKey: ["/api/invoice-allowances/by-project"] });
+    // Allowance pages read where each allowance is used (it locks them).
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", selectedProjectId, "allowances"] });
+    queryClient.invalidateQueries({ queryKey: [`/api/projects/${selectedProjectId}/allowances`] });
   };
 
   const createMutation = useMutation({
