@@ -1,4 +1,4 @@
--- 0143: named inputs on estimate assemblies (phase 3).
+-- 0144: named inputs on estimate assemblies (phase 3).
 --
 -- An assembly's own quantity is its first input ("Area"); it can declare more
 -- (Thickness 0.1 m, Edge length) and a component's quantity can be a recipe

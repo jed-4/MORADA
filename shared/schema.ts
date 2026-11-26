@@ -1252,10 +1252,10 @@ export const estimateItems = pgTable("estimate_items", {
   assemblyComponentId: varchar("assembly_component_id").references((): any => assemblyComponents.id, { onDelete: "set null" }),
   assemblyQtyMode: text("assembly_qty_mode"), // "per_unit" | "fixed" | "formula"
   assemblyQtyFactor: doublePrecision("assembly_qty_factor"),
-  // Mode "formula" (migration 0143): the recipe over the assembly line's named
+  // Mode "formula" (migration 0144): the recipe over the assembly line's named
   // inputs, by KEY — `{input:qty} * {input:t} * 1.05`. Never a take-off ref.
   assemblyQtyFormula: text("assembly_qty_formula"),
-  // On the ASSEMBLY LINE (0143): what its own quantity is called ("Area") and
+  // On the ASSEMBLY LINE (0144): what its own quantity is called ("Area") and
   // its other named inputs with this job's values — AssemblyInputValue[],
   // snapshotted from the Library so a Library edit never reprices a job. An
   // input's `formula` is a take-off link that decides its value.
@@ -7999,7 +7999,7 @@ export const assemblies = pgTable("assemblies", {
   // Default cost code for components that don't carry their own.
   costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
   isArchived: boolean("is_archived").notNull().default(false),
-  // Named inputs (0143). The assembly's own quantity is the first input; this
+  // Named inputs (0144). The assembly's own quantity is the first input; this
   // is what it is called ("Area"). `inputs` are the others — Thickness, Edge —
   // as AssemblyInputDef[] (shared/assemblies.ts), each with a default.
   quantityLabel: text("quantity_label"),
@@ -8025,7 +8025,7 @@ export const assemblyComponents = pgTable("assembly_components", {
   unitCostCents: integer("unit_cost_cents").notNull().default(0), // ex GST
   // "per_unit": quantity = assembly quantity × qtyFactor.
   // "fixed":    quantity = qtyFactor, whatever the assembly quantity.
-  // "formula":  quantity = qtyFormula over the named inputs (0143).
+  // "formula":  quantity = qtyFormula over the named inputs (0144).
   qtyMode: text("qty_mode").notNull().default("per_unit"),
   qtyFactor: doublePrecision("qty_factor").notNull().default(1),
   qtyFormula: text("qty_formula"),
