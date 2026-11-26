@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Trash2, RotateCcw, Check, X } from "lucide-react";
+import { Plus, Trash2, RotateCcw, Check, X, Star } from "lucide-react";
 import {
   DEFAULT_VARIATION_DOCUMENT_COLUMNS,
   VARIATION_DOCUMENT_COLUMN_GROUPS,
@@ -33,6 +33,12 @@ interface VariationColumnSidebarProps {
    *  switch reads off and is disabled — e.g. Contract summary on a project
    *  with no contract sum, which used to sit ON while drawing nothing. */
   unavailable?: Partial<Record<keyof VariationDocumentColumns, string>>;
+  /** The company's default layout — what a variation nobody has changed
+   *  shows. Falls back to the built-in layout when the company hasn't set one. */
+  companyDefault?: VariationDocumentColumns;
+  /** Make these columns the company default. Omitted for non-admins. */
+  onSetDefault?: () => void;
+  settingDefault?: boolean;
 }
 
 const NO_TEMPLATE = "__none__";
@@ -47,6 +53,9 @@ export function VariationColumnSidebar({
   disabled = false,
   disabledReason,
   unavailable = {},
+  companyDefault = DEFAULT_VARIATION_DOCUMENT_COLUMNS,
+  onSetDefault,
+  settingDefault = false,
 }: VariationColumnSidebarProps) {
   const [newName, setNewName] = useState("");
   const [naming, setNaming] = useState(false);
@@ -56,7 +65,8 @@ export function VariationColumnSidebar({
   >;
   const shownCount = allKeys.filter((k) => columns[k]).length;
   const activeTemplate = templates.find((t) => variationColumnsEqual(t.columns, columns));
-  const isDefault = variationColumnsEqual(columns, DEFAULT_VARIATION_DOCUMENT_COLUMNS);
+  const isDefault = variationColumnsEqual(columns, companyDefault);
+  const isDefaultTemplate = (t: VariationColumnTemplate) => variationColumnsEqual(t.columns, companyDefault);
 
   const save = () => {
     const name = newName.trim();
@@ -108,6 +118,7 @@ export function VariationColumnSidebar({
               {templates.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
                   {t.name}
+                  {isDefaultTemplate(t) && <span className="text-muted-foreground"> · Default</span>}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -128,6 +139,28 @@ export function VariationColumnSidebar({
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">Save these columns as a template</TooltipContent>
+            </Tooltip>
+          )}
+
+          {onSetDefault && !naming && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className={`h-7 w-7 shrink-0 ${isDefault ? "text-status-warning" : "text-muted-foreground"}`}
+                  disabled={disabled || isDefault || settingDefault}
+                  onClick={onSetDefault}
+                  data-testid="button-set-default-columns"
+                >
+                  <Star className={`h-3.5 w-3.5 ${isDefault ? "fill-current" : ""}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[220px]">
+                {isDefault
+                  ? "This is your company default"
+                  : "Set as default — every variation that hasn't had its columns changed will use this"}
+              </TooltipContent>
             </Tooltip>
           )}
 
@@ -251,7 +284,7 @@ export function VariationColumnSidebar({
           <button
             type="button"
             disabled={disabled}
-            onClick={() => onChange({ ...DEFAULT_VARIATION_DOCUMENT_COLUMNS })}
+            onClick={() => onChange({ ...companyDefault })}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
             data-testid="button-reset-columns"
           >
