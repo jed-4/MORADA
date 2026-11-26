@@ -83,12 +83,21 @@ function tokenize(input: string): { tokens: Token[] } | { error: string } {
       continue;
     }
     if (c === "{") {
+      // `{input:key}` — a named input of an assembly (shared/assemblies.ts).
+      // Only assembly component recipes carry these; they are looked up under
+      // the id "input:<key>" so one values map serves both kinds.
+      const input = /^\{input:([0-9a-zA-Z_-]+)\}/.exec(s.slice(i));
+      if (input) {
+        tokens.push({ kind: "ref", id: `input:${input[1]}` });
+        i += input[0].length;
+        continue;
+      }
       const m = /^\{takeoff:([0-9a-zA-Z_-]+)\}/.exec(s.slice(i));
       if (!m) {
         // A reference by NAME is a line waiting for its take-off item — it
         // came from an estimate template before that item was measured.
         const named = /^\{([^{}]*)\}/.exec(s.slice(i));
-        if (named && named[1].trim() && !/^takeoff:/.test(named[1].trim())) {
+        if (named && named[1].trim() && !/^(takeoff|input):/.test(named[1].trim())) {
           return { error: `Waiting for take-off item "${named[1].trim()}"` };
         }
         return { error: "Unfinished take-off reference" };
@@ -163,7 +172,9 @@ function parse(
       const v = values.get(t.id);
       if (v === undefined) {
         if (!missing.includes(t.id)) missing.push(t.id);
-        failure = failure ?? "A take-off item in this formula no longer exists";
+        failure = failure ?? (t.id.startsWith("input:")
+          ? "An input in this formula no longer exists"
+          : "A take-off item in this formula no longer exists");
         return 0;
       }
       return v;
@@ -206,6 +217,7 @@ function parse(
 export function evaluateQuantityFormula(
   formula: string | null | undefined,
   quantities: Map<string, number> | Record<string, number>,
+  opts: { decimals?: number } = {},
 ): FormulaResult {
   const text = (formula ?? "").trim();
   if (!text) return { ok: false, error: "Empty formula", missingRefs: [] };
@@ -223,7 +235,8 @@ export function evaluateQuantityFormula(
 
   // 2dp, like every other quantity in the estimate. ROUND has already taken
   // whatever it touched up to a whole number.
-  return { ok: true, value: Math.round(parsed.value * 100) / 100 };
+  const scale = 10 ** (opts.decimals ?? 2);
+  return { ok: true, value: Math.round(parsed.value * scale) / scale };
 }
 
 /** `{takeoff:id}` → `{Wall tiles}`, for showing a formula to a human. */
@@ -253,7 +266,7 @@ export function displayToFormula(
   let error: string | null = null;
   const formula = display.replace(/\{([^{}]*)\}/g, (all, rawName: string) => {
     const name = rawName.trim();
-    if (/^takeoff:[0-9a-zA-Z_-]+$/.test(name)) return `{${name}}`;
+    if (/^(takeoff|input):[0-9a-zA-Z_-]+$/.test(name)) return `{${name}}`;
     const fromPicker = picked?.get(name);
     if (fromPicker) return `{takeoff:${fromPicker}}`;
     const matches = index.get(name) ?? [];
@@ -294,7 +307,7 @@ export function extractNameRefs(formula: string | null | undefined): string[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(formula)) !== null) {
     const name = m[1].trim();
-    if (!name || /^takeoff:/.test(name)) continue;
+    if (!name || /^(takeoff|input):/.test(name)) continue;
     const key = normaliseTakeoffName(name);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -364,7 +377,7 @@ export function resolveNameRefs(
   };
   const out = formula.replace(NAME_REF_PATTERN, (all, raw: string) => {
     const name = raw.trim();
-    if (!name || /^takeoff:/.test(name)) return all;
+    if (!name || /^(takeoff|input):/.test(name)) return all;
     const ids = byName.get(normaliseTakeoffName(name)) ?? [];
     if (ids.length === 1) {
       note(linked, name);

@@ -100,7 +100,7 @@ import { exportEstimateRows, downloadBlankImportTemplate, type EstimateExportRow
 import { formatGroupPath } from "@shared/import";
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
 import { AssemblyPickerDialog } from "@/components/estimates/AssemblyPickerDialog";
-import { componentQuantity, isAssemblyLine } from "@shared/assemblies";
+import { componentQuantityOf, isAssemblyLine, mergeInputEdits } from "@shared/assemblies";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, pickItemDropTarget, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
@@ -842,6 +842,10 @@ export default function EstimateDetail() {
           assemblyQtyMode: item.assemblyQtyMode || undefined,
           assemblyQtyFactor: item.assemblyQtyFactor ?? undefined,
           assemblyQtyOverridden: item.assemblyQtyOverridden ?? undefined,
+          // Named inputs (phase 3): the line's values, take-off links by NAME.
+          assemblyQtyFormula: item.assemblyQtyFormula || undefined,
+          assemblyQtyLabel: item.assemblyQtyLabel || undefined,
+          assemblyInputs: Array.isArray(item.assemblyInputs) ? item.assemblyInputs : undefined,
         }));
       if (lineItems.length === 0) throw new Error("This template has no line items to import.");
       // The template's group rows carry what a line can't: the group's
@@ -2509,7 +2513,13 @@ export default function EstimateDetail() {
       const previousItems = queryClient.getQueryData<EstimateItem[]>(["/api/estimates", effectiveEstimateId, "items"]);
       
       // Keep dollar values as-is for optimistic update (cache stores dollars, same as API returns)
-      const optimisticData = { ...data };
+      const optimisticData: Record<string, any> = { ...data };
+      const before = previousItems?.find((i) => i.id === itemId);
+      // Named inputs arrive as [{ key, value, formula }]; the line keeps its
+      // snapshot's labels, so merge exactly as the server will.
+      if ((data as any).assemblyInputs !== undefined && isAssemblyLine(before)) {
+        optimisticData.assemblyInputs = mergeInputEdits((before as any).assemblyInputs, (data as any).assemblyInputs);
+      }
       
       // Optimistically update to the new value
       queryClient.setQueryData<EstimateItem[]>(
@@ -2521,11 +2531,18 @@ export default function EstimateDetail() {
           // An assembly line's components follow its quantity. The server does
           // the real rescale; this only shows it now instead of after the
           // refetch (several seconds against Neon). Overridden ones stay put.
-          const rescale = isAssemblyLine(target) && nextQty !== undefined && !Number.isNaN(Number(nextQty));
+          const qtyMoved = nextQty !== undefined && !Number.isNaN(Number(nextQty));
+          const rescale = isAssemblyLine(target) && (qtyMoved || optimisticData.assemblyInputs !== undefined);
+          const lineQty = qtyMoved ? Number(nextQty) : Number(target?.quantity) || 0;
+          const lineInputs = optimisticData.assemblyInputs ?? (target as any)?.assemblyInputs;
           return old.map(item => {
             if (item.id === itemId) return { ...item, ...optimisticData };
             if (rescale && item.parentItemId === itemId && (item as any).assemblyQtyMode && !(item as any).assemblyQtyOverridden) {
-              return { ...item, quantity: componentQuantity((item as any).assemblyQtyMode, (item as any).assemblyQtyFactor, Number(nextQty)) };
+              const q = componentQuantityOf(
+                { mode: (item as any).assemblyQtyMode, factor: (item as any).assemblyQtyFactor, formula: (item as any).assemblyQtyFormula },
+                { quantity: lineQty, inputs: lineInputs },
+              );
+              return q === null ? item : { ...item, quantity: q };
             }
             return item;
           });
@@ -3972,6 +3989,9 @@ export default function EstimateDetail() {
   }, [items]);
 
   // Helper function to get sub-items for a parent item
+  const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i] as const)), [items]);
+  const getItem = (itemId: string) => itemsById.get(itemId);
+
   const getSubItems = (parentItemId: string): EstimateItem[] => {
     const subItems = items.filter(item => item.parentItemId === parentItemId);
     return subItems.sort((a, b) => {
@@ -4601,7 +4621,7 @@ export default function EstimateDetail() {
     handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, handleAssemblySelect,
     estimate, columns, costCodes, costCategories, priceListItemMap, poLinkMap,
     selectionByEstimateItemId, estimateItemStatusCategory, estimateItemUnitCategory,
-    calculatePricingValues, formatCurrency, getSubItems,
+    calculatePricingValues, formatCurrency, getSubItems, getItem,
     selectedItems, handleToggleSelection, collapsedItems, handleToggleItemCollapse,
     dropTarget, activeId,
     updateItemMutation, costCodeMutation, createSelectionFromItemMutation, handleDuplicateItem, handleCopyItem,

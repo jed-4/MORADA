@@ -1250,8 +1250,17 @@ export const estimateItems = pgTable("estimate_items", {
   // On a COMPONENT line (a sub-item of an assembly line): how its quantity
   // follows the assembly line's. Null mode = not an assembly component.
   assemblyComponentId: varchar("assembly_component_id").references((): any => assemblyComponents.id, { onDelete: "set null" }),
-  assemblyQtyMode: text("assembly_qty_mode"), // "per_unit" | "fixed"
+  assemblyQtyMode: text("assembly_qty_mode"), // "per_unit" | "fixed" | "formula"
   assemblyQtyFactor: doublePrecision("assembly_qty_factor"),
+  // Mode "formula" (migration 0144): the recipe over the assembly line's named
+  // inputs, by KEY — `{input:qty} * {input:t} * 1.05`. Never a take-off ref.
+  assemblyQtyFormula: text("assembly_qty_formula"),
+  // On the ASSEMBLY LINE (0144): what its own quantity is called ("Area") and
+  // its other named inputs with this job's values — AssemblyInputValue[],
+  // snapshotted from the Library so a Library edit never reprices a job. An
+  // input's `formula` is a take-off link that decides its value.
+  assemblyQtyLabel: text("assembly_qty_label"),
+  assemblyInputs: jsonb("assembly_inputs").$type<Array<{ key: string; label: string; unit?: string | null; defaultValue: number; value: number; formula?: string | null }>>(),
   // True once someone typed this component's quantity by hand: it stops
   // following the assembly line until reset.
   assemblyQtyOverridden: boolean("assembly_qty_overridden").notNull().default(false),
@@ -1289,8 +1298,14 @@ export const insertEstimateItemSchema = createInsertSchema(estimateItems).omit({
   assemblyId: z.string().optional().nullable(),
   assemblyVersion: z.number().int().optional().nullable(),
   assemblyComponentId: z.string().optional().nullable(),
-  assemblyQtyMode: z.enum(["per_unit", "fixed"]).optional().nullable(),
+  assemblyQtyMode: z.enum(["per_unit", "fixed", "formula"]).optional().nullable(),
   assemblyQtyFactor: z.number().optional().nullable(),
+  assemblyQtyFormula: z.string().optional().nullable(),
+  assemblyQtyLabel: z.string().optional().nullable(),
+  assemblyInputs: z.array(z.object({
+    key: z.string(), label: z.string(), unit: z.string().nullable().optional(),
+    defaultValue: z.number(), value: z.number(), formula: z.string().nullable().optional(),
+  })).optional().nullable(),
   assemblyQtyOverridden: z.boolean().optional(),
 });
 
@@ -7994,6 +8009,11 @@ export const assemblies = pgTable("assemblies", {
   // Default cost code for components that don't carry their own.
   costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
   isArchived: boolean("is_archived").notNull().default(false),
+  // Named inputs (0144). The assembly's own quantity is the first input; this
+  // is what it is called ("Area"). `inputs` are the others — Thickness, Edge —
+  // as AssemblyInputDef[] (shared/assemblies.ts), each with a default.
+  quantityLabel: text("quantity_label"),
+  inputs: jsonb("inputs").$type<Array<{ key: string; label: string; unit?: string | null; defaultValue: number }>>().notNull().default(sql`'[]'::jsonb`),
   // Bumped on every save of the assembly or its components. An estimate line
   // remembers the version it was built from, so drift can be detected later.
   version: integer("version").notNull().default(1),
@@ -8015,8 +8035,10 @@ export const assemblyComponents = pgTable("assembly_components", {
   unitCostCents: integer("unit_cost_cents").notNull().default(0), // ex GST
   // "per_unit": quantity = assembly quantity × qtyFactor.
   // "fixed":    quantity = qtyFactor, whatever the assembly quantity.
+  // "formula":  quantity = qtyFormula over the named inputs (0144).
   qtyMode: text("qty_mode").notNull().default("per_unit"),
   qtyFactor: doublePrecision("qty_factor").notNull().default(1),
+  qtyFormula: text("qty_formula"),
   wastagePercent: integer("wastage_percent").notNull().default(0),
   markupPercent: doublePrecision("markup_percent"),
   costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
@@ -8033,8 +8055,9 @@ export const assemblyComponentInputSchema = z.object({
   priceListItemId: z.string().nullable().optional(),
   unitType: z.string().trim().min(1).default("each"),
   unitCostCents: z.number().int("Cost must be whole cents").min(0).default(0),
-  qtyMode: z.enum(["per_unit", "fixed"]).default("per_unit"),
+  qtyMode: z.enum(["per_unit", "fixed", "formula"]).default("per_unit"),
   qtyFactor: z.number().min(0).default(1),
+  qtyFormula: z.string().nullable().optional(),
   wastagePercent: z.number().int().min(0).max(1000).default(0),
   markupPercent: z.number().nullable().optional(),
   costCodeId: z.string().nullable().optional(),
@@ -8046,6 +8069,13 @@ export const assemblyInputSchema = z.object({
   unitType: z.string().trim().min(1).default("m2"),
   costCodeId: z.string().nullable().optional(),
   isArchived: z.boolean().optional(),
+  quantityLabel: z.string().trim().max(40).nullable().optional(),
+  inputs: z.array(z.object({
+    key: z.string().min(1).max(40),
+    label: z.string().trim().min(1, "Every input needs a name").max(40),
+    unit: z.string().trim().max(20).nullable().optional(),
+    defaultValue: z.number(),
+  })).max(12).optional(),
   components: z.array(assemblyComponentInputSchema).optional(),
 });
 

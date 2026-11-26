@@ -134,7 +134,7 @@ export function AssemblyPickerDialog({ open, onOpenChange, estimateId, groups, d
             </div>
           ) : (
             filtered.map((a) => {
-              const { perUnitExTax, fixedExTax } = assemblyRateBreakdown(a.components);
+              const { perUnitExTax, fixedExTax } = assemblyRateBreakdown(a.components, a.inputs);
               const active = a.id === selectedId;
               return (
                 <button
@@ -186,7 +186,7 @@ export function AssemblyPickerDialog({ open, onOpenChange, estimateId, groups, d
             </label>
             {qtyValid && (
               <div className="col-span-2 text-xs text-muted-foreground">
-                Costs {money(previewAssemblyCostExTax(selected.components, qty))} ex GST before your margin. A take-off measurement can drive the quantity once it's in — type it in the line's quantity cell.
+                Costs {money(previewAssemblyCostExTax(selected.components, qty, selected.inputs))} ex GST before your margin. A take-off measurement can drive the quantity once it's in — type it in the line's quantity cell.
               </div>
             )}
           </div>

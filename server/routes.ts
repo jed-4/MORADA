@@ -358,7 +358,7 @@ import {
 } from "@shared/takeoffTemplates";
 import { computeEstimateItemPrice, resolveEstimateStoredPrice, resolveUnitCostBasis } from "@shared/pricing";
 import {
-  resolveFormulaOnWrite, syncItemRefs, repriceLinesForMeasurement, getMeasurementUsage,
+  resolveFormulaOnWrite, syncItemRefs, lineTakeoffFormulas, repriceLinesForMeasurement, getMeasurementUsage,
   loadTakeoffIndex, insertRefsForNewItems, linkWaitingLines,
 } from "./services/quantityFormulas";
 import { linkTemplateFormula } from "@shared/quantityFormula";
@@ -9115,7 +9115,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
          this project's item of that name; a line whose item isn't measured
          yet keeps the name and waits at 0 (linkWaitingLines picks it up when
          one is). The take-off is read once, and only if a row needs it. */
-      const takeoffIndex = items.some((i: any) => typeof i?.quantityFormula === "string" && i.quantityFormula.trim())
+      // An assembly line's named inputs can name take-off items too (phase 3).
+      const needsTakeoff = (i: any) =>
+        (typeof i?.quantityFormula === "string" && i.quantityFormula.trim())
+        || (Array.isArray(i?.assemblyInputs) && i.assemblyInputs.some((x: any) => typeof x?.formula === "string" && x.formula.trim()));
+      const takeoffIndex = items.some(needsTakeoff)
         ? await loadTakeoffIndex(estimate.projectId)
         : null;
       const takeoffSummary = { linked: 0, waiting: 0, waitingFor: [] as string[], ambiguous: [] as string[] };
@@ -9168,7 +9172,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const isAssemblyLine =
           typeof item.assemblyId === "string" && assemblyRefs.assemblyIds.has(item.assemblyId) && item.isSubItem !== true;
         const isComponent =
-          item.isSubItem === true && (item.assemblyQtyMode === "per_unit" || item.assemblyQtyMode === "fixed");
+          item.isSubItem === true && (item.assemblyQtyMode === "per_unit" || item.assemblyQtyMode === "fixed"
+            // A recipe reads the assembly's named inputs only — never a take-off item.
+            || (item.assemblyQtyMode === "formula" && typeof item.assemblyQtyFormula === "string"
+              && !!item.assemblyQtyFormula.trim() && !/\{(?!input:)/.test(item.assemblyQtyFormula)));
+        // Named inputs on an assembly line (phase 3). A template names the
+        // take-off item an input follows (`{Slab edge}`); it links here exactly
+        // as the line's own quantity does, or waits for that item.
+        const assemblyInputs = isAssemblyLine && Array.isArray(item.assemblyInputs)
+          ? item.assemblyInputs
+              .filter((i: any) => i && typeof i.key === "string" && typeof i.label === "string")
+              .map((i: any) => {
+                const link = takeoffIndex && typeof i.formula === "string" && i.formula.trim()
+                  ? linkTemplateFormula(i.formula, takeoffIndex.byName, takeoffIndex.quantities)
+                  : null;
+                if (link?.formula) {
+                  link.waitingFor.forEach((n) => noteName(takeoffSummary.waitingFor, n));
+                  link.ambiguous.forEach((n) => noteName(takeoffSummary.ambiguous, n));
+                }
+                const typed = Number(i.value ?? i.defaultValue);
+                return {
+                  key: i.key,
+                  label: i.label,
+                  unit: typeof i.unit === "string" ? i.unit : null,
+                  defaultValue: Number(i.defaultValue) || 0,
+                  // A waiting input keeps the template's number until measured.
+                  value: link?.formula && link.linked ? (link.quantity ?? 0) : (Number.isFinite(typed) ? typed : 0),
+                  formula: link?.formula ?? null,
+                };
+              })
+          : null;
         const unitCostExTax = isAssemblyLine ? 0 : (item.unitCostExTax || 0);
         const takeoffLink = takeoffIndex
           ? linkTemplateFormula(item.quantityFormula, takeoffIndex.byName, takeoffIndex.quantities)
@@ -9227,6 +9260,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? {
                 assemblyId: item.assemblyId,
                 assemblyVersion: Number.isFinite(Number(item.assemblyVersion)) ? Number(item.assemblyVersion) : null,
+                assemblyQtyLabel: typeof item.assemblyQtyLabel === "string" ? item.assemblyQtyLabel : null,
+                assemblyInputs,
                 markupPercent: null,
                 wastagePercent: 0,
               }
@@ -9239,6 +9274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     : null,
                 assemblyQtyMode: item.assemblyQtyMode,
                 assemblyQtyFactor: Number(item.assemblyQtyFactor) || 0,
+                assemblyQtyFormula: item.assemblyQtyMode === "formula" ? item.assemblyQtyFormula.trim() : null,
                 assemblyQtyOverridden: item.assemblyQtyOverridden === true,
               }
             : {}),
@@ -9330,7 +9366,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // with a typed quantity arrive already in step, so they're skipped (each
       // rescale is a few round trips).
       for (const line of createdParents as any[]) {
-        if (line?.assemblyId && line.quantityFormula) await rescaleAssemblyComponents(line.id);
+        const followsTakeoff = line?.quantityFormula
+          || (Array.isArray(line?.assemblyInputs) && line.assemblyInputs.some((i: any) => i?.formula));
+        if (line?.assemblyId && followsTakeoff) await rescaleAssemblyComponents(line.id);
       }
 
       if (createdItems.length > 0) {
@@ -9832,7 +9870,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Assemblies: an assembly line has no money of its own, and a component
       // typed by hand stops following it (server/assemblies.ts).
-      const assemblyRefusal = await applyAssemblyPatchRules(updateData, existingItem as any);
+      const assemblyRefusal = await applyAssemblyPatchRules(updateData, existingItem as any, estimate.projectId);
       if (assemblyRefusal) {
         return res.status(400).json({ error: assemblyRefusal });
       }
@@ -9935,8 +9973,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // keystroke commit (~250ms of the ~2.1s save, measured on dev).
       const formulaWas = (existingItem as any).quantityFormula ?? null;
       const formulaNow = (item as any).quantityFormula ?? null;
-      if (updateData.quantityFormula !== undefined && !(formulaWas === null && formulaNow === null)) {
-        await syncItemRefs(item.id, formulaNow);
+      // An assembly line's named inputs can follow the take-off too.
+      if ((updateData.quantityFormula !== undefined && !(formulaWas === null && formulaNow === null))
+        || updateData.assemblyInputs !== undefined) {
+        await syncItemRefs(item.id, lineTakeoffFormulas(item as any));
       }
       await afterAssemblyLineSaved(existingItem as any, item as any);
       triggerBudgetAutoRecalc(existingItem.estimateId);
