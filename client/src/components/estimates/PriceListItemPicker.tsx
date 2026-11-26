@@ -460,7 +460,7 @@ function AssemblyOption({
 }) {
   // Per-unit rate on the right where a price-list row shows its unit cost;
   // fixed costs on the second line so the name keeps its room.
-  const { perUnitExTax, fixedExTax } = useMemo(() => assemblyRateBreakdown(assembly.components), [assembly]);
+  const { perUnitExTax, fixedExTax } = useMemo(() => assemblyRateBreakdown(assembly.components, assembly.inputs), [assembly]);
   const money = (d: number) => formatCents(dollarsToCents(d), { alwaysShowDecimals: true });
   const n = assembly.components.length;
   return (

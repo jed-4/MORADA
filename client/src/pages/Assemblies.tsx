@@ -124,7 +124,7 @@ export default function Assemblies() {
             </thead>
             <tbody>
               {filtered.map((a) => {
-                const { perUnitExTax, fixedExTax } = assemblyRateBreakdown(a.components);
+                const { perUnitExTax, fixedExTax } = assemblyRateBreakdown(a.components, a.inputs);
                 return (
                   <tr
                     key={a.id}

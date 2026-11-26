@@ -19,11 +19,20 @@ import {
 } from "@shared/schema";
 import {
   assemblyLineFields,
+  checkInputDefs,
   componentLineFields,
-  componentQuantity,
+  componentQuantityOf,
+  initialInputValues,
+  inputValueMap,
+  mergeInputEdits,
   planAssemblyRescale,
+  recipeInputKeys,
+  resolveInputFormulas,
+  type AssemblyInputDef,
+  type AssemblyInputValue,
   type AssemblySource,
 } from "@shared/assemblies";
+import { evaluateQuantityFormula } from "@shared/quantityFormula";
 import { resolveEstimateStoredPrice } from "@shared/pricing";
 import { exGstFromInc } from "@shared/money";
 import { requireAuth, requireTeamMember, getSessionCompanyId } from "./middleware/auth";
@@ -131,8 +140,9 @@ async function writeComponents(tx: Tx, assemblyId: string, next: AssemblyCompone
     priceListItemId: c.priceListItemId ?? null,
     unitType: c.unitType || "each",
     unitCostCents: c.unitCostCents ?? 0,
-    qtyMode: c.qtyMode === "fixed" ? "fixed" : "per_unit",
+    qtyMode: c.qtyMode === "fixed" || c.qtyMode === "formula" ? c.qtyMode : "per_unit",
     qtyFactor: c.qtyFactor ?? 1,
+    qtyFormula: c.qtyMode === "formula" ? (c.qtyFormula ?? "").trim() || null : null,
     wastagePercent: c.wastagePercent ?? 0,
     markupPercent: c.markupPercent ?? null,
     costCodeId: c.costCodeId ?? null,
@@ -152,6 +162,33 @@ async function writeComponents(tx: Tx, assemblyId: string, next: AssemblyCompone
     }
   }
   if (inserts.length > 0) await tx.insert(schema.assemblyComponents).values(inserts);
+}
+
+/**
+ * An assembly's inputs and recipes must agree: inputs well-formed, and every
+ * recipe reads using only those inputs. Checked at the default values, so a
+ * recipe that can't be worked out is refused here rather than landing at 0 on
+ * a job. Returns an error message, or null.
+ */
+function checkRecipes(
+  mainLabel: string | null | undefined,
+  inputs: AssemblyInputDef[],
+  components: AssemblyComponentInput[],
+): string | null {
+  const bad = checkInputDefs(mainLabel, inputs);
+  if (bad) return bad;
+  const values = inputValueMap(1, inputs);
+  for (const c of components) {
+    if (c.qtyMode !== "formula") continue;
+    const formula = (c.qtyFormula ?? "").trim();
+    if (!formula) return `"${c.name}" needs a recipe`;
+    if (/\{takeoff:/.test(formula)) return `"${c.name}": a recipe reads the assembly's inputs, not the take-off`;
+    const unknown = recipeInputKeys(formula).find((k) => !values.has(`input:${k}`));
+    if (unknown) return `"${c.name}": its recipe uses an input that no longer exists`;
+    const r = evaluateQuantityFormula(formula, values, { decimals: 4 });
+    if (!r.ok) return `"${c.name}": ${r.error}`;
+  }
+  return null;
 }
 
 // ── Estimates ────────────────────────────────────────────────────────────────
@@ -191,6 +228,8 @@ function toSource(a: AssemblyWithComponents): AssemblySource {
     unitType: a.unitType,
     costCodeId: a.costCodeId,
     version: a.version,
+    quantityLabel: a.quantityLabel,
+    inputs: a.inputs ?? [],
     components: a.components.map((c) => ({
       id: c.id,
       name: c.name,
@@ -200,6 +239,7 @@ function toSource(a: AssemblyWithComponents): AssemblySource {
       unitCostCents: c.unitCostCents,
       qtyMode: c.qtyMode,
       qtyFactor: c.qtyFactor,
+      qtyFormula: c.qtyFormula,
       wastagePercent: c.wastagePercent,
       markupPercent: c.markupPercent,
       costCodeId: c.costCodeId,
@@ -220,6 +260,8 @@ export async function insertAssemblyIntoEstimate(
   const linked = source.components.map((c) => c.priceListItemId).filter((x): x is string => !!x);
   const catalogue = await catalogueCostsCents(linked);
   const pricing = { projectMarkupPercent: estimate.projectMarkupPercent, taxRate: estimate.taxRate };
+  // Every input starts at the Library default; the estimator sets this job's.
+  const inputs = initialInputValues(source);
 
   return db.transaction(async (tx) => {
     let parent: schema.EstimateItem;
@@ -260,7 +302,7 @@ export async function insertAssemblyIntoEstimate(
     const children = await tx
       .insert(schema.estimateItems)
       .values(source.components.map((c, i) => ({
-        ...componentLineFields(c, source, opts.quantity, pricing, c.priceListItemId ? catalogue.get(c.priceListItemId) : undefined),
+        ...componentLineFields(c, source, opts.quantity, pricing, c.priceListItemId ? catalogue.get(c.priceListItemId) : undefined, inputs),
         estimateId: estimate.id,
         // A sub-item's group must equal its parent's: group totals sum by groupId.
         groupId: opts.groupId,
@@ -295,7 +337,7 @@ export async function rescaleAssemblyComponents(assemblyLineId: string): Promise
     .select()
     .from(schema.estimateItems)
     .where(eq(schema.estimateItems.parentItemId, parent.id));
-  const plan = planAssemblyRescale(Number(parent.quantity) || 0, children);
+  const plan = planAssemblyRescale(Number(parent.quantity) || 0, children, parent.assemblyInputs as AssemblyInputValue[] | null);
   if (plan.length === 0) return [];
 
   const byId = new Map(children.map((c) => [c.id, c] as const));
@@ -349,6 +391,7 @@ export async function rescaleAssemblyComponents(assemblyLineId: string): Promise
 export async function applyAssemblyPatchRules(
   updateData: Record<string, any>,
   existing: schema.EstimateItem,
+  projectId?: string,
 ): Promise<string | null> {
   // Provenance is the server's to set, never a client's.
   delete updateData.assemblyId;
@@ -356,6 +399,30 @@ export async function applyAssemblyPatchRules(
   delete updateData.assemblyComponentId;
   delete updateData.assemblyQtyMode;
   delete updateData.assemblyQtyFactor;
+  delete updateData.assemblyQtyFormula;
+  delete updateData.assemblyQtyLabel;
+
+  // Named inputs live on the assembly line only. The client sends
+  // [{ key, value, formula }]; labels and defaults stay the line's snapshot.
+  // A take-off formula decides its input's value, here on the server.
+  if (updateData.assemblyInputs !== undefined) {
+    if (!existing.assemblyId || !Array.isArray(updateData.assemblyInputs)) {
+      delete updateData.assemblyInputs;
+    } else {
+      const merged = mergeInputEdits(existing.assemblyInputs as AssemblyInputValue[] | null, updateData.assemblyInputs);
+      if (merged.some((i) => i.formula && !/^[^{}]*(\{takeoff:[0-9a-zA-Z_-]+\}[^{}]*)+$/.test(i.formula))) {
+        return "An input can only follow a take-off measurement";
+      }
+      if (merged.some((i) => i.formula) && projectId) {
+        const { loadMeasurementQuantities } = await import("./services/quantityFormulas");
+        const r = resolveInputFormulas(merged, await loadMeasurementQuantities(projectId));
+        if (r.errors.length > 0) return r.errors[0];
+        updateData.assemblyInputs = r.inputs;
+      } else {
+        updateData.assemblyInputs = merged;
+      }
+    }
+  }
 
   if (existing.assemblyId) {
     const touchesMoney = ["unitCostExTax", "unitCostIncTax", "priceIncTax", "markupPercent", "wastagePercent"]
@@ -379,7 +446,12 @@ export async function applyAssemblyPatchRules(
     const [parent] = existing.parentItemId
       ? await db.select().from(schema.estimateItems).where(eq(schema.estimateItems.id, existing.parentItemId))
       : [];
-    updateData.quantity = componentQuantity(existing.assemblyQtyMode, existing.assemblyQtyFactor, parent?.quantity ?? 0);
+    const qty = componentQuantityOf(
+      { mode: existing.assemblyQtyMode, factor: existing.assemblyQtyFactor, formula: existing.assemblyQtyFormula },
+      { quantity: parent?.quantity ?? 0, inputs: parent?.assemblyInputs as AssemblyInputValue[] | null },
+    );
+    if (qty === null) return "This component's recipe can't be worked out — check the assembly's inputs";
+    updateData.quantity = qty;
     updateData.quantityFormula = null;
     return null;
   }
@@ -419,8 +491,8 @@ export function applyAssemblyBulkRules(next: Record<string, any>, item: schema.E
  * A no-op for any other line.
  */
 export async function afterAssemblyLineSaved(
-  before: Pick<schema.EstimateItem, "id" | "assemblyId" | "quantity" | "groupId">,
-  after: Pick<schema.EstimateItem, "quantity" | "groupId"> | null | undefined,
+  before: Pick<schema.EstimateItem, "id" | "assemblyId" | "quantity" | "groupId"> & { assemblyInputs?: unknown },
+  after: Pick<schema.EstimateItem, "quantity" | "groupId"> & { assemblyInputs?: unknown } | null | undefined,
 ): Promise<void> {
   if (!before.assemblyId || !after) return;
   if ((after.groupId ?? null) !== (before.groupId ?? null)) {
@@ -429,9 +501,29 @@ export async function afterAssemblyLineSaved(
       .set({ groupId: after.groupId ?? null, updatedAt: new Date() })
       .where(eq(schema.estimateItems.parentItemId, before.id));
   }
-  if (Math.abs(Number(after.quantity ?? 0) - Number(before.quantity ?? 0)) > 1e-9) {
+  const inputsMoved = JSON.stringify(after.assemblyInputs ?? null) !== JSON.stringify(before.assemblyInputs ?? null);
+  if (inputsMoved || Math.abs(Number(after.quantity ?? 0) - Number(before.quantity ?? 0)) > 1e-9) {
     await rescaleAssemblyComponents(before.id);
   }
+}
+
+/**
+ * Follow the take-off for an assembly line's inputs: re-evaluate each input's
+ * formula, save the values that moved, and rescale. For the re-measure path.
+ * Returns true when any input moved.
+ */
+export async function refreshAssemblyInputs(
+  item: Pick<schema.EstimateItem, "id" | "assemblyId"> & { assemblyInputs?: unknown },
+  takeoffQuantities: Map<string, number>,
+): Promise<boolean> {
+  if (!item.assemblyId || !Array.isArray(item.assemblyInputs)) return false;
+  const r = resolveInputFormulas(item.assemblyInputs as AssemblyInputValue[], takeoffQuantities);
+  if (!r.changed) return false;
+  await db
+    .update(schema.estimateItems)
+    .set({ assemblyInputs: r.inputs, updatedAt: new Date() })
+    .where(eq(schema.estimateItems.id, item.id));
+  return true;
 }
 
 /**
@@ -442,9 +534,17 @@ export async function afterAssemblyLineSaved(
  */
 export async function copyAssemblyComponents(
   sourceLineId: string,
-  newLine: Pick<schema.EstimateItem, "id" | "estimateId" | "groupId" | "assemblyId">,
+  newLine: Pick<schema.EstimateItem, "id" | "estimateId" | "groupId" | "assemblyId"> & { assemblyInputs?: unknown },
 ): Promise<void> {
   if (!newLine.assemblyId) return;
+  // The copy keeps the numbers, not the take-off links — the same rule the
+  // line copy applies to its own quantity formula.
+  if (Array.isArray(newLine.assemblyInputs) && (newLine.assemblyInputs as AssemblyInputValue[]).some((i) => i.formula)) {
+    await db
+      .update(schema.estimateItems)
+      .set({ assemblyInputs: (newLine.assemblyInputs as AssemblyInputValue[]).map((i) => ({ ...i, formula: null })) })
+      .where(eq(schema.estimateItems.id, newLine.id));
+  }
   const children = await db
     .select()
     .from(schema.estimateItems)
@@ -530,7 +630,7 @@ export function registerAssemblyRoutes(
         companyId,
         [input.costCodeId, ...components.map((c) => c.costCodeId)],
         components.map((c) => c.priceListItemId),
-      );
+      ) ?? checkRecipes(input.quantityLabel, input.inputs ?? [], components);
       if (bad) return res.status(400).json({ error: bad });
 
       const id = await db.transaction(async (tx) => {
@@ -542,6 +642,8 @@ export function registerAssemblyRoutes(
             description: input.description ?? null,
             unitType: input.unitType,
             costCodeId: input.costCodeId ?? null,
+            quantityLabel: input.quantityLabel?.trim() || null,
+            inputs: input.inputs ?? [],
             createdBy: (req.user as any)?.id ?? null,
           })
           .returning({ id: schema.assemblies.id });
@@ -571,6 +673,10 @@ export function registerAssemblyRoutes(
         companyId,
         [input.costCodeId, ...(input.components ?? []).map((c) => c.costCodeId)],
         (input.components ?? []).map((c) => c.priceListItemId),
+      ) ?? checkRecipes(
+        input.quantityLabel !== undefined ? input.quantityLabel : current.quantityLabel,
+        input.inputs ?? current.inputs ?? [],
+        input.components ?? current.components.map((c) => ({ ...c, qtyMode: c.qtyMode as any })),
       );
       if (bad) return res.status(400).json({ error: bad });
 
@@ -581,6 +687,8 @@ export function registerAssemblyRoutes(
         if (input.unitType !== undefined) set.unitType = input.unitType;
         if (input.costCodeId !== undefined) set.costCodeId = input.costCodeId ?? null;
         if (input.isArchived !== undefined) set.isArchived = input.isArchived;
+        if (input.quantityLabel !== undefined) set.quantityLabel = input.quantityLabel?.trim() || null;
+        if (input.inputs !== undefined) set.inputs = input.inputs;
         // Archiving is not a change to the recipe; everything else is.
         const recipeChanged = Object.keys(input).some((k) => k !== "isArchived");
         await tx

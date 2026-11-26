@@ -16,7 +16,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { AssemblyComponentInput, AssemblyWithComponents, FieldCategoryWithOptions } from "@shared/schema";
-import { assemblyRateBreakdown, componentQuantity, previewAssemblyCostExTax } from "@shared/assemblies";
+import {
+  assemblyRateBreakdown, componentQuantityOf, mainInputLabel, newInputKey, previewAssemblyCostExTax,
+  recipeFromDisplay, recipeToDisplay, type AssemblyInputDef,
+} from "@shared/assemblies";
 import { dollarsToCents, formatCents } from "@shared/money";
 
 const LINE_TYPES = ["Material", "Labour", "Subcontractor", "Fee", "Equipment"] as const;
@@ -28,6 +31,10 @@ interface Draft {
   description: string;
   unitType: string;
   costCodeId: string | null;
+  /** What the line's own quantity is called — the first input ("Area"). */
+  quantityLabel: string;
+  /** The other named inputs (Thickness, Edge…), each with a default. */
+  inputs: AssemblyInputDef[];
   components: DraftComponent[];
 }
 
@@ -40,6 +47,8 @@ function toDraft(a: AssemblyWithComponents): Draft {
     description: a.description ?? "",
     unitType: a.unitType,
     costCodeId: a.costCodeId,
+    quantityLabel: a.quantityLabel ?? "",
+    inputs: (a.inputs ?? []).map((i) => ({ key: i.key, label: i.label, unit: i.unit ?? null, defaultValue: Number(i.defaultValue) || 0 })),
     components: a.components.map((c) => ({
       key: c.id,
       id: c.id,
@@ -48,8 +57,9 @@ function toDraft(a: AssemblyWithComponents): Draft {
       priceListItemId: c.priceListItemId,
       unitType: c.unitType,
       unitCostCents: c.unitCostCents,
-      qtyMode: c.qtyMode === "fixed" ? "fixed" : "per_unit",
+      qtyMode: c.qtyMode === "fixed" || c.qtyMode === "formula" ? c.qtyMode : "per_unit",
       qtyFactor: c.qtyFactor,
+      qtyFormula: c.qtyFormula,
       wastagePercent: c.wastagePercent,
       markupPercent: c.markupPercent,
       costCodeId: c.costCodeId,
@@ -105,6 +115,96 @@ function NumberCell({
   );
 }
 
+/**
+ * A component's recipe over the assembly's inputs, typed with their NAMES —
+ * `Area × Thickness × 1.05` — and saved by key, so renaming an input never
+ * breaks it. Checked as you leave the cell; a recipe that doesn't read stays
+ * red and blocks Save rather than pricing at 0.
+ */
+function RecipeCell({
+  formula, labels, defaults, onCommit, onError, "data-testid": testId,
+}: {
+  formula: string | null | undefined;
+  labels: { mainLabel: string; inputs: AssemblyInputDef[] };
+  defaults: AssemblyInputDef[];
+  onCommit: (formula: string) => void;
+  onError: (error: string | null) => void;
+  "data-testid"?: string;
+}) {
+  const shown = recipeToDisplay(formula, labels);
+  const [text, setText] = useState(shown);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (!error) setText(shown); }, [shown, error]);
+  const check = () => {
+    const r = recipeFromDisplay(text, { ...labels, defaults });
+    if (!r.ok) {
+      setError(r.error);
+      onError(r.error);
+      return;
+    }
+    setError(null);
+    onError(null);
+    if (r.formula !== formula) onCommit(r.formula);
+  };
+  return (
+    <Input
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={check}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+      placeholder={`${mainInputLabel(labels.mainLabel)} × 1.1`}
+      title={error ?? "A recipe over the inputs: + − × ÷, ROUND() rounds up. Names with spaces go in { }."}
+      className={`h-7 text-xs font-mono ${error ? "border-destructive text-destructive" : ""}`}
+      data-testid={testId}
+    />
+  );
+}
+
+/** One extra input in the Inputs list. */
+function InputRow({
+  input, index, inUse, onChange, onRemove,
+}: {
+  input: AssemblyInputDef;
+  index: number;
+  inUse: boolean;
+  onChange: (patch: Partial<AssemblyInputDef>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <>
+      <Input
+        value={input.label}
+        onChange={(e) => onChange({ label: e.target.value })}
+        placeholder="e.g. Thickness"
+        className="h-7 text-xs"
+        data-testid={`input-assembly-input-label-${index}`}
+      />
+      <Input
+        value={input.unit ?? ""}
+        onChange={(e) => onChange({ unit: e.target.value })}
+        placeholder="m"
+        className="h-7 text-xs"
+        data-testid={`input-assembly-input-unit-${index}`}
+      />
+      <NumberCell
+        value={input.defaultValue}
+        onCommit={(n) => onChange({ defaultValue: n ?? 0 })}
+        data-testid={`input-assembly-input-default-${index}`}
+      />
+      <button
+        className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover-elevate disabled:opacity-30 disabled:hover:text-muted-foreground"
+        onClick={onRemove}
+        disabled={inUse}
+        title={inUse ? "A recipe uses this input — change the recipe first" : `Remove ${input.label || "input"}`}
+        aria-label={`Remove ${input.label || "input"}`}
+        data-testid={`button-remove-input-${index}`}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </>
+  );
+}
+
 /** A unit <select> that never drops a value it doesn't know (the Radix value-wipe trap). */
 function UnitSelect({ value, units, onChange, testId }: { value: string; units: string[]; onChange: (u: string) => void; testId?: string }) {
   const options = units.includes(value) || !value ? units : [value, ...units];
@@ -142,6 +242,15 @@ export default function AssemblyDetail() {
   const [dirty, setDirty] = useState(false);
   const [previewQty, setPreviewQty] = useState<number>(100);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Component key → why its recipe doesn't read. Any entry blocks Save.
+  const [recipeErrors, setRecipeErrors] = useState<Record<string, string>>({});
+  const setRecipeError = (key: string, error: string | null) =>
+    setRecipeErrors((m) => {
+      if ((m[key] ?? null) === error) return m;
+      const next = { ...m };
+      if (error) next[key] = error; else delete next[key];
+      return next;
+    });
 
   // Take the server copy whenever we have no unsaved edits.
   useEffect(() => {
@@ -169,6 +278,8 @@ export default function AssemblyDetail() {
         description: draft.description.trim() || null,
         unitType: draft.unitType,
         costCodeId: draft.costCodeId || null,
+        quantityLabel: draft.quantityLabel.trim() || null,
+        inputs: draft.inputs.map((i) => ({ ...i, label: i.label.trim(), unit: i.unit?.trim() || null })),
         components,
       }) as Promise<AssemblyWithComponents>;
     },
@@ -221,8 +332,16 @@ export default function AssemblyDetail() {
     return <div className="p-6 text-sm text-muted-foreground">Assembly not found.</div>;
   }
 
-  const { perUnitExTax, fixedExTax } = assemblyRateBreakdown(draft.components);
-  const previewTotal = previewAssemblyCostExTax(draft.components, previewQty);
+  const { perUnitExTax, fixedExTax } = assemblyRateBreakdown(draft.components, draft.inputs);
+  const previewTotal = previewAssemblyCostExTax(draft.components, previewQty, draft.inputs);
+  const labels = { mainLabel: draft.quantityLabel, inputs: draft.inputs };
+  const usedKeys = new Set(
+    draft.components.filter((c) => c.qtyMode === "formula").flatMap((c) =>
+      Array.from((c.qtyFormula ?? "").matchAll(/\{input:([0-9a-zA-Z_-]+)\}/g)).map((m) => m[1])),
+  );
+  const hasRecipeErrors = Object.keys(recipeErrors).length > 0;
+  const updateInput = (key: string, patch: Partial<AssemblyInputDef>) =>
+    update((d) => ({ ...d, inputs: d.inputs.map((i) => (i.key === key ? { ...i, ...patch } : i)) }));
   const money = (dollars: number) => formatCents(dollarsToCents(dollars), { alwaysShowDecimals: true });
 
   return (
@@ -245,7 +364,8 @@ export default function AssemblyDetail() {
             <button
               className="h-6 w-auto px-2 text-xs border rounded-md bg-primary text-white border-primary/20 hover:bg-primary/90 active-elevate-2 flex items-center gap-1 disabled:opacity-50"
               onClick={() => save.mutate()}
-              disabled={!dirty || save.isPending || !draft.name.trim()}
+              disabled={!dirty || save.isPending || !draft.name.trim() || hasRecipeErrors}
+              title={hasRecipeErrors ? "Fix the red recipes first" : undefined}
               data-testid="button-save-assembly"
             >
               {save.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -309,6 +429,49 @@ export default function AssemblyDetail() {
                 data-testid="select-assembly-cost-code"
               />
             </label>
+
+            <div className="space-y-1.5 pt-1" data-testid="section-assembly-inputs">
+              <div className="text-xs font-medium">Inputs</div>
+              <p className="text-[11px] text-muted-foreground leading-snug max-w-xl">
+                What the estimator fills in when this lands in an estimate. The first is the line's own quantity; add
+                others (a slab's thickness, its edge length) and write a component's quantity as a recipe over them.
+                Each can follow a take-off measurement on the job.
+              </p>
+              <div className="grid grid-cols-[180px_80px_96px_24px] gap-1.5 items-center text-[11px] text-muted-foreground">
+                <span>Name</span><span>Unit</span><span className="text-right">Default</span><span />
+                <Input
+                  value={draft.quantityLabel}
+                  onChange={(e) => update((d) => ({ ...d, quantityLabel: e.target.value }))}
+                  placeholder="Qty"
+                  className="h-7 text-xs"
+                  data-testid="input-assembly-quantity-label"
+                />
+                <span className="text-xs text-foreground px-1">{draft.unitType}</span>
+                <span className="text-right text-[11px]">the line's qty</span>
+                <span />
+                {draft.inputs.map((i, n) => (
+                  <InputRow
+                    key={i.key}
+                    input={i}
+                    index={n}
+                    inUse={usedKeys.has(i.key)}
+                    onChange={(patch) => updateInput(i.key, patch)}
+                    onRemove={() => update((d) => ({ ...d, inputs: d.inputs.filter((x) => x.key !== i.key) }))}
+                  />
+                ))}
+              </div>
+              <button
+                className="h-6 w-auto px-2 text-xs border rounded-md border-border/50 text-muted-foreground hover-elevate active-elevate-2 flex items-center gap-1"
+                onClick={() => update((d) => ({
+                  ...d,
+                  inputs: [...d.inputs, { key: newInputKey(), label: "", unit: null, defaultValue: 0 }],
+                }))}
+                data-testid="button-add-input"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add input
+              </button>
+            </div>
           </div>
 
           <div className="rounded-lg border border-border p-3 space-y-2 h-fit">
@@ -320,7 +483,7 @@ export default function AssemblyDetail() {
             <div className="flex items-center gap-2 pt-1">
               <span className="text-xs text-muted-foreground">At</span>
               <NumberCell value={previewQty} onCommit={(n) => setPreviewQty(n ?? 0)} className="w-20" data-testid="input-preview-qty" />
-              <span className="text-xs text-muted-foreground">{draft.unitType}</span>
+              <span className="text-xs text-muted-foreground">{draft.unitType}{draft.inputs.length > 0 && <> · other inputs at their defaults</>}</span>
             </div>
             <div className="text-sm font-semibold tabular-nums" data-testid="text-preview-total">{money(previewTotal)}</div>
             <div className="text-[11px] text-muted-foreground leading-snug">
@@ -338,7 +501,7 @@ export default function AssemblyDetail() {
                   <th className="w-5" />
                   <th className="text-left font-medium px-1.5 min-w-[240px]">Component</th>
                   <th className="text-left font-medium px-1.5 w-28">Type</th>
-                  <th className="text-left font-medium px-1.5 w-32">Quantity</th>
+                  <th className="text-left font-medium px-1.5 w-64">Quantity</th>
                   <th className="text-left font-medium px-1.5 w-20">Unit</th>
                   <th className="text-right font-medium px-1.5 w-24">Unit cost (ex)</th>
                   <th className="text-right font-medium px-1.5 w-16">Waste %</th>
@@ -350,8 +513,11 @@ export default function AssemblyDetail() {
               </thead>
               <tbody>
                 {draft.components.map((c, index) => {
-                  const qtyAtPreview = componentQuantity(c.qtyMode, c.qtyFactor, previewQty);
-                  const lineAtPreview = previewAssemblyCostExTax([c], previewQty);
+                  const qtyAtPreview = componentQuantityOf(
+                    { mode: c.qtyMode, factor: c.qtyFactor, formula: c.qtyFormula },
+                    { quantity: previewQty, inputs: draft.inputs },
+                  );
+                  const lineAtPreview = previewAssemblyCostExTax([c], previewQty, draft.inputs);
                   return (
                     <tr key={c.key} className="border-b border-border/60 align-middle" data-testid={`row-component-${index}`}>
                       <td className="text-muted-foreground/40"><GripVertical className="h-3.5 w-3.5" /></td>
@@ -380,21 +546,46 @@ export default function AssemblyDetail() {
                       </td>
                       <td className="px-1.5">
                         <div className="flex items-center gap-1">
-                          <NumberCell
-                            value={c.qtyFactor}
-                            onCommit={(n) => updateComponent(c.key, { qtyFactor: n ?? 0 })}
-                            className="w-16"
-                            data-testid={`input-component-factor-${index}`}
-                          />
+                          {c.qtyMode === "formula" ? (
+                            <div className="flex-1 min-w-0">
+                              <RecipeCell
+                                formula={c.qtyFormula}
+                                labels={labels}
+                                defaults={draft.inputs}
+                                onCommit={(qtyFormula) => updateComponent(c.key, { qtyFormula })}
+                                onError={(e) => setRecipeError(c.key, e)}
+                                data-testid={`input-component-recipe-${index}`}
+                              />
+                            </div>
+                          ) : (
+                            <NumberCell
+                              value={c.qtyFactor}
+                              onCommit={(n) => updateComponent(c.key, { qtyFactor: n ?? 0 })}
+                              className="w-16"
+                              data-testid={`input-component-factor-${index}`}
+                            />
+                          )}
                           <select
                             value={c.qtyMode}
-                            onChange={(e) => updateComponent(c.key, { qtyMode: e.target.value as "per_unit" | "fixed" })}
-                            className="h-7 rounded-md border border-input bg-background px-1 text-xs"
-                            title={c.qtyMode === "fixed" ? "The same quantity whatever the assembly's size" : `Per ${draft.unitType} of the assembly`}
+                            onChange={(e) => {
+                              const mode = e.target.value as "per_unit" | "fixed" | "formula";
+                              setRecipeError(c.key, null);
+                              updateComponent(c.key, mode === "formula"
+                                // Start the recipe from what the line already said.
+                                ? { qtyMode: mode, qtyFormula: c.qtyFormula || (c.qtyMode === "fixed" ? String(c.qtyFactor) : `{input:qty} × ${c.qtyFactor}`) }
+                                : { qtyMode: mode });
+                            }}
+                            className="h-7 rounded-md border border-input bg-background px-1 text-xs flex-shrink-0"
+                            title={c.qtyMode === "fixed"
+                              ? "The same quantity whatever the assembly's size"
+                              : c.qtyMode === "formula"
+                                ? "Worked out from the inputs"
+                                : `Per ${draft.unitType} of the assembly`}
                             data-testid={`select-component-mode-${index}`}
                           >
                             <option value="per_unit">/ {draft.unitType}</option>
                             <option value="fixed">fixed</option>
+                            <option value="formula">recipe</option>
                           </select>
                         </div>
                       </td>
@@ -428,12 +619,15 @@ export default function AssemblyDetail() {
                       </td>
                       <td className="px-1.5 text-right tabular-nums">
                         <div>{money(lineAtPreview)}</div>
-                        <div className="text-[10px] text-muted-foreground">{qtyAtPreview} {c.unitType}</div>
+                        <div className="text-[10px] text-muted-foreground">{qtyAtPreview ?? "—"} {c.unitType}</div>
                       </td>
                       <td className="text-right">
                         <button
                           className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover-elevate"
-                          onClick={() => update((d) => ({ ...d, components: d.components.filter((x) => x.key !== c.key) }))}
+                          onClick={() => {
+                            setRecipeError(c.key, null);
+                            update((d) => ({ ...d, components: d.components.filter((x) => x.key !== c.key) }));
+                          }}
                           aria-label={`Remove ${c.name || "component"}`}
                           data-testid={`button-remove-component-${index}`}
                         >

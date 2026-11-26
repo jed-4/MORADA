@@ -47,7 +47,8 @@ import { PriceListItemPicker } from "@/components/estimates/PriceListItemPicker"
 import QuantityFormulaEditor from "@/components/estimates/QuantityFormulaEditor";
 import { extractNameRefs, formulaToDisplay, normaliseTakeoffName } from "@shared/quantityFormula";
 import { isFixedPriceLine, isLumpSumLine } from "@shared/pricing";
-import { isAssemblyComponentLine, isAssemblyLine } from "@shared/assemblies";
+import { isAssemblyComponentLine, isAssemblyLine, recipeToDisplay, type AssemblyInputValue } from "@shared/assemblies";
+import { AssemblyInputsPopover } from "@/components/estimates/AssemblyInputsPopover";
 import type {
   EstimateItem,
   CostCode,
@@ -295,6 +296,8 @@ export interface EstimateGridCtx {
   calculatePricingValues: (item: EstimateItem) => any;
   formatCurrency: (amount: number) => string;
   getSubItems: (itemId: string) => EstimateItem[];
+  /** A line by id — an assembly component reads its recipe's input names off its parent. */
+  getItem?: (itemId: string) => EstimateItem | undefined;
 
   // selection / collapse / drag
   selectedItems: Set<string>;
@@ -348,7 +351,7 @@ const ASSEMBLY_ROLLUP_COLUMNS = new Set([
 ]);
 
 export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, columnId: string) {
-  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, handleAssemblySelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
+  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, handleAssemblySelect, getSubItems, getItem, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
     // The name is edited as the field "name" but lives in the column "item",
     // so both checks below match on the field the column actually edits.
     const cursorField = columnId === 'item' ? 'name' : columnId;
@@ -671,6 +674,16 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                     <p className="text-xs">Assembly — {subItems.length} components. Change the quantity and they rescale.</p>
                   </TooltipContent>
                 </Tooltip>
+              )}
+              {isAssemblyLine(item) && Array.isArray((item as any).assemblyInputs) && (item as any).assemblyInputs.length > 0 && (
+                <AssemblyInputsPopover
+                  itemId={item.id}
+                  inputs={(item as any).assemblyInputs as AssemblyInputValue[]}
+                  locked={isLocked}
+                  mode={takeoff?.mode === "template" ? "template" : "estimate"}
+                  measurements={(takeoff?.measurements ?? []).map((m: any) => ({ id: m.id, name: m.name, quantity: m.quantity, unit: m.unit }))}
+                  onSave={(edits) => updateItemMutation.mutate({ itemId: item.id, data: { assemblyInputs: edits } as any })}
+                />
               )}
               {/* Priced from the catalogue. Sits in the same slot as the PO marker
                   and reads the same way: a quiet icon, the detail in the tooltip.
@@ -1040,6 +1053,22 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                   <RotateCcw className="h-3 w-3" />
                 </button>
               ) : (
+                (item as any).assemblyQtyMode === 'formula' ? (() => {
+                  const parent = item.parentItemId ? getItem?.(item.parentItemId) : undefined;
+                  const recipe = recipeToDisplay((item as any).assemblyQtyFormula, {
+                    mainLabel: (parent as any)?.assemblyQtyLabel,
+                    inputs: ((parent as any)?.assemblyInputs as AssemblyInputValue[] | undefined) ?? [],
+                  });
+                  return (
+                    <span
+                      className="text-[10px] text-muted-foreground flex-shrink-0 italic"
+                      title={`${recipe} — worked out from the assembly's inputs. Type a number to set it by hand.`}
+                      data-testid={`assembly-qty-rule-${item.id}`}
+                    >
+                      ƒ
+                    </span>
+                  );
+                })() : (
                 <span
                   className="text-[10px] text-muted-foreground flex-shrink-0"
                   title={(item as any).assemblyQtyMode === 'fixed'
@@ -1049,6 +1078,7 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 >
                   {(item as any).assemblyQtyMode === 'fixed' ? 'fixed' : `×${Number((item as any).assemblyQtyFactor ?? 0)}`}
                 </span>
+                )
               )
             )}
             {formulaWords && (

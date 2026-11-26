@@ -69,6 +69,7 @@ import {
 import { priceListItemToLineFields, priceListSelectToast } from "@/components/estimates/PriceListItemPicker";
 import { useCommitOnDismiss } from "@/hooks/useCommitOnDismiss";
 import type { AssemblyWithComponents } from "@shared/schema";
+import { mergeInputEdits } from "@shared/assemblies";
 import {
   buildTemplateAssembly,
   catalogueExGstCents,
@@ -165,7 +166,10 @@ function toEstimateItem(t: TemplateItem): EstimateItem {
     assemblyComponentId: t.assemblyComponentId ?? null,
     assemblyQtyMode: t.assemblyQtyMode ?? null,
     assemblyQtyFactor: t.assemblyQtyFactor ?? null,
+    assemblyQtyFormula: t.assemblyQtyFormula ?? null,
     assemblyQtyOverridden: t.assemblyQtyOverridden ?? false,
+    assemblyQtyLabel: t.assemblyQtyLabel ?? null,
+    assemblyInputs: t.assemblyInputs ?? null,
   } as unknown as EstimateItem;
 }
 
@@ -202,8 +206,18 @@ export function assemblyPatchRules(existing: TemplateItem, patch: Partial<Templa
     if ("markup" in patch) restore.markup = 0;
     if ("wastagePercent" in patch) restore.wastagePercent = 0;
     if ("priceListItemId" in patch) restore.priceListItemId = null;
+    // Raw edits [{ key, value, formula }] → the line's snapshot with them applied.
+    if ("assemblyInputs" in patch) restore.assemblyInputs = mergeInputEdits(existing.assemblyInputs, patch.assemblyInputs as any);
     return restore;
   }
+  if ("assemblyInputs" in patch) {
+    // Inputs live on the assembly line only.
+    return { assemblyInputs: existing.assemblyInputs ?? null, ...componentOverride(existing, patch) };
+  }
+  return componentOverride(existing, patch);
+}
+
+function componentOverride(existing: TemplateItem, patch: Partial<TemplateItem>): Partial<TemplateItem> {
   if (existing.parentItemId && existing.assemblyQtyMode && "quantity" in patch && !("assemblyQtyOverridden" in patch)) {
     return patch.quantity !== existing.quantity ? { assemblyQtyOverridden: true } : {};
   }
@@ -251,6 +265,8 @@ export function toTemplatePatch(
   if ("shownAs" in data) patch.shownAs = data.shownAs;
   // The reset button on an overridden component quantity.
   if ("assemblyQtyOverridden" in data) patch.assemblyQtyOverridden = !!data.assemblyQtyOverridden;
+  // The inputs popover: raw edits, merged onto the line's snapshot by assemblyPatchRules.
+  if (Array.isArray(data.assemblyInputs)) patch.assemblyInputs = data.assemblyInputs;
   // status / notes remain estimate-only: a template has no workflow.
   return patch;
 }
@@ -707,7 +723,7 @@ export function TemplateEstimateGrid({
         const updated = current.map((i) => (i.id === itemId ? { ...i, ...next } : i));
         // The assembly line's quantity moved, or a component was reset: bring
         // the components back into step.
-        if (existing.assemblyId && "quantity" in next) return rescaleTemplateAssembly(updated, itemId);
+        if (existing.assemblyId && ("quantity" in next || "assemblyInputs" in next)) return rescaleTemplateAssembly(updated, itemId);
         if (existing.parentItemId && next.assemblyQtyOverridden === false) {
           return rescaleTemplateAssembly(updated, existing.parentItemId);
         }
@@ -1376,6 +1392,10 @@ export function TemplateEstimateGrid({
     formatCurrency,
     // An assembly's components, drawn under it. One level, as on the estimate.
     getSubItems: (id: string) => subItemsByParent.get(id) ?? [],
+    getItem: (id: string) => {
+      const t = lineItems.find((i) => i.id === id);
+      return t ? toEstimateItem(t) : undefined;
+    },
     selectedItems,
     handleToggleSelection,
     collapsedItems,

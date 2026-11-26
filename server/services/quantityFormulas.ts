@@ -9,7 +9,20 @@ import {
   resolveNameRefs,
 } from "@shared/quantityFormula";
 import { resolveEstimateStoredPrice } from "@shared/pricing";
-import { rescaleAssemblyComponents } from "../assemblies";
+import { refreshAssemblyInputs, rescaleAssemblyComponents } from "../assemblies";
+import { inputFormulas, resolveInputFormulas, type AssemblyInputValue } from "@shared/assemblies";
+
+/**
+ * Every take-off formula a line follows: its quantity's, and — on an assembly
+ * line — each named input's (phase 3). The ref index holds them all, so
+ * re-measuring finds an assembly whose Edge follows the measurement.
+ */
+export function lineTakeoffFormulas(item: { quantityFormula?: string | null; assemblyInputs?: unknown }): string[] {
+  return [
+    ...(item.quantityFormula ? [item.quantityFormula] : []),
+    ...inputFormulas(Array.isArray(item.assemblyInputs) ? (item.assemblyInputs as AssemblyInputValue[]) : null),
+  ];
+}
 
 /**
  * Take-off-backed quantities.
@@ -83,8 +96,13 @@ export async function resolveFormulaOnWrite(
 }
 
 /** Rewrite the reverse index for one line. Call after the line is saved. */
-export async function syncItemRefs(itemId: string, formula: string | null | undefined): Promise<void> {
-  const refs = extractTakeoffRefs(formula);
+export async function syncItemRefs(
+  itemId: string,
+  formula: string | null | undefined | Array<string | null | undefined>,
+): Promise<void> {
+  const refs = Array.from(new Set(
+    (Array.isArray(formula) ? formula : [formula]).flatMap((f) => extractTakeoffRefs(f)),
+  ));
   await db
     .delete(schema.estimateItemTakeoffRefs)
     .where(eq(schema.estimateItemTakeoffRefs.estimateItemId, itemId));
@@ -151,10 +169,17 @@ export async function repriceLinesForMeasurement(measurementId: string): Promise
 
     const quantities = quantitiesByProject.get(estimate.projectId);
     if (!quantities) continue;
-    const result = evaluateQuantityFormula(item.quantityFormula, quantities);
+    // An assembly line can follow the take-off through its named inputs as
+    // well as its quantity (phase 3); either moving rescales its components.
+    const inputsMoved = item.assemblyId ? await refreshAssemblyInputs(item as any, quantities) : false;
+    const result = item.quantityFormula
+      ? evaluateQuantityFormula(item.quantityFormula, quantities)
+      : ({ ok: false } as const);
     // A broken formula keeps the line's last number, on purpose.
-    if (!result.ok) continue;
-    if (Math.abs(result.value - Number(item.quantity ?? 0)) < 0.0001) continue;
+    if (!result.ok || Math.abs(result.value - Number(item.quantity ?? 0)) < 0.0001) {
+      if (inputsMoved) moved.push(item.id, ...(await rescaleAssemblyComponents(item.id)));
+      continue;
+    }
 
     const { taxAmount, priceIncTax } = resolveEstimateStoredPrice({
       unitCostExTax: item.unitCostExTax,
@@ -281,11 +306,11 @@ export async function loadTakeoffIndex(projectId: string) {
  * which ids exist.
  */
 export async function insertRefsForNewItems(
-  items: Array<{ id: string; quantityFormula?: string | null }>,
+  items: Array<{ id: string; quantityFormula?: string | null; assemblyInputs?: unknown }>,
   liveIds: Set<string>,
 ): Promise<void> {
   const values = items.flatMap((item) =>
-    extractTakeoffRefs(item.quantityFormula)
+    Array.from(new Set(lineTakeoffFormulas(item).flatMap((f) => extractTakeoffRefs(f))))
       .filter((id) => liveIds.has(id))
       .map((measurementId) => ({ estimateItemId: item.id, measurementId })),
   );
@@ -318,10 +343,16 @@ export async function linkWaitingLines(projectId: string): Promise<string[]> {
     .where(
       and(
         eq(schema.estimates.projectId, projectId),
-        sql`${schema.estimateItems.quantityFormula} ~ ${"\\{(?!takeoff:)"}`,
+        // …or an assembly line whose named input waits for one. In the jsonb
+        // text every object brace is followed by a quote or a closing brace,
+        // so those are excluded.
+        sql`(${schema.estimateItems.quantityFormula} ~ ${"\\{(?!takeoff:)"} OR ${schema.estimateItems.assemblyInputs}::text ~ ${'\\{(?!takeoff:|"|\\})'})`,
       ),
     );
-  const waiting = rows.filter((r) => !r.estimate.isLocked && isWaitingFormula(r.item.quantityFormula));
+  const waitingInputs = (item: schema.EstimateItem) =>
+    inputFormulas(item.assemblyInputs as AssemblyInputValue[] | null).some((f) => isWaitingFormula(f));
+  const waiting = rows.filter((r) => !r.estimate.isLocked
+    && (isWaitingFormula(r.item.quantityFormula) || waitingInputs(r.item)));
   if (waiting.length === 0) return [];
 
   const latest = await resolveLatestRevisions(Array.from(new Map(waiting.map((r) => [r.estimate.id, r.estimate])).values()));
@@ -329,11 +360,34 @@ export async function linkWaitingLines(projectId: string): Promise<string[]> {
   if (candidates.length === 0) return [];
 
   const { byName, quantities } = await loadTakeoffIndex(projectId);
-  const changed: Array<{ id: string; quantityFormula: string }> = [];
+  const changed: Array<{ id: string; quantityFormula: string | null; assemblyInputs?: unknown }> = [];
   for (const { item, estimate } of candidates) {
+    // Named inputs first: link each waiting name, evaluate the fully linked.
+    let inputsLinked: AssemblyInputValue[] | null = null;
+    if (waitingInputs(item)) {
+      let any = false;
+      const next = (item.assemblyInputs as AssemblyInputValue[]).map((i) => {
+        if (!i.formula || !isWaitingFormula(i.formula)) return i;
+        const r = resolveNameRefs(i.formula, byName);
+        if (r.linked.length === 0) return i;
+        any = true;
+        return { ...i, formula: r.formula };
+      });
+      if (any) inputsLinked = resolveInputFormulas(next, quantities).inputs;
+    }
+    if (!isWaitingFormula(item.quantityFormula)) {
+      if (!inputsLinked) continue;
+      await db.update(schema.estimateItems)
+        .set({ assemblyInputs: inputsLinked, updatedAt: new Date() })
+        .where(eq(schema.estimateItems.id, item.id));
+      changed.push({ id: item.id, quantityFormula: item.quantityFormula, assemblyInputs: inputsLinked });
+      await rescaleAssemblyComponents(item.id);
+      continue;
+    }
     const r = resolveNameRefs(item.quantityFormula!, byName);
-    if (r.linked.length === 0) continue; // nothing new matched
+    if (r.linked.length === 0 && !inputsLinked) continue; // nothing new matched
     const patch: Record<string, any> = { quantityFormula: r.formula, updatedAt: new Date() };
+    if (inputsLinked) patch.assemblyInputs = inputsLinked;
     if (r.waiting.length === 0 && r.ambiguous.length === 0) {
       const value = evaluateQuantityFormula(r.formula, quantities);
       if (value.ok) {
@@ -351,8 +405,8 @@ export async function linkWaitingLines(projectId: string): Promise<string[]> {
       }
     }
     await db.update(schema.estimateItems).set(patch).where(eq(schema.estimateItems.id, item.id));
-    changed.push({ id: item.id, quantityFormula: r.formula });
-    if (item.assemblyId && patch.quantity !== undefined) await rescaleAssemblyComponents(item.id);
+    changed.push({ id: item.id, quantityFormula: r.formula, assemblyInputs: inputsLinked ?? item.assemblyInputs });
+    if (item.assemblyId && (patch.quantity !== undefined || inputsLinked)) await rescaleAssemblyComponents(item.id);
   }
   await insertRefsForNewItems(changed, new Set(quantities.keys()));
   return changed.map((c) => c.id);

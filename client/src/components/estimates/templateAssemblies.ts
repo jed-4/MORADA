@@ -18,7 +18,9 @@
  * (shared/assemblies.ts), so a template and an estimate cannot disagree about
  * what 0.105 m³ per m² at 120 m² comes to.
  */
-import { componentQuantity, planAssemblyRescale } from "@shared/assemblies";
+import {
+  componentQuantityOf, initialInputValues, normaliseQtyMode, planAssemblyRescale, type AssemblyInputValue,
+} from "@shared/assemblies";
 import { exGstFromInc } from "@shared/money";
 import type { AssemblyWithComponents, CostCode } from "@shared/schema";
 
@@ -33,7 +35,12 @@ export interface TemplateAssemblyFields {
   assemblyComponentId?: string | null;
   assemblyQtyMode?: string | null;
   assemblyQtyFactor?: number | null;
+  /** On a component in recipe mode: the recipe over the inputs, by key. */
+  assemblyQtyFormula?: string | null;
   assemblyQtyOverridden?: boolean | null;
+  /** On the assembly line: what its quantity is called, and its other inputs. */
+  assemblyQtyLabel?: string | null;
+  assemblyInputs?: AssemblyInputValue[] | null;
 }
 
 /** The minimum a template line needs for these rules. */
@@ -76,6 +83,7 @@ export function buildTemplateAssembly<T extends TemplateLineLike>(
   opts: { costCodes: CostCode[]; catalogueCents: Map<string, number>; nextSortOrder: number },
 ): { linePatch: Record<string, any>; components: Array<Record<string, any>> } {
   const quantity = Number(line.quantity) > 0 ? Number(line.quantity) : 1;
+  const inputs = initialInputValues(assembly);
   const linePatch = {
     name: assembly.name,
     description: assembly.description || undefined,
@@ -91,6 +99,8 @@ export function buildTemplateAssembly<T extends TemplateLineLike>(
       : {}),
     assemblyId: assembly.id,
     assemblyVersion: assembly.version,
+    assemblyQtyLabel: assembly.quantityLabel ?? null,
+    assemblyInputs: inputs,
     parentItemId: null,
     proposalVisible: true,
   };
@@ -105,7 +115,7 @@ export function buildTemplateAssembly<T extends TemplateLineLike>(
       name: c.name,
       type: c.type || "Material",
       unit: c.unitType,
-      quantity: componentQuantity(c.qtyMode, c.qtyFactor, quantity),
+      quantity: componentQuantityOf({ mode: c.qtyMode, factor: c.qtyFactor, formula: c.qtyFormula }, { quantity, inputs }) ?? 0,
       unitPrice: c.unitCostCents, // both CENTS ex GST — no conversion
       markup: c.markupPercent ?? 0,
       wastagePercent: c.wastagePercent ?? 0,
@@ -115,8 +125,9 @@ export function buildTemplateAssembly<T extends TemplateLineLike>(
       priceListItemId: keepsLink ? c.priceListItemId : null,
       parentItemId: line.id,
       assemblyComponentId: c.id,
-      assemblyQtyMode: c.qtyMode === "fixed" ? "fixed" : "per_unit",
+      assemblyQtyMode: normaliseQtyMode(c.qtyMode),
       assemblyQtyFactor: c.qtyFactor,
+      assemblyQtyFormula: c.qtyMode === "formula" ? c.qtyFormula ?? null : null,
       assemblyQtyOverridden: false,
       // The client sees the assembly line, not its recipe.
       proposalVisible: false,
@@ -142,9 +153,10 @@ export function rescaleTemplateAssembly<T extends TemplateLineLike>(items: T[], 
     parentItemId: c.parentItemId,
     assemblyQtyMode: c.assemblyQtyMode,
     assemblyQtyFactor: c.assemblyQtyFactor,
+    assemblyQtyFormula: c.assemblyQtyFormula,
     assemblyQtyOverridden: c.assemblyQtyOverridden,
     quantity: c.quantity,
-  })));
+  })), line.assemblyInputs);
   if (plan.length === 0) return items;
   const next = new Map(plan.map((p) => [p.id, p.quantity] as const));
   return items.map((i) => (next.has(i.id) ? { ...i, quantity: next.get(i.id)!, quantityFormula: null } : i));
