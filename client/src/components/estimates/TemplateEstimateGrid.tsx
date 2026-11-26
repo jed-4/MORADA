@@ -70,7 +70,11 @@ import { priceListItemToLineFields, priceListSelectToast } from "@/components/es
 import { useCommitOnDismiss } from "@/hooks/useCommitOnDismiss";
 import type { AssemblyWithComponents } from "@shared/schema";
 import { mergeInputEdits } from "@shared/assemblies";
+import { RefreshCw } from "lucide-react";
+import { DriftReviewDialog } from "@/components/estimates/DriftReviewDialog";
 import {
+  applyTemplateDrift,
+  planTemplateDrift,
   buildTemplateAssembly,
   catalogueExGstCents,
   normaliseTemplateSubLines,
@@ -399,11 +403,24 @@ export function TemplateEstimateGrid({
      can be marked as one. Same shape as the estimate page: ids sorted for a
      stable query key, and no request at all when nothing is linked — which is
      every template written before this. */
-  const linkedPriceListIds = useMemo(
-    () =>
-      Array.from(new Set(items.map((i) => i.priceListItemId).filter(Boolean) as string[])).sort(),
-    [items],
-  );
+  // The Library's assemblies, for drift (phase 4): a template line built from
+  // version N of one now at M.
+  const { data: libraryAssemblies = [] } = useQuery<AssemblyWithComponents[]>({
+    queryKey: ["/api/assemblies"],
+    enabled: items.some((i) => !!i.assemblyId),
+    staleTime: 0,
+  });
+  const assemblyById = useMemo(() => new Map(libraryAssemblies.map((a) => [a.id, a] as const)), [libraryAssemblies]);
+  const linkedPriceListIds = useMemo(() => {
+    const ids = new Set(items.map((i) => i.priceListItemId).filter(Boolean) as string[]);
+    // An assembly update re-links components only while the catalogue matches,
+    // so the catalogue rows its Library components name are needed too.
+    for (const i of items) {
+      const a = i.assemblyId ? assemblyById.get(i.assemblyId) : undefined;
+      for (const c of a?.components ?? []) if (c.priceListItemId) ids.add(c.priceListItemId);
+    }
+    return Array.from(ids).sort();
+  }, [items, assemblyById]);
   const { data: linkedPriceListItems = [] } = useQuery<any[]>({
     queryKey: ["/api/price-list/items/by-ids", linkedPriceListIds.join(",")],
     queryFn: async () => {
@@ -415,11 +432,30 @@ export function TemplateEstimateGrid({
       return res.json();
     },
     enabled: linkedPriceListIds.length > 0,
+    // Coming back from editing the price list re-checks for drift.
+    staleTime: 0,
   });
   const priceListItemMap = useMemo(
     () => new Map(linkedPriceListItems.map((i) => [i.id, i])),
     [linkedPriceListItems],
   );
+  const catalogueCentsMap = useMemo(
+    () => new Map(linkedPriceListItems.map((i: any) => [i.id as string, catalogueExGstCents(i)] as const)),
+    [linkedPriceListItems],
+  );
+  const drift = useMemo(
+    () => planTemplateDrift(items, assemblyById, catalogueCentsMap),
+    [items, assemblyById, catalogueCentsMap],
+  );
+  const driftByItem = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of drift.prices) m.set(p.itemId, `The price list now says $${(p.afterCents / 100).toFixed(2)} (this line has $${(p.beforeCents / 100).toFixed(2)}). Click to review.`);
+    for (const a of drift.assemblies) m.set(a.itemId, `This assembly changed in the Library (version ${a.fromVersion ?? "?"} → ${a.toVersion}). Click to review.`);
+    return m;
+  }, [drift]);
+  const driftCount = drift.prices.length + drift.assemblies.length;
+  const [driftOpen, setDriftOpen] = useState(false);
+  const [driftFocus, setDriftFocus] = useState<string | null>(null);
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -1392,6 +1428,8 @@ export function TemplateEstimateGrid({
     formatCurrency,
     // An assembly's components, drawn under it. One level, as on the estimate.
     getSubItems: (id: string) => subItemsByParent.get(id) ?? [],
+    driftByItem,
+    onOpenDrift: (id: string) => { setDriftFocus(id); setDriftOpen(true); },
     getItem: (id: string) => {
       const t = lineItems.find((i) => i.id === id);
       return t ? toEstimateItem(t) : undefined;
@@ -1448,6 +1486,29 @@ export function TemplateEstimateGrid({
         {/* Columns picker. Not sticky: the heading row below is the one that
             pins to the top, and two sticky rows at top-0 sat on each other. */}
         <div className="flex items-center gap-2 bg-card px-2 py-1 border-b border-border" style={{ width: tableWidth, minWidth: "100%" }}>
+          {driftCount > 0 && (
+            <button
+              className="h-6 px-2 text-xs border rounded-md flex items-center gap-1 bg-amber-light text-foreground border-amber/40 hover-elevate"
+              onClick={() => { setDriftFocus(null); setDriftOpen(true); }}
+              title="Prices or assemblies in the Library have changed since these lines were priced"
+              data-testid="button-drift-review"
+            >
+              <RefreshCw className="h-3 w-3 text-amber" />
+              {driftCount} update{driftCount === 1 ? "" : "s"}
+            </button>
+          )}
+          <DriftReviewDialog
+            open={driftOpen}
+            onOpenChange={setDriftOpen}
+            prices={drift.prices}
+            assemblies={drift.assemblies}
+            focusItemId={driftFocus}
+            onApply={(choice) => {
+              commit((current) => applyTemplateDrift(current, choice, drift, assemblyById, catalogueCentsMap, costCodes));
+              setDriftOpen(false);
+              toast({ title: "Template updated" });
+            }}
+          />
           <div className="ml-auto" />
           <EstimateColumnsPicker columns={columns} onChange={setColumns} />
         </div>

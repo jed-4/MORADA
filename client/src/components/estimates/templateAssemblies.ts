@@ -20,9 +20,13 @@
  */
 import {
   componentQuantityOf, initialInputValues, normaliseQtyMode, planAssemblyRescale, type AssemblyInputValue,
+  type AssemblySource,
 } from "@shared/assemblies";
 import { exGstFromInc } from "@shared/money";
 import type { AssemblyWithComponents, CostCode } from "@shared/schema";
+import {
+  planAssemblyUpdate, planPriceDrift, type AssemblyDrift, type ComponentFields, type PriceDrift,
+} from "@shared/assemblyDrift";
 
 /** The assembly fields a template line can carry. All JSON — no migration. */
 export interface TemplateAssemblyFields {
@@ -216,4 +220,138 @@ export function nestSubLines<W>(
     out.push(w, ...(childrenOf.get(lineOf(w).id) ?? []));
   }
   return out;
+}
+
+// ── Drift + Update (phase 4) ─────────────────────────────────────────────────
+//
+// The estimate asks the server; a template has none, so the same shared rules
+// (shared/assemblyDrift.ts) run here over the template's own lines, in cents.
+
+/** The template line shape the drift helpers read and write. */
+export interface TemplateDriftLine extends TemplateLineLike {
+  unit?: string;
+  unitPrice?: number;
+  markup?: number;
+  wastagePercent?: number;
+  type?: string;
+  costCodeId?: string;
+  costCodeTitle?: string;
+  priceListItemId?: string | null;
+}
+
+/** What has moved on in a template: catalogue prices and Library recipes. */
+export function planTemplateDrift<T extends TemplateDriftLine>(
+  items: T[],
+  assemblies: Map<string, AssemblyWithComponents>,
+  catalogueCents: Map<string, number>,
+): { prices: PriceDrift[]; assemblies: AssemblyDrift[] } {
+  const lines = items.filter((i) => !i.isGroup);
+  const prices = planPriceDrift(
+    lines.map((l) => ({ id: l.id, name: l.name, priceListItemId: l.priceListItemId, unitCostCents: Number(l.unitPrice) || 0 })),
+    catalogueCents,
+  );
+  const plans: AssemblyDrift[] = [];
+  for (const l of lines) {
+    if (!l.assemblyId || l.parentItemId) continue;
+    const lib = assemblies.get(l.assemblyId);
+    if (!lib) continue;
+    const plan = planAssemblyUpdate(
+      { id: l.id, name: l.name, assemblyVersion: l.assemblyVersion, unitType: l.unit, assemblyInputs: l.assemblyInputs },
+      lines.filter((c) => c.parentItemId === l.id).map((c) => ({
+        id: c.id,
+        name: c.name,
+        assemblyComponentId: c.assemblyComponentId,
+        unitType: c.unit ?? "",
+        unitCostCents: Number(c.unitPrice) || 0,
+        qtyMode: c.assemblyQtyMode,
+        qtyFactor: c.assemblyQtyFactor,
+        qtyFormula: c.assemblyQtyFormula,
+        markupPercent: c.markup ?? null,
+        wastagePercent: c.wastagePercent ?? 0,
+        costCodeId: c.costCodeId ?? null,
+        priceListItemId: c.priceListItemId ?? null,
+        overridden: c.assemblyQtyOverridden,
+      })),
+      lib as unknown as AssemblySource,
+      catalogueCents,
+      { zeroMarkupIsUnset: true },
+    );
+    if (plan) plans.push(plan);
+  }
+  return { prices, assemblies: plans };
+}
+
+/**
+ * Pull the chosen updates into a template's lines. Assemblies first, then
+ * prices on lines an assembly update didn't already touch. Overridden
+ * component quantities are kept; everything else rescales to the line.
+ */
+export function applyTemplateDrift<T extends TemplateDriftLine>(
+  items: T[],
+  choice: { priceItemIds: string[]; assemblyLineIds: string[] },
+  drift: { prices: PriceDrift[]; assemblies: AssemblyDrift[] },
+  assemblies: Map<string, AssemblyWithComponents>,
+  catalogueCents: Map<string, number>,
+  costCodes: CostCode[],
+): T[] {
+  let next = items.slice();
+  const touched = new Set<string>();
+  for (const plan of drift.assemblies.filter((a) => choice.assemblyLineIds.includes(a.itemId))) {
+    const line = next.find((i) => i.id === plan.itemId);
+    const lib = assemblies.get(plan.assemblyId);
+    if (!line || !lib) continue;
+    const removed = new Set(plan.components.filter((c) => c.kind === "remove").map((c) => (c as any).lineId as string));
+    const updates = new Map(
+      plan.components.filter((c) => c.kind === "update").map((c) => [(c as any).lineId as string, (c as any).next as ComponentFields] as const),
+    );
+    next = next
+      .filter((i) => !removed.has(i.id))
+      .map((i) => {
+        if (i.id === line.id) {
+          return {
+            ...i,
+            assemblyVersion: plan.toVersion,
+            assemblyInputs: plan.inputs,
+            assemblyQtyLabel: plan.qtyLabel,
+            ...(plan.unitType ? { unit: plan.unitType } : {}),
+          };
+        }
+        const n = updates.get(i.id);
+        if (!n) return i;
+        touched.add(i.id);
+        return {
+          ...i,
+          name: n.name,
+          type: n.type,
+          unit: n.unitType,
+          unitPrice: n.unitCostCents,
+          markup: n.markupPercent ?? 0,
+          wastagePercent: n.wastagePercent,
+          costCodeId: n.costCodeId ?? undefined,
+          costCodeTitle: costCodeTitle(costCodes, n.costCodeId),
+          priceListItemId: n.priceListItemId,
+          assemblyQtyMode: n.qtyMode,
+          assemblyQtyFactor: n.qtyFactor,
+          assemblyQtyFormula: n.qtyFormula,
+        };
+      });
+    const adds = plan.components.filter((c) => c.kind === "add").map((c) => (c as any).componentId as string);
+    if (adds.length > 0) {
+      const lineNow = next.find((i) => i.id === line.id)!;
+      const built = buildTemplateAssembly(lineNow, lib, {
+        costCodes,
+        catalogueCents,
+        nextSortOrder: Math.max(0, ...next.map((i) => Number(i.sortOrder) || 0)) + 1,
+      }).components.filter((c) => adds.includes(c.assemblyComponentId));
+      // Built at the Library's default inputs; the rescale below brings them to this line's.
+      next = [...next, ...(built.map((c, k) => ({ ...c, sortOrder: Math.max(0, ...next.map((i) => Number(i.sortOrder) || 0)) + 1 + k })) as unknown as T[])];
+    }
+    next = rescaleTemplateAssembly(next, line.id);
+  }
+  const want = new Set(choice.priceItemIds);
+  for (const p of drift.prices) {
+    if (!want.has(p.itemId) || touched.has(p.itemId)) continue;
+    next = next.map((i) => (i.id === p.itemId ? { ...i, unitPrice: p.afterCents } : i));
+  }
+  return next;
 }

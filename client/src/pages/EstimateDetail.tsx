@@ -101,6 +101,8 @@ import { formatGroupPath } from "@shared/import";
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
 import { AssemblyPickerDialog } from "@/components/estimates/AssemblyPickerDialog";
 import { componentQuantityOf, isAssemblyLine, mergeInputEdits } from "@shared/assemblies";
+import type { AssemblyDrift, PriceDrift } from "@shared/assemblyDrift";
+import { DriftReviewDialog } from "@/components/estimates/DriftReviewDialog";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, pickItemDropTarget, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
@@ -117,7 +119,7 @@ import {
 import { useUndoStack } from "@/hooks/useUndoStack";
 import { CreateRFQDialog } from "@/components/rfq/CreateRFQDialog";
 import { CreatePOFromEstimateDialog } from "@/components/estimates/CreatePOFromEstimateDialog";
-import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Tag, Pencil, X, SlidersHorizontal, LayoutTemplate, Briefcase } from "lucide-react";
+import { Package, Undo2, ChevronsUpDown, Search, ShoppingCart, Tag, Pencil, X, SlidersHorizontal, LayoutTemplate, Briefcase, RefreshCw } from "lucide-react";
 import { PriceListItemPicker, priceListItemToLineFields, priceListSelectToast, lookupItemExGstCents, unitCarriesToEstimate, type PriceListLookupItem } from "@/components/estimates/PriceListItemPicker";
 import { formatCents } from "@shared/money";
 import { EmptyState } from "@/components/EmptyState";
@@ -764,6 +766,65 @@ export default function EstimateDetail() {
     () => new Map(linkedPriceListItems.map(i => [i.id, i])),
     [linkedPriceListItems],
   );
+
+  // Drift (phase 4): linked lines whose catalogue price moved, and assembly
+  // lines whose Library recipe has a newer version. The key carries a
+  // signature of the lines so an edit re-checks; staleTime 0 so coming back
+  // from the price list or the Library re-checks too. Nothing to check — no
+  // linked lines — means no request.
+  const driftSignature = useMemo(() => {
+    if (!items.some(i => i.priceListItemId || (i as any).assemblyId)) return "";
+    let latest = "";
+    for (const i of items) {
+      const t = String((i as any).updatedAt ?? "");
+      if (t > latest) latest = t;
+    }
+    return `${items.length}:${latest}`;
+  }, [items]);
+  const { data: drift } = useQuery<{ prices: PriceDrift[]; assemblies: AssemblyDrift[] }>({
+    queryKey: ["/api/estimates", effectiveEstimateId, "drift", driftSignature],
+    queryFn: async () => {
+      const res = await fetch(`/api/estimates/${effectiveEstimateId}/drift`, { credentials: "include" });
+      if (!res.ok) return { prices: [], assemblies: [] };
+      return res.json();
+    },
+    enabled: !!effectiveEstimateId && !!driftSignature,
+    staleTime: 0,
+  });
+  const driftByItem = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of drift?.prices ?? []) {
+      map.set(p.itemId, `The price list now says ${formatCents(p.afterCents, { alwaysShowDecimals: true })} (this line has ${formatCents(p.beforeCents, { alwaysShowDecimals: true })}). Click to review.`);
+    }
+    for (const a of drift?.assemblies ?? []) {
+      map.set(a.itemId, `This assembly changed in the Library (version ${a.fromVersion ?? "?"} → ${a.toVersion}). Click to review.`);
+    }
+    return map;
+  }, [drift]);
+  const driftCount = (drift?.prices.length ?? 0) + (drift?.assemblies.length ?? 0);
+  const [driftOpen, setDriftOpen] = useState(false);
+  const [driftFocus, setDriftFocus] = useState<string | null>(null);
+  const applyDriftMutation = useMutation({
+    mutationFn: (choice: { priceItemIds: string[]; assemblyLineIds: string[] }) =>
+      apiRequest(`/api/estimates/${effectiveEstimateId}/drift/apply`, "POST", choice) as Promise<{ prices: number; assemblies: number; keptReferenced: string[] }>,
+    onSuccess: (r) => {
+      setDriftOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "drift"] });
+      const parts = [
+        r.assemblies ? `${r.assemblies} assembl${r.assemblies === 1 ? "y" : "ies"}` : "",
+        r.prices ? `${r.prices} price${r.prices === 1 ? "" : "s"}` : "",
+      ].filter(Boolean);
+      toast({
+        title: parts.length ? `Updated ${parts.join(" and ")}` : "Nothing to update",
+        description: r.keptReferenced.length
+          ? `Kept ${r.keptReferenced.join(", ")} — a purchase order or proposal points at ${r.keptReferenced.length === 1 ? "it" : "them"}, so ${r.keptReferenced.length === 1 ? "it stays" : "they stay"} as a line of ${r.keptReferenced.length === 1 ? "its" : "their"} own.`
+          : undefined,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't update", description: e.message, variant: "destructive" }),
+  });
 
   // Fetch estimate item status field category options
   const { data: estimateItemStatusCategory } = useQuery<FieldCategoryWithOptions>({
@@ -4622,6 +4683,7 @@ export default function EstimateDetail() {
     estimate, columns, costCodes, costCategories, priceListItemMap, poLinkMap,
     selectionByEstimateItemId, estimateItemStatusCategory, estimateItemUnitCategory,
     calculatePricingValues, formatCurrency, getSubItems, getItem,
+    driftByItem, onOpenDrift: (itemId: string) => { setDriftFocus(itemId); setDriftOpen(true); },
     selectedItems, handleToggleSelection, collapsedItems, handleToggleItemCollapse,
     dropTarget, activeId,
     updateItemMutation, costCodeMutation, createSelectionFromItemMutation, handleDuplicateItem, handleCopyItem,
@@ -5431,6 +5493,29 @@ export default function EstimateDetail() {
                   )}
                 </div>
                 
+                {/* Updates available: catalogue prices or Library recipes moved on. */}
+                {driftCount > 0 && (
+                  <button
+                    className="h-6 px-2 text-xs border rounded-md flex items-center gap-1 bg-amber-light text-foreground border-amber/40 hover-elevate"
+                    onClick={() => { setDriftFocus(null); setDriftOpen(true); }}
+                    title="Prices or assemblies in the Library have changed since these lines were priced"
+                    data-testid="button-drift-review"
+                  >
+                    <RefreshCw className="h-3 w-3 text-amber" />
+                    {driftCount} update{driftCount === 1 ? "" : "s"}
+                  </button>
+                )}
+                <DriftReviewDialog
+                  open={driftOpen}
+                  onOpenChange={setDriftOpen}
+                  prices={drift?.prices ?? []}
+                  assemblies={drift?.assemblies ?? []}
+                  onApply={(choice) => applyDriftMutation.mutate(choice)}
+                  pending={applyDriftMutation.isPending}
+                  locked={!!estimate?.isLocked}
+                  focusItemId={driftFocus}
+                />
+
                 {/* Filters — one button + popover (Type / Status / Group) */}
                 {(() => {
                   const activeFilterCount =

@@ -33,6 +33,13 @@ import {
   type AssemblySource,
 } from "@shared/assemblies";
 import { evaluateQuantityFormula } from "@shared/quantityFormula";
+import {
+  planAssemblyUpdate,
+  planPriceDrift,
+  type AssemblyDrift,
+  type PriceDrift,
+} from "@shared/assemblyDrift";
+import { centsToDollars, dollarsToCents } from "@shared/money";
 import { resolveEstimateStoredPrice } from "@shared/pricing";
 import { exGstFromInc } from "@shared/money";
 import { requireAuth, requireTeamMember, getSessionCompanyId } from "./middleware/auth";
@@ -577,6 +584,226 @@ export async function copyAssemblyComponents(
   }));
 }
 
+// ── Drift + Update (phase 4) ─────────────────────────────────────────────────
+//
+// The rules are shared/assemblyDrift.ts. Here: load an estimate's lines, the
+// catalogue and the Library once, and report or apply. The apply route
+// recomputes the plan itself — a client only says WHICH lines to update,
+// never what to update them to.
+
+export interface EstimateDrift {
+  prices: PriceDrift[];
+  assemblies: AssemblyDrift[];
+}
+
+async function loadDriftContext(estimate: schema.Estimate, companyId: string) {
+  const items = await db
+    .select()
+    .from(schema.estimateItems)
+    .where(eq(schema.estimateItems.estimateId, estimate.id))
+    .orderBy(asc(schema.estimateItems.order));
+  const assemblyIds = Array.from(new Set(items.map((i) => i.assemblyId).filter((x): x is string => !!x)));
+  const assemblies = assemblyIds.length
+    ? (await listAssemblies(companyId, { includeArchived: true })).filter((a) => assemblyIds.includes(a.id))
+    : [];
+  const linked = new Set<string>(items.map((i) => i.priceListItemId).filter((x): x is string => !!x));
+  for (const a of assemblies) for (const c of a.components) if (c.priceListItemId) linked.add(c.priceListItemId);
+  const catalogue = await catalogueCostsCents(Array.from(linked));
+  return { items, assemblies: new Map(assemblies.map((a) => [a.id, a] as const)), catalogue };
+}
+
+function toDriftComponent(c: schema.EstimateItem) {
+  return {
+    id: c.id,
+    name: c.name,
+    assemblyComponentId: c.assemblyComponentId,
+    unitType: c.unitType,
+    unitCostCents: dollarsToCents(c.unitCostExTax),
+    qtyMode: c.assemblyQtyMode,
+    qtyFactor: c.assemblyQtyFactor,
+    qtyFormula: c.assemblyQtyFormula,
+    markupPercent: c.markupPercent,
+    wastagePercent: c.wastagePercent,
+    costCodeId: c.costCode,
+    priceListItemId: c.priceListItemId,
+    overridden: c.assemblyQtyOverridden,
+  };
+}
+
+function planDrift(ctx: Awaited<ReturnType<typeof loadDriftContext>>): EstimateDrift {
+  const prices = planPriceDrift(
+    ctx.items.map((i) => ({ id: i.id, name: i.name, priceListItemId: i.priceListItemId, unitCostCents: dollarsToCents(i.unitCostExTax) })),
+    ctx.catalogue,
+  );
+  const assemblies: AssemblyDrift[] = [];
+  for (const line of ctx.items) {
+    if (!line.assemblyId || line.parentItemId) continue;
+    const lib = ctx.assemblies.get(line.assemblyId);
+    if (!lib) continue;
+    const plan = planAssemblyUpdate(
+      {
+        id: line.id,
+        name: line.name,
+        assemblyVersion: line.assemblyVersion,
+        unitType: line.unitType,
+        assemblyInputs: line.assemblyInputs as AssemblyInputValue[] | null,
+      },
+      ctx.items.filter((i) => i.parentItemId === line.id).map(toDriftComponent),
+      toSource(lib),
+      ctx.catalogue,
+    );
+    if (plan) assemblies.push(plan);
+  }
+  return { prices, assemblies };
+}
+
+export async function getEstimateDrift(estimate: schema.Estimate, companyId: string): Promise<EstimateDrift> {
+  return planDrift(await loadDriftContext(estimate, companyId));
+}
+
+/**
+ * Pull the chosen updates in. Assemblies first (their components may also be
+ * in the price list), then prices for lines still out of step. Returns what
+ * was done, including components kept because something else points at them.
+ */
+export async function applyEstimateDrift(
+  estimate: schema.Estimate,
+  companyId: string,
+  choice: { priceItemIds: string[]; assemblyLineIds: string[] },
+): Promise<{ prices: number; assemblies: number; keptReferenced: string[] }> {
+  const pricing = { projectMarkupPercent: estimate.projectMarkupPercent, taxRate: estimate.taxRate };
+  const keptReferenced: string[] = [];
+  let assembliesDone = 0;
+
+  // ── Assemblies ──
+  if (choice.assemblyLineIds.length > 0) {
+    const ctx = await loadDriftContext(estimate, companyId);
+    const plans = planDrift(ctx).assemblies.filter((a) => choice.assemblyLineIds.includes(a.itemId));
+    const byId = new Map(ctx.items.map((i) => [i.id, i] as const));
+
+    // Components the Library dropped but a PO or proposal still points at stay,
+    // detached from the assembly, rather than failing the delete.
+    const removeIds = plans.flatMap((p) => p.components.filter((c) => c.kind === "remove").map((c) => (c as any).lineId as string));
+    const referenced = new Set<string>();
+    if (removeIds.length > 0) {
+      const [po, prop] = await Promise.all([
+        db.select({ id: schema.purchaseOrderItems.sourceEstimateItemId }).from(schema.purchaseOrderItems)
+          .where(inArray(schema.purchaseOrderItems.sourceEstimateItemId, removeIds)),
+        db.select({ id: schema.proposalItems.estimateItemId }).from(schema.proposalItems)
+          .where(inArray(schema.proposalItems.estimateItemId, removeIds)),
+      ]);
+      for (const r of [...po, ...prop]) if (r.id) referenced.add(r.id);
+    }
+
+    await db.transaction(async (tx) => {
+      for (const plan of plans) {
+        const line = byId.get(plan.itemId)!;
+        const lib = toSource(ctx.assemblies.get(plan.assemblyId)!);
+        const qty = Number(line.quantity) || 0;
+        const ctxQty = { quantity: qty, inputs: plan.inputs };
+
+        await tx.update(schema.estimateItems).set({
+          assemblyVersion: plan.toVersion,
+          assemblyInputs: plan.inputs,
+          assemblyQtyLabel: plan.qtyLabel,
+          ...(plan.unitType ? { unitType: plan.unitType } : {}),
+          updatedAt: new Date(),
+        }).where(eq(schema.estimateItems.id, line.id));
+
+        let order = Math.max(-1, ...ctx.items.filter((i) => i.parentItemId === line.id).map((i) => i.order ?? 0)) + 1;
+        for (const change of plan.components) {
+          if (change.kind === "remove") {
+            if (referenced.has(change.lineId)) {
+              keptReferenced.push(change.name);
+              await tx.update(schema.estimateItems)
+                .set({ assemblyComponentId: null, assemblyQtyMode: null, assemblyQtyFactor: null, assemblyQtyFormula: null, updatedAt: new Date() })
+                .where(eq(schema.estimateItems.id, change.lineId));
+            } else {
+              await tx.delete(schema.estimateItems).where(eq(schema.estimateItems.id, change.lineId));
+            }
+            continue;
+          }
+          if (change.kind === "add") {
+            const src = lib.components.find((c) => c.id === change.componentId)!;
+            await tx.insert(schema.estimateItems).values({
+              ...componentLineFields(src, lib, qty, pricing, src.priceListItemId ? ctx.catalogue.get(src.priceListItemId) : undefined, plan.inputs),
+              estimateId: estimate.id,
+              groupId: line.groupId,
+              parentItemId: line.id,
+              order: order++,
+            });
+            continue;
+          }
+          // update
+          const have = byId.get(change.lineId)!;
+          const n = change.next;
+          const nextQty = have.assemblyQtyOverridden
+            ? Number(have.quantity) || 0
+            : componentQuantityOf({ mode: n.qtyMode, factor: n.qtyFactor, formula: n.qtyFormula }, ctxQty) ?? (Number(have.quantity) || 0);
+          const unitCostExTax = centsToDollars(n.unitCostCents);
+          const { priceIncTax, taxAmount } = resolveEstimateStoredPrice({
+            unitCostExTax,
+            quantity: nextQty,
+            markupPercent: n.markupPercent,
+            projectMarkupPercent: estimate.projectMarkupPercent,
+            taxRate: estimate.taxRate,
+            wastagePercent: n.wastagePercent,
+            existingPriceIncTax: 0,
+          });
+          await tx.update(schema.estimateItems).set({
+            name: n.name,
+            type: n.type,
+            unitType: n.unitType,
+            unitCostExTax,
+            unitCostIncTax: null,
+            markupPercent: n.markupPercent,
+            wastagePercent: n.wastagePercent,
+            costCode: n.costCodeId,
+            priceListItemId: n.priceListItemId,
+            assemblyQtyMode: n.qtyMode,
+            assemblyQtyFactor: n.qtyFactor,
+            assemblyQtyFormula: n.qtyFormula,
+            quantity: nextQty,
+            priceIncTax,
+            taxAmount,
+            updatedAt: new Date(),
+          }).where(eq(schema.estimateItems.id, change.lineId));
+        }
+        assembliesDone++;
+      }
+    });
+    // Unchanged components still follow the (possibly new) inputs.
+    for (const plan of plans) await rescaleAssemblyComponents(plan.itemId);
+  }
+
+  // ── Prices ── re-read: an assembly update may already have moved some.
+  let pricesDone = 0;
+  if (choice.priceItemIds.length > 0) {
+    const ctx = await loadDriftContext(estimate, companyId);
+    const want = new Set(choice.priceItemIds);
+    const plans = planDrift(ctx).prices.filter((p) => want.has(p.itemId));
+    const byId = new Map(ctx.items.map((i) => [i.id, i] as const));
+    for (const p of plans) {
+      const item = byId.get(p.itemId)!;
+      const unitCostExTax = centsToDollars(p.afterCents);
+      const { priceIncTax, taxAmount } = resolveEstimateStoredPrice({
+        unitCostExTax,
+        quantity: item.quantity,
+        markupPercent: item.markupPercent,
+        projectMarkupPercent: estimate.projectMarkupPercent,
+        taxRate: estimate.taxRate,
+        wastagePercent: item.wastagePercent,
+        existingPriceIncTax: item.priceIncTax,
+      });
+      await db.update(schema.estimateItems)
+        .set({ unitCostExTax, unitCostIncTax: null, priceIncTax, taxAmount, updatedAt: new Date() })
+        .where(eq(schema.estimateItems.id, item.id));
+      pricesDone++;
+    }
+  }
+  return { prices: pricesDone, assemblies: assembliesDone, keptReferenced };
+}
+
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 export function registerAssemblyRoutes(
@@ -718,6 +945,43 @@ export function registerAssemblyRoutes(
     } catch (error: any) {
       console.error("[assemblies] delete:", error);
       res.status(500).json({ error: "Failed to delete assembly" });
+    }
+  });
+
+  /** What on this estimate has moved on since it was priced: catalogue prices and Library recipes. */
+  app.get("/api/estimates/:id/drift", requireAuth, requireTeamMember, async (req, res) => {
+    const companyId = company(req, res);
+    if (!companyId) return;
+    try {
+      const estimate = await getCompanyEstimate(req.params.id, companyId);
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+      res.json(await getEstimateDrift(estimate, companyId));
+    } catch (error: any) {
+      console.error("[assemblies] drift:", error);
+      res.status(500).json({ error: "Failed to check for updates" });
+    }
+  });
+
+  /** Pull chosen updates in. Body: { priceItemIds: string[], assemblyLineIds: string[] } */
+  app.post("/api/estimates/:id/drift/apply", requireAuth, requireTeamMember, async (req, res) => {
+    const companyId = company(req, res);
+    if (!companyId) return;
+    try {
+      const estimate = await getCompanyEstimate(req.params.id, companyId);
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+      if (estimate.isLocked) {
+        return res.status(409).json({ error: "This estimate is locked — unlock it to update prices" });
+      }
+      const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+      const result = await applyEstimateDrift(estimate, companyId, {
+        priceItemIds: ids(req.body?.priceItemIds),
+        assemblyLineIds: ids(req.body?.assemblyLineIds),
+      });
+      hooks.onEstimateItemsChanged(estimate.id);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[assemblies] drift apply:", error);
+      res.status(500).json({ error: "Failed to update" });
     }
   });
 
