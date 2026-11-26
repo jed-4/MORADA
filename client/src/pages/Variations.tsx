@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { Fragment, useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -221,9 +221,10 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // Every status is fetched and the tab filters on the page: asking the
+  // server for one status emptied the other tabs' counts and totals.
   const queryParams: Record<string, string> = {};
   if (projectIdFromUrl) queryParams.projectId = projectIdFromUrl;
-  if (selectedStatus !== "all") queryParams.status = selectedStatus;
 
   const { data: variations = [], isLoading: variationsLoading } = useQuery<Variation[]>({
     queryKey: ["/api/variations", queryParams],
@@ -356,21 +357,27 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
     rejected: variations.filter((v) => v.status === "rejected").length,
   }), [variations]);
 
-  const statusTotals = useMemo(() => ({
-    action: variations.filter(v => v.status === "action").reduce((s, v) => s + v.totalAmount, 0),
-    pending: variations.filter(v => v.status === "pending").reduce((s, v) => s + v.totalAmount, 0),
-    approved: variations.filter(v => v.status === "approved").reduce((s, v) => s + v.totalAmount, 0),
-  }), [variations]);
+  // Inc-GST cents per status. "all" leaves rejected out — a rejected
+  // variation is money the job will never see.
+  const statusTotals = useMemo(() => {
+    const t: Record<string, number> = { all: 0, draft: 0, action: 0, pending: 0, approved: 0, rejected: 0 };
+    for (const v of variations) {
+      t[v.status] = (t[v.status] ?? 0) + (v.totalAmount || 0);
+      if (v.status !== "rejected") t.all += v.totalAmount || 0;
+    }
+    return t;
+  }, [variations]);
 
   const filteredVariations = useMemo(() => {
     return variations.filter((v) => {
+      if (selectedStatus !== "all" && v.status !== selectedStatus) return false;
       const matchesSearch =
         v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         v.variationNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         v.description?.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesSearch;
     });
-  }, [variations, searchTerm]);
+  }, [variations, searchTerm, selectedStatus]);
 
   // ── DataTable column defs ───────────────────────────────────────────────
   type VariationRow = Variation & { isSeen?: boolean };
@@ -650,9 +657,14 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
                 <h3 className="font-medium text-sm" data-testid={`kanban-column-${statusOption.key}`}>
                   {statusOption.label}
                 </h3>
-                <Badge variant="secondary" data-testid={`kanban-count-${statusOption.key}`}>
-                  {columnVariations.length}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold tabular-nums" data-testid={`kanban-total-${statusOption.key}`}>
+                    {formatCurrency(columnVariations.reduce((s, v) => s + (v.totalAmount || 0), 0))}
+                  </span>
+                  <Badge variant="secondary" data-testid={`kanban-count-${statusOption.key}`}>
+                    {columnVariations.length}
+                  </Badge>
+                </div>
               </div>
               <SortableContext
                 id={statusOption.key}
@@ -741,35 +753,61 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
                 )}
                 data-testid={`tab-status-${status.key}`}
               >
-                {status.label}
-                {status.key !== "all" && count > 0 && (
-                  <span className={cn(
-                    "inline-flex items-center justify-center rounded-full text-data min-w-4 h-4 px-1",
-                    isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
-                  )}>
-                    {count}
+                <span className="flex flex-col items-start leading-tight">
+                  <span className="flex items-center gap-1.5">
+                    {status.label}
+                    {count > 0 && (
+                      <span className={cn(
+                        "inline-flex items-center justify-center rounded-full text-data min-w-4 h-4 px-1",
+                        isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                      )}>
+                        {count}
+                      </span>
+                    )}
                   </span>
-                )}
+                  <span
+                    className={cn(
+                      "text-[11px] font-semibold tabular-nums",
+                      status.key === "approved" ? "text-status-success" : isActive ? "text-foreground" : "text-muted-foreground",
+                      status.key === "rejected" && "line-through decoration-muted-foreground/50",
+                    )}
+                    data-testid={`tab-total-${status.key}`}
+                  >
+                    {formatCurrency(statusTotals[status.key] ?? 0)}
+                  </span>
+                </span>
               </button>
             );
           })}
         </div>
 
-        {/* Row 3 — Lilac summary strip */}
-        <div className="bg-primary/10 flex items-center px-4 py-2 gap-5 text-xs">
-          <div className="flex items-center gap-1.5" data-testid="text-total-action">
-            <span className="text-muted-foreground">Action</span>
-            <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.action)}</span>
-          </div>
-          <div className="w-px h-3.5 bg-primary/40" />
-          <div className="flex items-center gap-1.5" data-testid="text-total-pending">
-            <span className="text-muted-foreground">Pending</span>
-            <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.pending)}</span>
-          </div>
-          <div className="w-px h-3.5 bg-primary/40" />
-          <div className="flex items-center gap-1.5" data-testid="text-total-approved">
-            <span className="text-muted-foreground">Approved</span>
-            <span className="font-semibold tabular-nums text-status-success">{formatCurrency(statusTotals.approved)}</span>
+        {/* Row 3 — Lilac summary strip: every status's total, then the lot.
+            Amounts are inc GST; rejected is shown but left out of the total. */}
+        <div className="bg-primary/10 flex items-center px-4 py-2 gap-x-5 gap-y-1 text-xs flex-wrap">
+          {STATUS_OPTIONS.slice(1).map((status, i) => (
+            <Fragment key={status.key}>
+              {i > 0 && <div className="w-px h-3.5 bg-primary/40" />}
+              <div className="flex items-center gap-1.5" data-testid={`text-total-${status.key}`}>
+                <span className="text-muted-foreground">
+                  {status.label}
+                  <span className="text-muted-foreground/70"> ({statusCounts[status.key as keyof typeof statusCounts]})</span>
+                </span>
+                <span
+                  className={cn(
+                    "font-semibold tabular-nums",
+                    status.key === "approved" && "text-status-success",
+                    status.key === "rejected" && "text-muted-foreground line-through decoration-muted-foreground/50",
+                  )}
+                >
+                  {formatCurrency(statusTotals[status.key] ?? 0)}
+                </span>
+              </div>
+            </Fragment>
+          ))}
+          <div className="ml-auto flex items-center gap-1.5" data-testid="text-total-all">
+            <span className="text-muted-foreground">Total excl. rejected</span>
+            <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.all)}</span>
+            <span className="text-muted-foreground/70">inc GST</span>
           </div>
         </div>
 
