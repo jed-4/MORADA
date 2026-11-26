@@ -378,6 +378,28 @@ export default function VariationDetail() {
     saveTemplatesMutation.mutate([...docColumnTemplates, { id, name, columns: docColumns }]);
   };
 
+  /** The company's default layout. A variation whose own pdfColumns is unset
+   *  resolves to this (resolveVariationDocumentColumns), in the editor, the
+   *  PDF and the client portal alike. */
+  const companyDefaultColumns = useMemo(
+    () => resolveVariationDocumentColumns(null, (companySettings as any)?.variationPdfColumns),
+    [companySettings],
+  );
+  const setDefaultColumnsMutation = useMutation({
+    mutationFn: async (cols: VariationDocumentColumns) =>
+      apiRequest("/api/company-settings", "PATCH", { variationPdfColumns: cols }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      toast({
+        title: "Default layout saved",
+        description: "New variations, and any whose columns haven't been changed, now use this layout.",
+      });
+    },
+    onError: () => {
+      toast({ title: "Couldn't save the default layout", description: "Only admins can change it.", variant: "destructive" });
+    },
+  });
+
   const removeDocColumnTemplate = (id: string) => {
     saveTemplatesMutation.mutate(docColumnTemplates.filter((t) => t.id !== id));
   };
@@ -385,6 +407,14 @@ export default function VariationDetail() {
   const saveDocColumnsMutation = useMutation({
     mutationFn: async (cols: VariationDocumentColumns) =>
       apiRequest(`/api/variations/${effectiveVariationId}`, "PATCH", { pdfColumns: cols }),
+    // Keep the cached variation in step, so coming back to it shows what was
+    // saved. Written in place on purpose: setQueryData would hand the page a
+    // new `variation`, and the effect that loads it calls form.reset — wiping
+    // any unsaved edits every time a column is toggled.
+    onSuccess: (_res, cols) => {
+      const cached = queryClient.getQueryData<any>([`/api/variations/${effectiveVariationId}`]);
+      if (cached) cached.pdfColumns = cols;
+    },
     onError: () => {
       toast({
         title: "Couldn't save which columns the client sees",
@@ -517,12 +547,6 @@ export default function VariationDetail() {
         termsAndConditions: (variation as any).termsAndConditions || "",
         status: variation.status as "draft" | "action" | "pending" | "approved" | "rejected",
       });
-      setDocColumns(
-        resolveVariationDocumentColumns(
-          (variation as any).pdfColumns,
-          (companySettings as any)?.variationPdfColumns,
-        ),
-      );
       const storedGlobalMarkup = (variation as any).globalMarkupPercent;
       setGlobalMarkup(
         storedGlobalMarkup === null || storedGlobalMarkup === undefined
@@ -536,6 +560,25 @@ export default function VariationDetail() {
       }
     }
   }, [variation, isEditMode, form, companySettings]);
+
+  // Which columns the client sees: set once per variation, and once more when
+  // company settings arrive (they hold the default). NOT on every settings
+  // refetch — saving a column template or the default refetches settings, and
+  // re-resolving then from the cached variation (whose pdfColumns the
+  // background PATCH never wrote back) snapped the toggles back to stale ones.
+  const docColumnsInitKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!variation || !isEditMode) return;
+    const key = `${(variation as any).id}:${companySettings ? "settings" : "none"}`;
+    if (docColumnsInitKey.current === key) return;
+    docColumnsInitKey.current = key;
+    setDocColumns(
+      resolveVariationDocumentColumns(
+        (variation as any).pdfColumns,
+        (companySettings as any)?.variationPdfColumns,
+      ),
+    );
+  }, [variation, isEditMode, companySettings]);
 
   // Initialise selectedTemplateId when editing a variation that already has T&C content
   useEffect(() => {
@@ -3167,6 +3210,11 @@ export default function VariationDetail() {
                 onSaveTemplate={addDocColumnTemplate}
                 onDeleteTemplate={removeDocColumnTemplate}
                 savingTemplate={saveTemplatesMutation.isPending}
+                companyDefault={companyDefaultColumns}
+                onSetDefault={
+                  (user as any)?.isAdminLike ? () => setDefaultColumnsMutation.mutate(docColumns) : undefined
+                }
+                settingDefault={setDefaultColumnsMutation.isPending}
                 disabled={(variation as any).status === "approved"}
                 disabledReason="This variation is approved, so what the client sees is locked."
                 unavailable={
