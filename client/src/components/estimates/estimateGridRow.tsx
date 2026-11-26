@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/select";
 import {
   MoreVertical, Plus, Edit, Copy, FileText, Trash2, Palette, ExternalLink,
-  ChevronRight, ChevronDown, Eye, Tag, ShoppingCart, GripVertical, Ruler, Boxes, RotateCcw,
+  ChevronRight, ChevronDown, Eye, Tag, ShoppingCart, GripVertical, Ruler, Boxes, RotateCcw, RefreshCw,
 } from "lucide-react";
 import { PriceListItemPicker } from "@/components/estimates/PriceListItemPicker";
 import QuantityFormulaEditor from "@/components/estimates/QuantityFormulaEditor";
@@ -296,6 +296,10 @@ export interface EstimateGridCtx {
   calculatePricingValues: (item: EstimateItem) => any;
   formatCurrency: (amount: number) => string;
   getSubItems: (itemId: string) => EstimateItem[];
+  /** Lines out of date with the price list or the Library (phase 4): id → why. */
+  driftByItem?: Map<string, string>;
+  /** Open the "Updates available" review at this line. */
+  onOpenDrift?: (itemId: string) => void;
   /** A line by id — an assembly component reads its recipe's input names off its parent. */
   getItem?: (itemId: string) => EstimateItem | undefined;
 
@@ -351,7 +355,7 @@ const ASSEMBLY_ROLLUP_COLUMNS = new Set([
 ]);
 
 export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, columnId: string) {
-  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, handleAssemblySelect, getSubItems, getItem, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
+  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, handleAssemblySelect, getSubItems, getItem, driftByItem, onOpenDrift, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
     // The name is edited as the field "name" but lives in the column "item",
     // so both checks below match on the field the column actually edits.
     const cursorField = columnId === 'item' ? 'name' : columnId;
@@ -674,6 +678,16 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                     <p className="text-xs">Assembly — {subItems.length} components. Change the quantity and they rescale.</p>
                   </TooltipContent>
                 </Tooltip>
+              )}
+              {driftByItem?.has(item.id) && (
+                <button
+                  className="flex-shrink-0 text-amber hover:text-foreground"
+                  title={driftByItem.get(item.id)}
+                  onClick={(e) => { e.stopPropagation(); onOpenDrift?.(item.id); }}
+                  data-testid={`marker-drift-${item.id}`}
+                >
+                  <RefreshCw className="w-3 h-3" />
+                </button>
               )}
               {isAssemblyLine(item) && Array.isArray((item as any).assemblyInputs) && (item as any).assemblyInputs.length > 0 && (
                 <AssemblyInputsPopover
