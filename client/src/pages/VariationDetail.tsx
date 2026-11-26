@@ -153,6 +153,8 @@ type AllowanceLine = {
   sortOrder: number;
   /** The allowance this line was imported from (null = typed by hand / pre-0143). */
   sourceEstimateItemId?: string | null;
+  /** Apply the variation's global markup to this adjustment. New lines: on. */
+  applyGlobalMarkup: boolean;
 };
 
 type VariationColumnConfig = {
@@ -585,6 +587,9 @@ export default function VariationDetail() {
           taxable: item.taxable !== false,
           sortOrder: item.sortOrder,
           sourceEstimateItemId: (item as any).sourceEstimateItemId ?? null,
+          // Pre-0143 lines were saved false; a missing value (column not there
+          // yet) also means "not marked up", matching how they were totalled.
+          applyGlobalMarkup: (item as any).applyGlobalMarkup === true,
         }))
       );
 
@@ -714,7 +719,7 @@ export default function VariationDetail() {
   const addAllowanceLine = (prefill?: { description?: string; amount?: number }) => {
     setAllowanceLines([
       ...allowanceLines,
-      { description: prefill?.description ?? "", amount: prefill?.amount ?? 0, taxable: true, sortOrder: allowanceLines.length },
+      { description: prefill?.description ?? "", amount: prefill?.amount ?? 0, taxable: true, sortOrder: allowanceLines.length, applyGlobalMarkup: true },
     ]);
   };
 
@@ -734,6 +739,7 @@ export default function VariationDetail() {
         taxable: true,
         sortOrder: allowanceLines.length + i,
         sourceEstimateItemId: l.sourceEstimateItemId,
+        applyGlobalMarkup: true,
       })),
     ]);
     setAllowancesCollapsed(false);
@@ -1122,6 +1128,7 @@ export default function VariationDetail() {
           totalPrice: dollarsToCents(line.amount),
           taxable: line.taxable,
           itemType: "allowance",
+          applyGlobalMarkup: line.applyGlobalMarkup,
         })),
       ],
       bills: getSelectedBills(),
@@ -1294,6 +1301,7 @@ export default function VariationDetail() {
           sortOrder: i,
           itemType: "allowance",
           sourceEstimateItemId: item.sourceEstimateItemId ?? null,
+          applyGlobalMarkup: item.applyGlobalMarkup,
         });
       }
 
@@ -1392,6 +1400,7 @@ export default function VariationDetail() {
           sortOrder: i,
           itemType: "allowance",
           sourceEstimateItemId: item.sourceEstimateItemId ?? null,
+          applyGlobalMarkup: item.applyGlobalMarkup,
         };
         if (item.id) {
           await apiRequest(`/api/variation-items/${item.id}`, "PATCH", itemData);
@@ -2700,6 +2709,12 @@ export default function VariationDetail() {
                               <TableRow className="h-6 bg-muted/30">
                                 <TableHead className="text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Description</TableHead>
                                 <TableHead className="w-36 text-right text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2">Adjustment ($ ex GST)</TableHead>
+                                <TableHead
+                                  className="w-20 text-center text-data uppercase tracking-wide text-muted-foreground/50 font-normal py-0 px-2"
+                                  title="Apply this variation's global markup to the adjustment: an overrun is charged with margin, a deduction is credited with margin. Untick to charge or credit it at cost."
+                                >
+                                  Markup
+                                </TableHead>
                                 <TableHead className="w-8 py-0" />
                               </TableRow>
                             </TableHeader>
@@ -2724,6 +2739,19 @@ export default function VariationDetail() {
                                       emptyValue={0}
                                       className={cn(CELL, "doc-cell text-right")}
                                       data-testid={`input-allowance-amount-${index}`}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="px-2 py-1 text-center">
+                                    <Checkbox
+                                      checked={line.applyGlobalMarkup}
+                                      onCheckedChange={(v) => updateAllowanceLine(index, "applyGlobalMarkup", v === true)}
+                                      aria-label="Apply global markup to this adjustment"
+                                      title={
+                                        line.applyGlobalMarkup
+                                          ? "Global markup applies to this adjustment"
+                                          : "At cost: no global markup on this adjustment"
+                                      }
+                                      data-testid={`checkbox-allowance-markup-${index}`}
                                     />
                                   </TableCell>
                                   <TableCell className="px-2 py-1">

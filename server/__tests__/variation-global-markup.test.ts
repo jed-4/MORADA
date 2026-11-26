@@ -102,6 +102,34 @@ check("allowance rows are excluded from the base but stay in the subtotal", () =
   assert.strictEqual(t.subtotalCents, 90000); // 100000 - 20000 + 10000
 });
 
+check("an allowance line flagged applyGlobalMarkup joins the base (overrun)", () => {
+  const t = computeVariationTotals({
+    items: [
+      { totalPrice: 100000, taxable: true, itemType: "cost_line" },
+      { totalPrice: 20000, taxable: true, itemType: "allowance", applyGlobalMarkup: true },
+    ],
+    globalMarkupPercent: 10,
+  });
+  assert.strictEqual(t.markupBaseCents, 120000);
+  assert.strictEqual(t.globalMarkupCents, 12000);
+  assert.strictEqual(t.subtotalCents, 132000);
+});
+
+check("a flagged deduction is credited WITH margin; unflagged at cost", () => {
+  const withMargin = computeVariationTotals({
+    items: [{ totalPrice: -20000, taxable: true, itemType: "allowance", applyGlobalMarkup: true }],
+    globalMarkupPercent: 10,
+  });
+  assert.strictEqual(withMargin.globalMarkupCents, -2000);
+  assert.strictEqual(withMargin.subtotalCents, -22000);
+  const atCost = computeVariationTotals({
+    items: [{ totalPrice: -20000, taxable: true, itemType: "allowance", applyGlobalMarkup: false }],
+    globalMarkupPercent: 10,
+  });
+  assert.strictEqual(atCost.globalMarkupCents, 0);
+  assert.strictEqual(atCost.subtotalCents, -20000);
+});
+
 check("a negative allowance never enlarges itself via markup", () => {
   const t = computeVariationTotals({
     items: [{ totalPrice: -50000, taxable: true, itemType: "allowance" }],

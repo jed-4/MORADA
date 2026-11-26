@@ -32,10 +32,14 @@ export interface VariationTotalsInput {
   items: Array<{
     totalPrice: number | null | undefined; // ex-GST cents
     taxable: boolean | null | undefined;
-    /** "cost_line" | "allowance". Allowance rows are adjustments and are often
-     *  negative, so they are excluded from the global-markup base — marking up
-     *  a credit would make the client's deduction bigger. Absent = cost line. */
+    /** "cost_line" | "allowance". Absent = cost line. */
     itemType?: string | null;
+    /** Allowance rows only: include this adjustment in the global-markup base.
+     *  Lines saved since 0143 default to true (an overrun carries the builder's
+     *  margin; a deduction credits it back). The user can untick it per line —
+     *  e.g. to credit a deduction at cost. Absent/false = excluded, which is
+     *  how every allowance line written before 0143 was totalled. */
+    applyGlobalMarkup?: boolean | null;
   }>;
   bills?: Array<{
     subtotal?: number | null; // ex-GST cents (stored component)
@@ -76,8 +80,8 @@ export function computeVariationTotals(input: VariationTotalsInput): VariationTo
     const lineCents = Math.round(item.totalPrice || 0);
     subtotalCents += lineCents;
     if (item.taxable) gstCents += Math.round(lineCents * GST_MULTIPLIER);
-    // Allowance adjustments are excluded from the markup base.
-    if (item.itemType !== "allowance") {
+    // Allowance adjustments join the markup base only when their line says so.
+    if (item.itemType !== "allowance" || item.applyGlobalMarkup === true) {
       if (item.taxable) baseTaxableCents += lineCents;
       else baseNonTaxableCents += lineCents;
     }

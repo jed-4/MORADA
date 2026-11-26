@@ -2967,6 +2967,10 @@ export const variationItems = pgTable("variation_items", {
   // Null for cost lines and for allowance lines written before 0143. An
   // allowance may sit on at most one non-rejected variation.
   sourceEstimateItemId: varchar("source_estimate_item_id").references(() => estimateItems.id, { onDelete: "set null" }),
+  // Allowance lines: whether the variation's global markup applies to this
+  // adjustment (overrun charged with margin / deduction credited with margin).
+  // Ignored for cost lines, which always take it. Pre-0143 rows were set false.
+  applyGlobalMarkup: boolean("apply_global_markup").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2985,6 +2989,7 @@ export const insertVariationItemSchema = createInsertSchema(variationItems).omit
   markupPercent: z.number().optional().nullable(),
   showInPdf: z.boolean().default(true),
   sourceEstimateItemId: z.string().optional().nullable(),
+  applyGlobalMarkup: z.boolean().optional(),
 });
 
 export type InsertVariationItem = z.infer<typeof insertVariationItemSchema>;
