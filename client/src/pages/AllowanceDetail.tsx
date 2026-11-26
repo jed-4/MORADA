@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, ChevronDown, ChevronRight, CheckCircle, RotateCcw, Loader2, Link2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Plus, ChevronDown, ChevronRight, CheckCircle, RotateCcw, Loader2, Link2, RefreshCw, Lock } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,20 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "wouter";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useLeaveGuard } from "@/hooks/useLeaveGuard";
+import { describeAllowanceUse, isFinalisedAllowance, type AllowanceUse } from "@shared/allowanceUsage";
 import { useAllowanceStatusOptions } from "@/hooks/useAllowanceStatusOptions";
 import { Users, CalendarDays, Hash } from "lucide-react";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
@@ -1024,7 +1037,7 @@ export default function AllowanceDetail() {
       await refetchDetail();
       await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
     },
-    onError: () => toast({ title: "Error", description: "Failed to update line", variant: "destructive" }),
+    onError: (err: any) => toast({ title: "Failed to update line", description: errorMessage(err), variant: "destructive" }),
   });
 
   const deleteAllowanceItemMutation = useMutation({
@@ -1033,7 +1046,7 @@ export default function AllowanceDetail() {
       await refetchDetail();
       await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
     },
-    onError: () => toast({ title: "Error", description: "Failed to remove line", variant: "destructive" }),
+    onError: (err: any) => toast({ title: "Failed to remove line", description: errorMessage(err), variant: "destructive" }),
   });
 
   const deleteBillAllocationMutation = useMutation({
@@ -1042,7 +1055,7 @@ export default function AllowanceDetail() {
       await refetchDetail();
       await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
     },
-    onError: () => toast({ title: "Error", description: "Failed to remove bill allocation", variant: "destructive" }),
+    onError: (err: any) => toast({ title: "Failed to remove bill allocation", description: errorMessage(err), variant: "destructive" }),
   });
 
   const deleteTimesheetAllocationMutation = useMutation({
@@ -1051,7 +1064,7 @@ export default function AllowanceDetail() {
       await refetchDetail();
       await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
     },
-    onError: () => toast({ title: "Error", description: "Failed to remove timesheet allocation", variant: "destructive" }),
+    onError: (err: any) => toast({ title: "Failed to remove timesheet allocation", description: errorMessage(err), variant: "destructive" }),
   });
 
   const updateAllowanceStatusMutation = useMutation({
@@ -1062,8 +1075,8 @@ export default function AllowanceDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
       toast({ title: "Status updated" });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "Failed to update status", description: errorMessage(err), variant: "destructive" });
     },
   });
 
@@ -1086,7 +1099,7 @@ export default function AllowanceDetail() {
       await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "allowances"] });
       toast({ title: "Selection costing applied" });
     },
-    onError: () => toast({ title: "Error", description: "Failed to apply selection costing", variant: "destructive" }),
+    onError: (err: any) => toast({ title: "Failed to apply selection costing", description: errorMessage(err), variant: "destructive" }),
   });
 
   // ── Handlers ──
@@ -1202,6 +1215,68 @@ export default function AllowanceDetail() {
     s.has(key) ? s.delete(key) : s.add(key);
     setSelectedTimesheetKeys(s);
   };
+
+  // ── Lock + "finalise before you leave" ──
+  // An allowance on a variation or client invoice is locked: its cost and
+  // status can't change (the server refuses too). Otherwise, any change to a
+  // finalised allowance reopens it (server-side), and leaving the page while
+  // it's open after a change asks whether to finalise it.
+  const usedOn: AllowanceUse[] = (allowance as any)?.usedOn ?? [];
+  const isLocked = usedOn.length > 0;
+  const lockIsPermanent = usedOn.some((u) => u.permanent);
+  const currentStatus = allowance?.item.allowanceStatus;
+  const isFinal = isFinalisedAllowance(currentStatus);
+
+  // The allowance's cost + status when this visit started. A difference means
+  // something changed while the user was here.
+  const signature = allowance ? `${allowance.actualCost}|${currentStatus}` : null;
+  const openedAs = useRef<{ id: string; sig: string } | null>(null);
+  if (signature && allowanceId && openedAs.current?.id !== allowanceId) {
+    openedAs.current = { id: allowanceId, sig: signature };
+  }
+  const changedThisVisit = !!signature && !!openedAs.current && openedAs.current.sig !== signature;
+  const guardActive = !!allowance && !isLocked && !isFinal && changedThisVisit;
+
+  // Tell the user when one of their changes reopened a finalised allowance.
+  const prevStatus = useRef<string | undefined>(undefined);
+  const manualReopen = useRef(false);
+  useEffect(() => {
+    const was = prevStatus.current;
+    prevStatus.current = currentStatus;
+    if (was === undefined || currentStatus === undefined) return;
+    if (isFinalisedAllowance(was) && !isFinalisedAllowance(currentStatus)) {
+      if (manualReopen.current) {
+        manualReopen.current = false;
+        return;
+      }
+      toast({
+        title: "Allowance reopened",
+        description: "It changed, so it's back to In Progress. Finalise it again when you're done.",
+      });
+    }
+  }, [currentStatus]);
+
+  const [leaveProceed, setLeaveProceed] = useState<null | (() => void)>(null);
+  useLeaveGuard(guardActive, (proceed) => setLeaveProceed(() => proceed));
+  const [finalisingToLeave, setFinalisingToLeave] = useState(false);
+  const finaliseAndLeave = async () => {
+    const proceed = leaveProceed;
+    setFinalisingToLeave(true);
+    try {
+      await updateAllowanceStatusMutation.mutateAsync("finalized");
+      setLeaveProceed(null);
+      proceed?.();
+    } catch {
+      // the mutation's onError has already shown why; stay on the page
+    } finally {
+      setFinalisingToLeave(false);
+    }
+  };
+
+  const hrefForUse = (u: AllowanceUse) =>
+    u.kind === "variation"
+      ? `/projects/${projectId}/variations/${u.id}`
+      : `/projects/${projectId}/client-invoices/${u.id}`;
 
   // ── Loading ──
   if (isLoading) {
@@ -1431,7 +1506,12 @@ export default function AllowanceDetail() {
           }}
           data-testid="header-allowance"
           primaryAction={
-            item.allowanceStatus !== "finalized" ? (
+            isLocked ? (
+              <span className={`${hbtn} text-muted-foreground cursor-default`} data-testid="badge-allowance-locked">
+                <Lock className="h-3 w-3" />
+                Locked
+              </span>
+            ) : item.allowanceStatus !== "finalized" ? (
               <button
                 type="button"
                 className={hbtn}
@@ -1447,7 +1527,10 @@ export default function AllowanceDetail() {
                 type="button"
                 className={hbtn}
                 disabled={updateAllowanceStatusMutation.isPending}
-                onClick={() => updateAllowanceStatusMutation.mutate("in_progress")}
+                onClick={() => {
+                  manualReopen.current = true;
+                  updateAllowanceStatusMutation.mutate("in_progress");
+                }}
                 data-testid="button-reopen-allowance"
               >
                 {updateAllowanceStatusMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
@@ -1468,6 +1551,38 @@ export default function AllowanceDetail() {
       {/* ── Body ── */}
       <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto px-3 py-3 space-y-3">
+
+        {isLocked && (
+          <div
+            className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs"
+            style={{ borderColor: "hsl(var(--amber) / 0.4)", background: "hsl(var(--amber-light))" }}
+            data-testid="banner-allowance-locked"
+          >
+            <Lock className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" style={{ color: "hsl(var(--amber))" }} />
+            <div className="text-foreground">
+              <span className="font-medium">Locked. </span>
+              This allowance is on{" "}
+              {usedOn.map((u, i) => (
+                <span key={`${u.kind}-${u.id}`}>
+                  {i > 0 && (i === usedOn.length - 1 ? " and " : ", ")}
+                  <Link href={hrefForUse(u)} className="underline underline-offset-2 font-medium">
+                    {u.kind === "invoice" ? "invoice " : ""}
+                    {describeAllowanceUse(u)}
+                  </Link>
+                  {u.permanent ? (u.kind === "variation" ? " (approved)" : " (issued)") : ""}
+                </span>
+              ))}
+              .{" "}
+              {lockIsPermanent
+                ? "Its cost and status can no longer be changed."
+                : "Its cost and status can't be changed while it's there. Remove it from there to unlock it."}
+            </div>
+          </div>
+        )}
+
+        {/* A disabled fieldset turns off every input and button in the body
+            while locked; expanding rows still works (those are plain divs). */}
+        <fieldset disabled={isLocked} className="m-0 min-w-0 border-0 p-0 space-y-3 disabled:opacity-90">
 
         {/* ── PS SECTIONS ─────────────────────────────────────────────────── */}
         {!isPrimeCost && (
@@ -1857,15 +1972,15 @@ export default function AllowanceDetail() {
                   columns={customLineColumns}
                   rows={customLineRows}
                   costCodes={costCodes}
-                  onAdd={(line) => setPendingLines([...pendingLines, { ...line, id: `custom-${Date.now()}-${pendingLines.length}` }])}
-                  onUpdate={(id, line) => {
+                  onAdd={isLocked ? undefined : (line) => setPendingLines([...pendingLines, { ...line, id: `custom-${Date.now()}-${pendingLines.length}` }])}
+                  onUpdate={isLocked ? undefined : (id, line) => {
                     if (pendingLines.some((l) => l.id === id)) {
                       setPendingLines(pendingLines.map((l) => (l.id === id ? { ...line, id } : l)));
                     } else {
                       updateAllowanceItemMutation.mutate({ id, line });
                     }
                   }}
-                  onDelete={handleDeleteCustomLine}
+                  onDelete={isLocked ? undefined : handleDeleteCustomLine}
                   addLabel="Add line"
                 />
               </div>
@@ -2027,15 +2142,15 @@ export default function AllowanceDetail() {
                     })),
                   ]}
                   costCodes={costCodes}
-                  onAdd={(line) => setPcPendingLines([...pcPendingLines, { ...line, id: `pc-${Date.now()}-${pcPendingLines.length}` }])}
-                  onUpdate={(id, line) => {
+                  onAdd={isLocked ? undefined : (line) => setPcPendingLines([...pcPendingLines, { ...line, id: `pc-${Date.now()}-${pcPendingLines.length}` }])}
+                  onUpdate={isLocked ? undefined : (id, line) => {
                     if (pcPendingLines.some((l) => l.id === id)) {
                       setPcPendingLines(pcPendingLines.map((l) => (l.id === id ? { ...line, id } : l)));
                     } else {
                       updateAllowanceItemMutation.mutate({ id, line });
                     }
                   }}
-                  onDelete={(id) => {
+                  onDelete={isLocked ? undefined : (id) => {
                     if (pcPendingLines.some((l) => l.id === id)) {
                       setPcPendingLines(pcPendingLines.filter((l) => l.id !== id));
                     } else {
@@ -2268,9 +2383,48 @@ export default function AllowanceDetail() {
           </div>
         )}
 
+        </fieldset>
       </div>
 
       {/* ── MODALS ─────────────────────────────────────────────────────────── */}
+
+      <AlertDialog open={!!leaveProceed} onOpenChange={(o) => { if (!o && !finalisingToLeave) setLeaveProceed(null); }}>
+        <AlertDialogContent data-testid="dialog-finalise-before-leave">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark this allowance as finalised?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You changed {item.name} and it's {statusInfo.name.toLowerCase()}. Only finalised allowances can go on a
+              variation or client invoice.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel disabled={finalisingToLeave} data-testid="button-leave-stay">Stay</AlertDialogCancel>
+            <Button
+              variant="outline"
+              disabled={finalisingToLeave}
+              onClick={() => {
+                const proceed = leaveProceed;
+                setLeaveProceed(null);
+                proceed?.();
+              }}
+              data-testid="button-leave-open"
+            >
+              Leave open
+            </Button>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void finaliseAndLeave();
+              }}
+              disabled={finalisingToLeave}
+              data-testid="button-leave-finalise"
+            >
+              {finalisingToLeave ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+              Finalise and leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Bills pickers — one component, both allowance types */}
       <BillsPickerModal

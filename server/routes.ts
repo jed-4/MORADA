@@ -10,6 +10,14 @@ import { sentryEnabled } from "./instrument";
 import { storage, InvalidProposalStateError, calendarDateMidnightUtcInTz, formatHHmmInTz } from "./storage";
 import { geofenceSettingsOf, rankSiteFences, resolveSiteVisitTime, StaleSiteVisitTimeError, SITE_FENCE_RECENT_DAYS } from "@shared/siteVisits";
 import { recordSiteArrival, recordSiteLeave, listSiteVisits } from "./services/siteVisits";
+import {
+  allowanceRefsFor,
+  assertAllowanceEditable,
+  getAllowanceUsage,
+  guardAllowanceEdit,
+  reopenIfFinalised,
+} from "./services/allowanceUsage";
+import { describeAllowanceUse, isFinalisedAllowance } from "@shared/allowanceUsage";
 import { resolveClockTime, StaleClientTimeError } from "./clockTime";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
 import { computePOTotalsCents, hasPricedLine, poLineCents } from "@shared/poTotals";
@@ -9968,6 +9976,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!["pending", "in_progress", "finalized"].includes(allowanceStatus)) {
         return res.status(400).json({ error: "Invalid allowanceStatus value" });
       }
+      // On a variation / client invoice the status is pinned at finalised.
+      if (allowanceStatus !== "finalized" && !(await guardAllowanceEdit(res, req.params.id))) return;
 
       const { estimateItems: estimateItemsTbl } = await import("@shared/schema");
       const result = await db.update(estimateItemsTbl)
@@ -18366,6 +18376,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sortOrder: 0,
       };
 
+      // A locked allowance (on a variation / client invoice) keeps the cost it
+      // was billed at — the selection change does not flow through.
+      await assertAllowanceEditable(selection.estimateItemId);
+
       const existingItems = await storage.getAllowanceItems(selection.estimateItemId);
       const existing = existingItems.find((i: any) => i.sourceSelectionId === selectionId);
       if (existing) {
@@ -18373,6 +18387,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         await storage.createAllowanceItem(payload as any);
       }
+      await reopenIfFinalised(selection.estimateItemId);
     } catch (err: any) {
       console.warn("[selection→allowance sync] failed:", err?.message);
     }
@@ -23596,7 +23611,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const previous = await getOwnedBill(req, res, req.params.id);
       if (!previous) return;
+      // Deleting the bill takes its cost off any allowance it was allocated to.
+      const billAllowanceIds = Array.from(new Set(
+        (await storage.getBillLineItemAllowancesByBillId(req.params.id)).map((a) => a.estimateItemId),
+      ));
+      for (const id of billAllowanceIds) {
+        if (!(await guardAllowanceEdit(res, id))) return;
+      }
       await storage.deleteBill(req.params.id);
+      for (const id of billAllowanceIds) await reopenIfFinalised(id);
       if ((previous as any)?.matchedSitePOId) {
         await recomputePOStatusFromBills((previous as any).matchedSitePOId);
       }
@@ -23946,6 +23969,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Allowances whose cost this save moves. One that sits on a variation or
+      // client invoice is locked; checked up front, before anything is written.
+      const touchedAllowances = new Set<string>();
+      {
+        const links = await storage.getBillLineItemAllowancesByBillId(billId);
+        const parsedById = new Map(parsed.filter((p) => p.id).map((p) => [p.id!, p]));
+        for (const link of links) {
+          const p = parsedById.get(link.billLineItemId);
+          if (!p || p.allowanceItemId !== link.estimateItemId || ((p.data as any).total ?? 0) !== link.amount) {
+            touchedAllowances.add(link.estimateItemId);
+          }
+        }
+        for (const p of parsed) {
+          if (!p.allowanceItemId) continue;
+          const link = p.id ? links.find((a) => a.billLineItemId === p.id) : undefined;
+          if (!link || link.estimateItemId !== p.allowanceItemId || ((p.data as any).total ?? 0) !== link.amount) {
+            touchedAllowances.add(p.allowanceItemId);
+          }
+        }
+        for (const id of Array.from(touchedAllowances)) {
+          if (!(await guardAllowanceEdit(res, id))) return;
+        }
+      }
+
       const keptIds = new Set(parsed.map((p) => p.id).filter(Boolean) as string[]);
       for (const line of existing) {
         if (!keptIds.has(line.id)) await storage.deleteBillLineItem(line.id);
@@ -23979,6 +24026,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.deleteBillLineItemAllowance(currentLink.id);
         }
       }
+
+      for (const id of Array.from(touchedAllowances)) await reopenIfFinalised(id);
 
       // Once, at the end — not once per line.
       await storage.recomputeBillTotals(billId).catch((e) =>
@@ -24050,7 +24099,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (await billIsPaidLocked(parentBillId)) {
         return res.status(409).json({ error: PAID_BILL_LOCK_MESSAGE, code: "BILL_HAS_PAYMENTS" });
       }
+      const lineAllowanceIds = Array.from(new Set(
+        (await storage.getBillLineItemAllowancesByBillId(parentBillId))
+          .filter((a) => a.billLineItemId === req.params.id)
+          .map((a) => a.estimateItemId),
+      ));
+      for (const id of lineAllowanceIds) {
+        if (!(await guardAllowanceEdit(res, id))) return;
+      }
       await storage.deleteBillLineItem(req.params.id);
+      for (const id of lineAllowanceIds) await reopenIfFinalised(id);
       void maybeAutoPushParentBill(parentBillId, (req as any).user?.companyId);
       await recalcBudgetForBill(parentBillId);
       res.status(204).send();
@@ -24448,8 +24506,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       if (!(await allowanceRefsOwned(req, res, validationResult.data))) return;
+      if (!(await guardAllowanceEdit(res, validationResult.data.estimateItemId))) return;
 
       const allowance = await storage.createBillLineItemAllowance(validationResult.data);
+      await reopenIfFinalised(validationResult.data.estimateItemId);
       res.status(201).json(allowance);
     } catch (error) {
       res.status(500).json({ error: "Failed to create bill line item allowance" });
@@ -24460,12 +24520,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { billLineItemAllowances: aTbl, billLineItems: bliTbl } = await import("@shared/schema");
       const [aRow] = await db
-        .select({ billId: bliTbl.billId })
+        .select({ billId: bliTbl.billId, estimateItemId: aTbl.estimateItemId })
         .from(aTbl)
         .innerJoin(bliTbl, eq(aTbl.billLineItemId, bliTbl.id))
         .where(eq(aTbl.id, req.params.id));
       if (!aRow) return res.status(404).json({ error: "Bill line item allowance not found" });
       if (!(await getOwnedBill(req, res, aRow.billId, "Bill line item allowance not found"))) return;
+      if (!(await guardAllowanceEdit(res, aRow.estimateItemId))) return;
 
       const validationResult = insertBillLineItemAllowanceSchema.partial().safeParse(req.body);
       if (!validationResult.success) {
@@ -24476,10 +24537,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (!(await allowanceRefsOwned(req, res, validationResult.data))) return;
+      const movingTo = validationResult.data.estimateItemId;
+      if (movingTo && movingTo !== aRow.estimateItemId && !(await guardAllowanceEdit(res, movingTo))) return;
       const allowance = await storage.updateBillLineItemAllowance(req.params.id, validationResult.data);
       if (!allowance) {
         return res.status(404).json({ error: "Bill line item allowance not found" });
       }
+      await reopenIfFinalised(aRow.estimateItemId);
+      if (movingTo && movingTo !== aRow.estimateItemId) await reopenIfFinalised(movingTo);
       res.json(allowance);
     } catch (error) {
       res.status(500).json({ error: "Failed to update bill line item allowance" });
@@ -24490,13 +24555,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { billLineItemAllowances: aTbl, billLineItems: bliTbl } = await import("@shared/schema");
       const [aRow] = await db
-        .select({ billId: bliTbl.billId })
+        .select({ billId: bliTbl.billId, estimateItemId: aTbl.estimateItemId })
         .from(aTbl)
         .innerJoin(bliTbl, eq(aTbl.billLineItemId, bliTbl.id))
         .where(eq(aTbl.id, req.params.id));
       if (!aRow) return res.status(404).json({ error: "Bill line item allowance not found" });
       if (!(await getOwnedBill(req, res, aRow.billId, "Bill line item allowance not found"))) return;
+      if (!(await guardAllowanceEdit(res, aRow.estimateItemId))) return;
       await storage.deleteBillLineItemAllowance(req.params.id);
+      await reopenIfFinalised(aRow.estimateItemId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete bill line item allowance" });
@@ -25410,6 +25477,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * An allowance line imported onto a variation: the allowance must be on the
+   * variation's project, finalised, and on no other live variation (nor twice
+   * on this one). Sends the error and returns false when it isn't allowed.
+   * Only called when the line's source allowance is new or changing.
+   */
+  async function checkVariationAllowanceSource(
+    res: any,
+    variation: { id: string; projectId: string },
+    sourceEstimateItemId: string,
+    selfItemId?: string,
+  ): Promise<boolean> {
+    const [ref] = await allowanceRefsFor([sourceEstimateItemId]);
+    if (!ref || ref.projectId !== variation.projectId) {
+      res.status(400).json({ error: "That allowance isn't on this variation's project" });
+      return false;
+    }
+    if (!isFinalisedAllowance(ref.allowanceStatus)) {
+      res.status(409).json({ error: "Only finalised allowances can be added to a variation. Finalise it on the Allowances page first.", code: "ALLOWANCE_NOT_FINALISED" });
+      return false;
+    }
+    const { variationItems: viTbl } = await import("@shared/schema");
+    const onThis = await db.select({ id: viTbl.id }).from(viTbl).where(and(
+      eq(viTbl.variationId, variation.id),
+      eq(viTbl.sourceEstimateItemId, sourceEstimateItemId),
+    ));
+    if (onThis.some((r) => r.id !== selfItemId)) {
+      res.status(409).json({ error: "That allowance is already on this variation.", code: "ALLOWANCE_ALREADY_ON_VARIATION" });
+      return false;
+    }
+    const elsewhere = ((await getAllowanceUsage([ref], { excludeVariationId: variation.id })).get(ref.id) ?? [])
+      .filter((u) => u.kind === "variation");
+    if (elsewhere.length > 0) {
+      res.status(409).json({
+        error: `That allowance is already on ${describeAllowanceUse(elsewhere[0])}. An allowance can only be on one variation.`,
+        code: "ALLOWANCE_ON_OTHER_VARIATION",
+        usedOn: elsewhere,
+      });
+      return false;
+    }
+    return true;
+  }
+
   app.post("/api/variations/:id/items", async (req, res) => {
     try {
       const ownedVariation = await getOwnedVariation(req, res, req.params.id);
@@ -25422,10 +25532,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         variationId: req.params.id
       });
       if (!validationResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: fromZodError(validationResult.error).toString() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: fromZodError(validationResult.error).toString()
         });
+      }
+      if (validationResult.data.sourceEstimateItemId) {
+        if (validationResult.data.itemType !== "allowance") {
+          return res.status(400).json({ error: "Only allowance lines can link to an allowance" });
+        }
+        if (!(await checkVariationAllowanceSource(res, ownedVariation as any, validationResult.data.sourceEstimateItemId))) return;
       }
 
       // Cost-line client prices are derived server-side from the builder cost
@@ -25487,6 +25603,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: "Validation failed",
           details: fromZodError(validationResult.error).toString()
         });
+      }
+      const nextSource = validationResult.data.sourceEstimateItemId;
+      if (nextSource && nextSource !== viRow.sourceEstimateItemId) {
+        if ((validationResult.data.itemType ?? viRow.itemType) !== "allowance") {
+          return res.status(400).json({ error: "Only allowance lines can link to an allowance" });
+        }
+        if (!(await checkVariationAllowanceSource(res, parentVariation as any, nextSource, viRow.id))) return;
       }
 
       // Same server-side pricing rule as item create: recompute the stored
@@ -29067,6 +29190,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Only a finalised allowance can be claimed on a client invoice. Allowances
+   * already on this invoice are left alone (they are locked at finalised, and
+   * older invoices may hold unfinalised ones from before this rule).
+   */
+  async function checkInvoiceAllowancesFinalised(
+    res: any,
+    estimateItemIds: string[],
+    alreadyOnInvoice: Set<string> = new Set(),
+  ): Promise<boolean> {
+    const added = estimateItemIds.filter((id) => id && !alreadyOnInvoice.has(id));
+    if (added.length === 0) return true;
+    const refs = await allowanceRefsFor(added);
+    const notFinal = refs.filter((r) => !isFinalisedAllowance(r.allowanceStatus));
+    if (notFinal.length > 0) {
+      res.status(409).json({
+        error: `Only finalised allowances can be claimed on an invoice: ${notFinal.map((r) => r.name || "an allowance").join(", ")} isn't finalised yet.`,
+        code: "ALLOWANCE_NOT_FINALISED",
+      });
+      return false;
+    }
+    return true;
+  }
+
   app.post("/api/client-invoices/full", requireAuth, requireTeamPermission("projects.invoices", "add"), async (req, res) => {
     try {
       const { invoice: invoiceBody, ...childrenBody } = (req.body ?? {}) as any;
@@ -29093,6 +29240,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
       if (totalsMismatch) return res.status(400).json({ error: totalsMismatch });
       if (!(await verifyInvoiceChildrenOwnership(req, res, children))) return;
+      if (!(await checkInvoiceAllowancesFinalised(res, (children.allowances ?? []).map((a: any) => a.estimateItemId)))) return;
 
       // Same self-healing invoice-number retry as the plain create route.
       let payload = data;
@@ -29151,6 +29299,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const totalsMismatch = invoiceTotalsBreakdownMismatch(data);
       if (totalsMismatch) return res.status(400).json({ error: totalsMismatch });
       if (!(await verifyInvoiceChildrenOwnership(req, res, children))) return;
+      {
+        const onThisInvoice = new Set((await storage.getInvoiceAllowances(req.params.id)).map((a: any) => a.estimateItemId));
+        if (!(await checkInvoiceAllowancesFinalised(res, (children.allowances ?? []).map((a: any) => a.estimateItemId), onThisInvoice))) return;
+      }
 
       // Leaving draft locks the invoice to the contract price at that moment.
       if (
@@ -29544,6 +29696,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const estimateItem = await storage.getEstimateItem(validationResult.data.estimateItemId);
       if (!estimateItem) return res.status(404).json({ error: "Allowance item not found" });
       if (!(await getOwnedEstimate(req, res, (estimateItem as any).estimateId, "Allowance item not found"))) return;
+      if (!(await checkInvoiceAllowancesFinalised(res, [validationResult.data.estimateItemId]))) return;
 
       const allowance = await storage.createInvoiceAllowance(validationResult.data);
       res.status(201).json(allowance);
@@ -36756,6 +36909,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const selection = await storage.getSelectionByEstimateItemId(allowanceId);
       if (!selection) return res.status(404).json({ error: "No selection linked to this allowance" });
+      if (!(await guardAllowanceEdit(res, allowanceId))) return;
       await syncSelectionCostingToAllowance(selection.id);
       res.json({ ok: true });
     } catch (error: any) {
@@ -38041,7 +38195,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (!(await getOwnedTimesheet(req, res, validationResult.data.timesheetId))) return;
+      if (!(await guardAllowanceEdit(res, validationResult.data.estimateItemId))) return;
       const allowance = await storage.createTimesheetAllowance(validationResult.data);
+      await reopenIfFinalised(validationResult.data.estimateItemId);
       res.status(201).json(allowance);
     } catch (error: any) {
       // Surface the underlying message. A bare "Failed to create..." hides the
@@ -38067,10 +38223,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Timesheet allowance not found" });
       }
       if (!(await getOwnedTimesheet(req, res, existingAllowance.timesheetId, "Timesheet allowance not found"))) return;
+      const tsMovingTo = validationResult.data.estimateItemId;
+      if (!(await guardAllowanceEdit(res, existingAllowance.estimateItemId))) return;
+      if (tsMovingTo && tsMovingTo !== existingAllowance.estimateItemId && !(await guardAllowanceEdit(res, tsMovingTo))) return;
       const allowance = await storage.updateTimesheetAllowance(req.params.id, validationResult.data);
       if (!allowance) {
         return res.status(404).json({ error: "Timesheet allowance not found" });
       }
+      await reopenIfFinalised(existingAllowance.estimateItemId);
+      if (tsMovingTo && tsMovingTo !== existingAllowance.estimateItemId) await reopenIfFinalised(tsMovingTo);
       res.json(allowance);
     } catch (error) {
       res.status(500).json({ error: "Failed to update timesheet allowance" });
@@ -38115,7 +38276,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           amount: timesheetTotalExGstCents(ts), // EX GST cents — labour carries no GST
         }));
 
+      if (rows.length > 0 && !(await guardAllowanceEdit(res, estimateItemId))) return;
       const created = await storage.createTimesheetAllowancesBulk(rows);
+      if (created.length > 0) await reopenIfFinalised(estimateItemId);
       res.json({
         allocated: created.length,
         skippedAlreadyAllocated: validSheets.length - rows.length,
@@ -38134,7 +38297,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Timesheet allowance not found" });
       }
       if (!(await getOwnedTimesheet(req, res, existingAllowance.timesheetId, "Timesheet allowance not found"))) return;
+      if (!(await guardAllowanceEdit(res, existingAllowance.estimateItemId))) return;
       await storage.deleteTimesheetAllowance(req.params.id);
+      await reopenIfFinalised(existingAllowance.estimateItemId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete timesheet allowance" });
@@ -38165,8 +38330,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Ownership: the target estimate item must belong to the caller's company.
       if (!(await getOwnedEstimateItem(req, res, validationResult.data.estimateItemId, "Estimate item not found"))) return;
+      if (!(await guardAllowanceEdit(res, validationResult.data.estimateItemId))) return;
 
       const item = await storage.createAllowanceItem(validationResult.data);
+      await reopenIfFinalised(validationResult.data.estimateItemId);
       res.status(201).json(item);
     } catch (error: any) {
       console.error("[allowance-items] create failed:", error?.message);
@@ -38189,10 +38356,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (!(await guardAllowanceEdit(res, (existing as any).estimateItemId))) return;
       const item = await storage.updateAllowanceItem(req.params.id, validationResult.data);
       if (!item) {
         return res.status(404).json({ error: "Allowance item not found" });
       }
+      await reopenIfFinalised((existing as any).estimateItemId);
       res.json(item);
     } catch (error) {
       res.status(500).json({ error: "Failed to update allowance item" });
@@ -38205,8 +38374,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existing = await storage.getAllowanceItemById(req.params.id);
       if (!existing) return res.status(404).json({ error: "Allowance item not found" });
       if (!(await getOwnedEstimateItem(req, res, (existing as any).estimateItemId, "Allowance item not found"))) return;
+      if (!(await guardAllowanceEdit(res, (existing as any).estimateItemId))) return;
 
       await storage.deleteAllowanceItem(req.params.id);
+      await reopenIfFinalised((existing as any).estimateItemId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete allowance item" });
