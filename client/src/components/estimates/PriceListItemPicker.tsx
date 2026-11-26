@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Tag } from "lucide-react";
+import { Boxes, Tag } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { centsToDollars, exGstFromInc, formatCents } from "@shared/money";
-import type { PriceListItem } from "@shared/schema";
+import { centsToDollars, dollarsToCents, exGstFromInc, formatCents } from "@shared/money";
+import type { AssemblyWithComponents, PriceListItem } from "@shared/schema";
+import { assemblyRateBreakdown } from "@shared/assemblies";
 
 /** A catalogue row as the lookup endpoint returns it — item plus its book. */
 export type PriceListLookupItem = PriceListItem & {
@@ -99,6 +100,12 @@ interface PriceListItemPickerProps {
   onChange: (value: string) => void;
   /** A catalogue row was chosen. The caller writes cost + link to the line. */
   onSelect: (item: PriceListLookupItem) => void;
+  /**
+   * An assembly was chosen. Passing this turns assemblies on: they list FIRST,
+   * above the price-list items, marked with the assembly icon. Leave it out
+   * where a line can't become an assembly (dialogs, templates, sub-items).
+   */
+  onSelectAssembly?: (assembly: AssemblyWithComponents) => void;
   /** Enter/blur with no catalogue row chosen — save the typed text as-is. */
   onCommit?: () => void;
   /**
@@ -139,6 +146,7 @@ export function PriceListItemPicker({
   value,
   onChange,
   onSelect,
+  onSelectAssembly,
   onCommit,
   onCancel,
   onKeyDown,
@@ -183,6 +191,34 @@ export function PriceListItemPicker({
     staleTime: 30_000,
   });
 
+  // Assemblies are few (a company's recipes, not a catalogue), so the whole list
+  // loads once and filters here. Same cache key as the Add-assembly dialog.
+  const assembliesOn = !!onSelectAssembly;
+  const { data: allAssemblies = [] } = useQuery<AssemblyWithComponents[]>({
+    queryKey: ["/api/assemblies", { includeArchived: false }],
+    queryFn: async () => {
+      const res = await fetch("/api/assemblies", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: assembliesOn && enabled,
+    staleTime: 30_000,
+  });
+  const assemblyResults = useMemo(() => {
+    if (!assembliesOn || !enabled) return [];
+    const words = term.toLowerCase().split(/\s+/).filter(Boolean);
+    return allAssemblies
+      .filter((a) => words.every((w) => a.name.toLowerCase().includes(w)))
+      .slice(0, 5);
+  }, [assembliesOn, enabled, term, allAssemblies]);
+
+  // One list for the keyboard: assemblies first, then price-list items.
+  type Option = { kind: "assembly"; assembly: AssemblyWithComponents } | { kind: "item"; item: PriceListLookupItem };
+  const options: Option[] = useMemo(() => [
+    ...assemblyResults.map((assembly) => ({ kind: "assembly" as const, assembly })),
+    ...results.map((item) => ({ kind: "item" as const, item })),
+  ], [assemblyResults, results]);
+
   // Reopen whenever fresh results arrive for what the user is currently typing.
   // Keyed off the term, not the array, so dismissing with Escape stays dismissed
   // until the next keystroke.
@@ -191,7 +227,7 @@ export function PriceListItemPicker({
     setHighlight(noHighlight);
   }, [term, enabled, linked, noHighlight]);
 
-  const visible = open && enabled && results.length > 0;
+  const visible = open && enabled && options.length > 0;
 
   // The list is portalled to <body> because the estimate grid clips it otherwise:
   // the name cell is overflow-hidden, and so are five more ancestors up to <main>.
@@ -214,12 +250,13 @@ export function PriceListItemPicker({
       window.removeEventListener("scroll", measure, true);
       window.removeEventListener("resize", measure);
     };
-  }, [visible, measure, results.length]);
+  }, [visible, measure, options.length]);
 
-  const choose = (item: PriceListLookupItem) => {
+  const choose = (option: Option) => {
     selectingRef.current = false;
     setOpen(false);
-    onSelect(item);
+    if (option.kind === "assembly") onSelectAssembly?.(option.assembly);
+    else onSelect(option.item);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -229,19 +266,19 @@ export function PriceListItemPicker({
       if (e.key === "ArrowDown") {
         e.preventDefault();
         e.stopPropagation();
-        setHighlight(h => (h + 1 + results.length) % results.length);
+        setHighlight(h => (h + 1 + options.length) % options.length);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
         e.stopPropagation();
-        setHighlight(h => (h < 0 ? results.length - 1 : (h - 1 + results.length) % results.length));
+        setHighlight(h => (h < 0 ? options.length - 1 : (h - 1 + options.length) % options.length));
         return;
       }
       if (e.key === "Enter" && highlight >= 0) {
         e.preventDefault();
         e.stopPropagation();
-        choose(results[highlight]);
+        choose(options[highlight]);
         return;
       }
       if (e.key === "Enter") {
@@ -319,16 +356,30 @@ export function PriceListItemPicker({
           onPointerDown={e => e.stopPropagation()}
           data-testid="list-price-list-suggestions"
         >
-          {results.map((item, i) => (
-            <PriceListOption
-              key={item.id}
-              item={item}
-              active={i === highlight}
-              onHover={() => setHighlight(i)}
-              onPick={() => choose(item)}
-              onPickStart={() => { selectingRef.current = true; }}
-            />
-          ))}
+          {assemblyResults.length > 0 && (
+            <li role="presentation" className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Assemblies
+            </li>
+          )}
+          {options.map((option, i) => {
+            const common = {
+              active: i === highlight,
+              onHover: () => setHighlight(i),
+              onPick: () => choose(option),
+              onPickStart: () => { selectingRef.current = true; },
+            };
+            if (option.kind === "assembly") {
+              return <AssemblyOption key={`a-${option.assembly.id}`} assembly={option.assembly} {...common} />;
+            }
+            return (
+              <PriceListOptionWithDivider
+                key={option.item.id}
+                item={option.item}
+                first={i === assemblyResults.length && assemblyResults.length > 0}
+                {...common}
+              />
+            );
+          })}
         </ul>,
         document.body,
       )}
@@ -377,6 +428,69 @@ function PriceListOption({
           style={item.listColour ? { color: item.listColour } : undefined}
         />
         {formatCents(cents)} / {item.unitType}
+      </span>
+    </li>
+  );
+}
+
+function PriceListOptionWithDivider({ first, ...props }: Parameters<typeof PriceListOption>[0] & { first: boolean }) {
+  if (!first) return <PriceListOption {...props} />;
+  return (
+    <>
+      <li role="presentation" className="mt-1 border-t border-border px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Price list
+      </li>
+      <PriceListOption {...props} />
+    </>
+  );
+}
+
+function AssemblyOption({
+  assembly,
+  active,
+  onHover,
+  onPick,
+  onPickStart,
+}: {
+  assembly: AssemblyWithComponents;
+  active: boolean;
+  onHover: () => void;
+  onPick: () => void;
+  onPickStart: () => void;
+}) {
+  // Per-unit rate on the right where a price-list row shows its unit cost;
+  // fixed costs on the second line so the name keeps its room.
+  const { perUnitExTax, fixedExTax } = useMemo(() => assemblyRateBreakdown(assembly.components), [assembly]);
+  const money = (d: number) => formatCents(dollarsToCents(d), { alwaysShowDecimals: true });
+  const n = assembly.components.length;
+  return (
+    <li
+      role="option"
+      aria-selected={active}
+      className={cn(
+        "flex cursor-pointer items-start justify-between gap-3 px-2 py-1.5 text-xs",
+        active && "bg-primary/[0.08]",
+      )}
+      onMouseDown={e => { e.preventDefault(); onPickStart(); }}
+      onMouseEnter={onHover}
+      onClick={onPick}
+      data-testid={`option-assembly-${assembly.id}`}
+    >
+      <span className="flex min-w-0 flex-1 items-start gap-1.5">
+        <Boxes className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+        <span className="min-w-0">
+          <span className="flex items-center gap-1.5">
+            <span className="truncate font-medium">{assembly.name}</span>
+            <span className="shrink-0 rounded bg-primary/10 px-1 py-px text-[10px] font-medium text-primary">Assembly</span>
+          </span>
+          <span className="block truncate text-[11px] text-muted-foreground">
+            {n} component{n === 1 ? "" : "s"}
+            {fixedExTax > 0 ? ` · + ${money(fixedExTax)} fixed` : ""}
+          </span>
+        </span>
+      </span>
+      <span className="shrink-0 whitespace-nowrap pt-0.5 text-[11px] text-muted-foreground">
+        {money(perUnitExTax)} / {assembly.unitType}
       </span>
     </li>
   );

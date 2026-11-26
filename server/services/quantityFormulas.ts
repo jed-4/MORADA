@@ -9,6 +9,7 @@ import {
   resolveNameRefs,
 } from "@shared/quantityFormula";
 import { resolveEstimateStoredPrice } from "@shared/pricing";
+import { rescaleAssemblyComponents } from "../assemblies";
 
 /**
  * Take-off-backed quantities.
@@ -171,6 +172,8 @@ export async function repriceLinesForMeasurement(measurementId: string): Promise
       .set({ quantity: result.value, taxAmount, priceIncTax, updatedAt: new Date() })
       .where(eq(schema.estimateItems.id, item.id));
     moved.push(item.id);
+    // An assembly line's components follow its quantity (server/assemblies.ts).
+    if (item.assemblyId) moved.push(...(await rescaleAssemblyComponents(item.id)));
   }
   return moved;
 }
@@ -349,6 +352,7 @@ export async function linkWaitingLines(projectId: string): Promise<string[]> {
     }
     await db.update(schema.estimateItems).set(patch).where(eq(schema.estimateItems.id, item.id));
     changed.push({ id: item.id, quantityFormula: r.formula });
+    if (item.assemblyId && patch.quantity !== undefined) await rescaleAssemblyComponents(item.id);
   }
   await insertRefsForNewItems(changed, new Set(quantities.keys()));
   return changed.map((c) => c.id);

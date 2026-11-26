@@ -61,6 +61,8 @@ const ScopeTemplateDetail = lazy(() => import("@/pages/ScopeTemplateDetail"));
 const ScheduleTemplates = lazy(() => import("@/pages/ScheduleTemplates"));
 const ScheduleTemplateDetail = lazy(() => import("@/pages/ScheduleTemplateDetail"));
 const EstimateTemplates = lazy(() => import("@/pages/EstimateTemplates"));
+const Assemblies = lazy(() => import("@/pages/Assemblies"));
+const AssemblyDetail = lazy(() => import("@/pages/AssemblyDetail"));
 const EstimateTemplateDetail = lazy(() => import("@/pages/EstimateTemplateDetail"));
 const SelectionTemplates = lazy(() => import("@/pages/SelectionTemplates"));
 const SelectionTemplateDetail = lazy(() => import("@/pages/SelectionTemplateDetail"));
@@ -357,6 +359,8 @@ function Router() {
       <Route path="/proposal-templates/:templateId" component={ProposalTemplateDetail} />
       <Route path="/estimate-templates" component={EstimateTemplates} />
       <Route path="/estimate-templates/:templateId" component={EstimateTemplateDetail} />
+      <Route path="/assemblies" component={Assemblies} />
+      <Route path="/assemblies/:id" component={AssemblyDetail} />
       <Route path="/selection-templates" component={SelectionTemplates} />
       <Route path="/selection-templates/:templateId" component={SelectionTemplateDetail} />
       <Route path="/po-templates" component={POTemplates} />

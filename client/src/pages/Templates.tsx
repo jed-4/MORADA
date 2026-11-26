@@ -15,6 +15,7 @@ import {
   Receipt,
   Layers,
   ChevronRight,
+  Boxes,
 } from "lucide-react";
 
 const templateTypes = [
@@ -78,6 +79,15 @@ const templateTypes = [
     description: "Set up estimate templates with standard line items",
     icon: FileBarChart,
     url: "/estimate-templates",
+    color: "text-primary",
+    implemented: true,
+  },
+  {
+    id: "assemblies",
+    title: "Assemblies",
+    description: "One estimate line that brings its materials, labour and hire with it",
+    icon: Boxes,
+    url: "/assemblies",
     color: "text-primary",
     implemented: true,
   },

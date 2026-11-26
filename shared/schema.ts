@@ -1241,6 +1241,20 @@ export const estimateItems = pgTable("estimate_items", {
   // book moved" — never "someone edited this on purpose". Renaming the line, or
   // changing qty/wastage/markup, all keep the link.
   priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }),
+  // Assemblies (migration 0142) — see shared/assemblies.ts.
+  // On the ASSEMBLY LINE: which Library assembly it came from, and that
+  // assembly's version at the time. The line carries no cost of its own
+  // (unitCostExTax 0); its money is its components'.
+  assemblyId: varchar("assembly_id").references((): any => assemblies.id, { onDelete: "set null" }),
+  assemblyVersion: integer("assembly_version"),
+  // On a COMPONENT line (a sub-item of an assembly line): how its quantity
+  // follows the assembly line's. Null mode = not an assembly component.
+  assemblyComponentId: varchar("assembly_component_id").references((): any => assemblyComponents.id, { onDelete: "set null" }),
+  assemblyQtyMode: text("assembly_qty_mode"), // "per_unit" | "fixed"
+  assemblyQtyFactor: doublePrecision("assembly_qty_factor"),
+  // True once someone typed this component's quantity by hand: it stops
+  // following the assembly line until reset.
+  assemblyQtyOverridden: boolean("assembly_qty_overridden").notNull().default(false),
   // taxAmount and priceIncTax are a denormalised cache of the line price.
   // They are populated ONLY by computeEstimateItemPrice in shared/pricing.ts.
   // Never compute or write these inline — always go through that function.
@@ -1272,6 +1286,12 @@ export const insertEstimateItemSchema = createInsertSchema(estimateItems).omit({
   shownAs: z.string().optional().nullable(),
   wastagePercent: z.number().default(0),
   priceListItemId: z.string().optional().nullable(),
+  assemblyId: z.string().optional().nullable(),
+  assemblyVersion: z.number().int().optional().nullable(),
+  assemblyComponentId: z.string().optional().nullable(),
+  assemblyQtyMode: z.enum(["per_unit", "fixed"]).optional().nullable(),
+  assemblyQtyFactor: z.number().optional().nullable(),
+  assemblyQtyOverridden: z.boolean().optional(),
 });
 
 export type InsertEstimateItem = z.infer<typeof insertEstimateItemSchema>;
@@ -7955,6 +7975,85 @@ export const insertPriceListItemSchema = createInsertSchema(priceListItems).omit
 
 export type InsertPriceListItem = z.infer<typeof insertPriceListItemSchema>;
 export type PriceListItem = typeof priceListItems.$inferSelect;
+
+// ── Assemblies (migration 0142) ───────────────────────────────────────────────
+// A company-level recipe: one estimate line ("Slab Pour", per m²) that drops in
+// with its components as sub-items. Each component is either PER UNIT of the
+// assembly (0.105 m³ of concrete per m² of slab) or FIXED (1 pump hire), so
+// changing the assembly line's quantity rescales the lot. See shared/assemblies.ts.
+//
+// Money here is CENTS ex GST, like the price list. Estimates are DOLLARS — the
+// conversion happens once, in shared/assemblies.ts, never at a call site.
+export const assemblies = pgTable("assemblies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: varchar("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  // The assembly's own unit — what "per unit" means for its components.
+  unitType: text("unit_type").notNull().default("m2"),
+  // Default cost code for components that don't carry their own.
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  isArchived: boolean("is_archived").notNull().default(false),
+  // Bumped on every save of the assembly or its components. An estimate line
+  // remembers the version it was built from, so drift can be detected later.
+  version: integer("version").notNull().default(1),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  companyIdx: index("assemblies_company_idx").on(table.companyId),
+}));
+
+export const assemblyComponents = pgTable("assembly_components", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  assemblyId: varchar("assembly_id").notNull().references(() => assemblies.id, { onDelete: "cascade" }),
+  order: integer("order").notNull().default(0),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("Material"), // same vocabulary as estimate_items.type
+  priceListItemId: varchar("price_list_item_id").references(() => priceListItems.id, { onDelete: "set null" }),
+  unitType: text("unit_type").notNull().default("each"),
+  unitCostCents: integer("unit_cost_cents").notNull().default(0), // ex GST
+  // "per_unit": quantity = assembly quantity × qtyFactor.
+  // "fixed":    quantity = qtyFactor, whatever the assembly quantity.
+  qtyMode: text("qty_mode").notNull().default("per_unit"),
+  qtyFactor: doublePrecision("qty_factor").notNull().default(1),
+  wastagePercent: integer("wastage_percent").notNull().default(0),
+  markupPercent: doublePrecision("markup_percent"),
+  costCodeId: varchar("cost_code_id").references(() => costCodes.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  assemblyIdx: index("assembly_components_assembly_idx").on(table.assemblyId),
+}));
+
+export const assemblyComponentInputSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().trim().min(1, "Every component needs a name"),
+  type: z.string().default("Material"),
+  priceListItemId: z.string().nullable().optional(),
+  unitType: z.string().trim().min(1).default("each"),
+  unitCostCents: z.number().int("Cost must be whole cents").min(0).default(0),
+  qtyMode: z.enum(["per_unit", "fixed"]).default("per_unit"),
+  qtyFactor: z.number().min(0).default(1),
+  wastagePercent: z.number().int().min(0).max(1000).default(0),
+  markupPercent: z.number().nullable().optional(),
+  costCodeId: z.string().nullable().optional(),
+});
+
+export const assemblyInputSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  description: z.string().nullable().optional(),
+  unitType: z.string().trim().min(1).default("m2"),
+  costCodeId: z.string().nullable().optional(),
+  isArchived: z.boolean().optional(),
+  components: z.array(assemblyComponentInputSchema).optional(),
+});
+
+export type Assembly = typeof assemblies.$inferSelect;
+export type AssemblyComponent = typeof assemblyComponents.$inferSelect;
+export type AssemblyComponentInput = z.infer<typeof assemblyComponentInputSchema>;
+export type AssemblyInput = z.infer<typeof assemblyInputSchema>;
+export type AssemblyWithComponents = Assembly & { components: AssemblyComponent[] };
 
 // Bill Line Item to Price List Item link (for AI review tracking)
 // This tracks which bill line items have been reviewed and linked to price list

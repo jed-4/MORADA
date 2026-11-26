@@ -41,12 +41,13 @@ import {
 } from "@/components/ui/select";
 import {
   MoreVertical, Plus, Edit, Copy, FileText, Trash2, Palette, ExternalLink,
-  ChevronRight, ChevronDown, Eye, Tag, ShoppingCart, GripVertical, Ruler,
+  ChevronRight, ChevronDown, Eye, Tag, ShoppingCart, GripVertical, Ruler, Boxes, RotateCcw,
 } from "lucide-react";
 import { PriceListItemPicker } from "@/components/estimates/PriceListItemPicker";
 import QuantityFormulaEditor from "@/components/estimates/QuantityFormulaEditor";
 import { extractNameRefs, formulaToDisplay, normaliseTakeoffName } from "@shared/quantityFormula";
 import { isFixedPriceLine, isLumpSumLine } from "@shared/pricing";
+import { isAssemblyComponentLine, isAssemblyLine } from "@shared/assemblies";
 import type {
   EstimateItem,
   CostCode,
@@ -269,6 +270,8 @@ export interface EstimateGridCtx {
   /** Shared caret placement for every cell editor — see EstimateDetail. */
   handleEditorFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   handlePriceListSelect: (item: EstimateItem, picked: any) => void;
+  /** A Library assembly was picked in a line's name cell: the line becomes it. */
+  handleAssemblySelect?: (item: EstimateItem, assembly: any) => void;
 
   // data
   estimate: any;
@@ -338,8 +341,14 @@ export interface EstimateGridCtx {
 }
 
 
+/** Money cells an assembly line rolls up from its components instead of pricing itself. */
+const ASSEMBLY_ROLLUP_COLUMNS = new Set([
+  'unitCostExTax', 'unitCostIncTax', 'builderCost', 'builderCostIncTax', 'markup',
+  'markupDollarAmount', 'clientPriceExTax', 'clientTax', 'clientPriceIncTax', 'wastage',
+]);
+
 export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, columnId: string) {
-  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
+  const { editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell, estimate, calculatePricingValues, costCodes, costCategories, updateItemMutation, costCodeMutation, handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, handleAssemblySelect, getSubItems, collapsedItems, handleToggleItemCollapse, priceListItemMap, poLinkMap, toast, estimateItemStatusCategory, estimateItemUnitCategory, formatCurrency, takeoff } = ctx;
     // The name is edited as the field "name" but lives in the column "item",
     // so both checks below match on the field the column actually edits.
     const cursorField = columnId === 'item' ? 'name' : columnId;
@@ -403,6 +412,42 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
     const cellActive = cellHighlight;
     // Editable cell hover: layout-neutral bottom-border underline (border-b space pre-reserved)
     const cellEditable = !isLocked ? "border-b border-transparent hover:border-primary/30 transition-colors cursor-pointer" : "";
+
+    // An assembly line has no money of its own (shared/assemblies.ts): every
+    // money cell shows what its components add up to, read-only. Its quantity,
+    // unit and name stay editable — the quantity rescales the components.
+    if (isAssemblyLine(item) && ASSEMBLY_ROLLUP_COLUMNS.has(columnId)) {
+      const parts = getSubItems(item.id).map((c) => calculatePricingValues(c));
+      const sum = (k: string) => parts.reduce((s, p) => s + (Number(p?.[k]) || 0), 0);
+      const qty = Number(item.quantity) || 0;
+      const perUnit = (n: number) => (qty > 0 ? n / qty : 0);
+      const value: string = (() => {
+        switch (columnId) {
+          case 'unitCostExTax': return qty > 0 ? formatCurrency(perUnit(sum('builderCost'))) : '—';
+          case 'unitCostIncTax': return qty > 0 ? formatCurrency(perUnit(sum('builderCostIncTax'))) : '—';
+          case 'builderCost': return formatCurrency(sum('builderCost'));
+          case 'builderCostIncTax': return formatCurrency(sum('builderCostIncTax'));
+          case 'markupDollarAmount': return formatCurrency(sum('clientPriceExTax') - sum('builderCost'));
+          case 'clientPriceExTax': return formatCurrency(sum('clientPriceExTax'));
+          case 'clientTax': return formatCurrency(sum('clientTax'));
+          case 'clientPriceIncTax': return formatCurrency(sum('clientPriceIncTax'));
+          default: return '—'; // markup %, wastage: each component has its own
+        }
+      })();
+      const isRate = columnId === 'unitCostExTax' || columnId === 'unitCostIncTax';
+      return (
+        <div
+          className={`${cellBase} text-muted-foreground`}
+          role="gridcell"
+          title={isRate
+            ? `What the components work out to per ${item.unitType || 'unit'}. Edit the components to change it.`
+            : "The sum of this assembly's components. Edit the components to change it."}
+          data-testid={`cell-${columnId}-${item.id}`}
+        >
+          <span className={columnId === 'clientPriceIncTax' ? 'text-foreground font-medium' : ''}>{value}</span>
+        </div>
+      );
+    }
 
     switch (columnId) {
       case 'costCode':
@@ -560,6 +605,11 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 value={editingValue}
                 onChange={setEditingValue}
                 onSelect={(picked) => handlePriceListSelect(item, picked)}
+                // Only a plain top-level line can become an assembly: not a
+                // sub-item, not one that already has sub-items, not an assembly.
+                onSelectAssembly={handleAssemblySelect && !isSubItem && !hasSubItems && !isAssemblyLine(item)
+                  ? (assembly) => handleAssemblySelect(item, assembly)
+                  : undefined}
                 onCommit={() => handleCellSave(item, 'name')}
                 onCancel={handleCellCancel}
                 onKeyDown={(e) => handleCellKeyDown(e, item, 'name')}
@@ -612,6 +662,16 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
               >
                 {item.name}
               </span>
+              {isAssemblyLine(item) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Boxes className="w-3 h-3 text-primary flex-shrink-0" data-testid={`marker-assembly-${item.id}`} />
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p className="text-xs">Assembly — {subItems.length} components. Change the quantity and they rescale.</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {/* Priced from the catalogue. Sits in the same slot as the PO marker
                   and reads the same way: a quiet icon, the detail in the tooltip.
                   It disappears the moment someone edits the unit cost, which is the
@@ -966,6 +1026,31 @@ export function renderEstimateCell(ctx: EstimateGridCtx, item: EstimateItem, col
                 {(Number(item.quantity) || 0) === 0 ? "0 — priced" : "—"}
               </span>
             ) : null}
+            {isAssemblyComponentLine(item) && (
+              (item as any).assemblyQtyOverridden ? (
+                <button
+                  className="flex items-center gap-0.5 text-[10px] text-amber hover:text-foreground flex-shrink-0"
+                  title="Typed by hand, so it no longer follows the assembly. Click to follow it again."
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!isLocked) updateItemMutation.mutate({ itemId: item.id, data: { assemblyQtyOverridden: false } as any });
+                  }}
+                  data-testid={`button-reset-assembly-qty-${item.id}`}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                </button>
+              ) : (
+                <span
+                  className="text-[10px] text-muted-foreground flex-shrink-0"
+                  title={(item as any).assemblyQtyMode === 'fixed'
+                    ? 'Fixed — the same whatever the assembly quantity'
+                    : 'Follows the assembly quantity. Type a number to set it by hand.'}
+                  data-testid={`assembly-qty-rule-${item.id}`}
+                >
+                  {(item as any).assemblyQtyMode === 'fixed' ? 'fixed' : `×${Number((item as any).assemblyQtyFactor ?? 0)}`}
+                </span>
+              )
+            )}
             {formulaWords && (
               <Ruler
                 className={`h-3 w-3 flex-shrink-0 ${

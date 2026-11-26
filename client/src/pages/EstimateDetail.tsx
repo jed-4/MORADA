@@ -89,7 +89,7 @@ import {
   ExternalLink,
   Archive
 } from "lucide-react";
-import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection, type TakeoffMeasurement, type TakeoffCategory } from "@shared/schema";
+import { type Estimate, type EstimateItem, type EstimateSummary, type Project, type InsertEstimateItem, insertEstimateItemSchema, type EstimateGroup, type InsertEstimateGroup, insertEstimateGroupSchema, type FieldCategoryWithOptions, type FieldOption, type CompanySettings, type CostCode, type CostCategory, type EstimateTemplate, type Selection, type TakeoffMeasurement, type TakeoffCategory, type AssemblyWithComponents } from "@shared/schema";
 import { computeEstimateItemPrice, isFixedPriceLine, round2, computeEstimateSummary } from "@shared/pricing";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -99,7 +99,8 @@ import { ImportEstimateItemsDialog } from "@/components/estimates/ImportEstimate
 import { exportEstimateRows, downloadBlankImportTemplate, type EstimateExportRow } from "@/lib/estimateSpreadsheet";
 import { formatGroupPath } from "@shared/import";
 import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
-import { CatalogSidebar } from "@/components/estimates/CatalogSidebar";
+import { AssemblyPickerDialog } from "@/components/estimates/AssemblyPickerDialog";
+import { componentQuantity, isAssemblyLine } from "@shared/assemblies";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, pickItemDropTarget, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
 import { EstimateGroupCard } from "@/components/estimates/EstimateGroupCard";
@@ -898,7 +899,7 @@ export default function EstimateDetail() {
   // Native DOM ghost refs — updated directly without React re-render for lag-free drag feedback
   const stopGhostRef = React.useRef<(() => void) | null>(null);
   
-  // Catalog Sidebar state
+  // Assembly picker (AssemblyPickerDialog)
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   
   // Undo stack
@@ -2502,7 +2503,22 @@ export default function EstimateDetail() {
       // Optimistically update to the new value
       queryClient.setQueryData<EstimateItem[]>(
         ["/api/estimates", effectiveEstimateId, "items"],
-        (old) => old?.map(item => item.id === itemId ? { ...item, ...optimisticData } : item)
+        (old) => {
+          if (!old) return old;
+          const target = old.find(item => item.id === itemId);
+          const nextQty = (data as any).quantity;
+          // An assembly line's components follow its quantity. The server does
+          // the real rescale; this only shows it now instead of after the
+          // refetch (several seconds against Neon). Overridden ones stay put.
+          const rescale = isAssemblyLine(target) && nextQty !== undefined && !Number.isNaN(Number(nextQty));
+          return old.map(item => {
+            if (item.id === itemId) return { ...item, ...optimisticData };
+            if (rescale && item.parentItemId === itemId && (item as any).assemblyQtyMode && !(item as any).assemblyQtyOverridden) {
+              return { ...item, quantity: componentQuantity((item as any).assemblyQtyMode, (item as any).assemblyQtyFactor, Number(nextQty)) };
+            }
+            return item;
+          });
+        }
       );
       
       // Return context with the previous value
@@ -3004,6 +3020,40 @@ export default function EstimateDetail() {
       data: priceListItemToLineFields(picked, { allowedUnits: estimateUnitNames }) as Partial<InsertEstimateItem>,
     });
     toast(priceListSelectToast(picked, estimateUnitNames));
+  };
+
+  /**
+   * An assembly was picked from the name cell's typeahead: this line becomes the
+   * assembly line, where it sits, with the components dropped in under it. A
+   * quantity already on the line carries over (the server decides that).
+   */
+  const assemblyIntoLineMutation = useMutation({
+    mutationFn: ({ item, assembly }: { item: EstimateItem; assembly: AssemblyWithComponents }) =>
+      apiRequest(`/api/estimates/${effectiveEstimateId}/assemblies`, "POST", { assemblyId: assembly.id, intoItemId: item.id }),
+    // The round trip is a couple of seconds on Neon; show the picked name at once
+    // rather than the old one. Components appear when the refetch lands.
+    onMutate: ({ item, assembly }) => {
+      queryClient.setQueryData<EstimateItem[]>(["/api/estimates", effectiveEstimateId, "items"], (old) =>
+        old?.map((i) => i.id === item.id
+          ? { ...i, name: assembly.name, assemblyId: assembly.id, unitType: assembly.unitType, unitCostExTax: 0, priceIncTax: 0, priceListItemId: null }
+          : i));
+    },
+    onSuccess:(lines: unknown[], { assembly }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId] });
+      const n = Math.max(0, (lines?.length ?? 1) - 1);
+      toast({
+        title: `${assembly.name} added`,
+        description: `${n} component${n === 1 ? "" : "s"} under this line, hidden from the client. Change its quantity and they rescale.`,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't add the assembly", description: e.message, variant: "destructive" }),
+  });
+  const handleAssemblySelect = (item: EstimateItem, assembly: AssemblyWithComponents) => {
+    setEditingCell(null);
+    setEditingValue('');
+    assemblyIntoLineMutation.mutate({ item, assembly });
   };
 
   /** The units this estimate's own Field Settings list actually offers. */
@@ -4537,7 +4587,7 @@ export default function EstimateDetail() {
   // close over when they lived in this file.
   const gridCtx: EstimateGridCtx = {
     editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell,
-    handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect,
+    handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus, handlePriceListSelect, handleAssemblySelect,
     estimate, columns, costCodes, costCategories, priceListItemMap, poLinkMap,
     selectionByEstimateItemId, estimateItemStatusCategory, estimateItemUnitCategory,
     calculatePricingValues, formatCurrency, getSubItems,
@@ -5051,7 +5101,7 @@ export default function EstimateDetail() {
                   data-testid="button-open-catalog"
                 >
                   <Package className="w-3.5 h-3.5 text-muted-foreground" />
-                  Browse catalog
+                  Add assembly
                 </button>
                 <button
                   className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover-elevate w-full text-left"
@@ -5508,7 +5558,7 @@ export default function EstimateDetail() {
                         "data-testid": "button-load-template-empty",
                       },
                       {
-                        label: "Catalog",
+                        label: "Assembly",
                         onClick: () => setIsCatalogOpen(true),
                         icon: Package,
                         disabled: estimate?.isLocked,
@@ -7479,65 +7529,15 @@ export default function EstimateDetail() {
         estimateName={estimate?.name || ""}
       />
       
-      {/* Catalog Sidebar */}
-      <div className="fixed top-0 right-0 h-full z-50">
-        <CatalogSidebar
-          isOpen={isCatalogOpen}
-          onClose={() => setIsCatalogOpen(false)}
-          onAddAssembly={async (assemblyId) => {
-            if (!effectiveEstimateId) return;
-            
-            try {
-              // Mock assembly data - in production, fetch from API
-              const assemblyItems = {
-                'slab-pour': [
-                  { description: 'Concrete - 20 MPa', quantity: 12.5, unit: 'm³', rate: 185 },
-                  { description: 'Steel mesh - SL82', quantity: 125, unit: 'm²', rate: 8.50 },
-                  { description: 'Vapor barrier', quantity: 125, unit: 'm²', rate: 2.75 },
-                  { description: 'Labour - concrete pour', quantity: 8, unit: 'hr', rate: 85 },
-                ],
-                'framing': [
-                  { description: 'Pine framing timber - 90x45', quantity: 450, unit: 'lm', rate: 4.20 },
-                  { description: 'Steel fixing plates', quantity: 85, unit: 'ea', rate: 3.50 },
-                  { description: 'Galv bolts M12x100', quantity: 120, unit: 'ea', rate: 1.80 },
-                  { description: 'Labour - framing', quantity: 24, unit: 'hr', rate: 75 },
-                ],
-              };
-              
-              const items = assemblyItems[assemblyId as keyof typeof assemblyItems] || [];
-              
-              // Add each item to the estimate
-              for (const item of items) {
-                await apiRequest('/api/estimate-items', 'POST', {
-                  estimateId: effectiveEstimateId,
-                  description: item.description,
-                  quantity: item.quantity,
-                  unit: item.unit,
-                  rate: item.rate,
-                  amount: item.quantity * item.rate,
-                });
-              }
-              
-              // Refresh data
-              await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'items'] });
-              await queryClient.refetchQueries({ queryKey: ['/api/estimates', effectiveEstimateId, 'summary'] });
-              
-              toast({
-                title: "Assembly Added",
-                description: `Added ${items.length} items from assembly to your estimate`,
-              });
-              
-              setIsCatalogOpen(false);
-            } catch (error: any) {
-              toast({
-                title: "Error",
-                description: error.message || "Failed to add assembly items",
-                variant: "destructive",
-              });
-            }
-          }}
+      {/* Assemblies: pick one from the Library and drop it in as one line with its components. */}
+      {effectiveEstimateId && !isNewEstimate && (
+        <AssemblyPickerDialog
+          open={isCatalogOpen}
+          onOpenChange={setIsCatalogOpen}
+          estimateId={effectiveEstimateId}
+          groups={groups}
         />
-      </div>
+      )}
       
       {/* Floating bulk action pill — shared with the template page */}
       <EstimateSelectionBar

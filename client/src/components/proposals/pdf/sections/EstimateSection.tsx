@@ -1,12 +1,13 @@
 import { Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { ProposalSection, Estimate, EstimateGroup, EstimateItem } from "@shared/schema";
-import { computeEstimateSummary, round2 } from "@shared/pricing";
+import { computeEstimateItemPrice, computeEstimateSummary, round2 } from "@shared/pricing";
 import {
   allowanceLineAmounts,
   clientLineAmounts,
   collectHiddenGroupIds,
   lineAppearsOnProposal,
 } from "@shared/proposalTotals";
+import { groupAssemblyComponents, isAssemblyLine, rollUpAssemblyLine } from "@shared/assemblies";
 import { RichTextBlocks, SectionIntro } from "./RichTextBlocks";
 import { tintOnWhite } from "@/components/pdf/shared/pdfColor";
 import { PdfLineTable, type PdfTableColumn, type PdfTableGroup } from "@/components/pdf/shared/PdfLineTable";
@@ -299,6 +300,44 @@ export function EstimateSection({
   const lineIncTaxClient = (item: EstimateItem) => clientLineAmounts(item, amountOpts).incTax;
   const lineExTaxClient = (item: EstimateItem) => clientLineAmounts(item, amountOpts).exTax;
 
+  /* Assemblies (shared/assemblies.ts). An assembly line carries no money of its
+     own — its components do, and they are usually hidden from the client. So
+     what a ROW prints is the components' total, while every SUM below keeps
+     using the plain per-line figures, where the assembly line is 0 and each
+     component counts once. Using the display figure in a subtotal would count
+     the assembly twice. */
+  const assemblyComponents = groupAssemblyComponents(allItems);
+  const rowAmount = (item: EstimateItem, perLine: (i: EstimateItem) => number): number =>
+    isAssemblyLine(item)
+      ? rollUpAssemblyLine(item.quantity, assemblyComponents.get(item.id) ?? [], perLine).amount
+      : perLine(item);
+  const rowExTaxClient = (item: EstimateItem) => rowAmount(item, lineExTaxClient);
+  const rowIncTaxClient = (item: EstimateItem) => rowAmount(item, lineIncTaxClient);
+  /**
+   * An assembly row's unit cost: what its components cost per assembly unit.
+   * The Unit columns print a line's COST rate (a plain line shows its
+   * unitCostExTax, before markup and margin), so the assembly row does the
+   * same — the components' builder cost over the assembly quantity — rather
+   * than a client rate that would mean something different in the same column.
+   */
+  const assemblyCostRate = (item: EstimateItem, incTax: boolean): number => {
+    const qty = Number(item.quantity) || 0;
+    if (qty <= 0) return 0;
+    const cost = (assemblyComponents.get(item.id) ?? []).reduce((sum, c) => {
+      const p = computeEstimateItemPrice({
+        unitCostExTax: c.unitCostExTax,
+        unitCostIncTax: (c as { unitCostIncTax?: number | null }).unitCostIncTax,
+        quantity: c.quantity,
+        markupPercent: 0,
+        projectMarkupPercent: 0,
+        taxRate: taxRatePct,
+        wastagePercent: (c as { wastagePercent?: number | null }).wastagePercent,
+      });
+      return sum + (incTax ? p.builderCostIncTax : p.builderCost);
+    }, 0);
+    return round2(cost / qty);
+  };
+
   /**
    * What goes in an amount cell. "Included" and "Excluded" say in words what a
    * figure cannot: that the work is covered by the price, or explicitly is not.
@@ -462,25 +501,26 @@ export function EstimateSection({
       value: (i) => i.unitType || "" });
   if (toggles.unitCostExTax)
     columns.push({ key: "uex", label: "Unit (ex)", width: 56, align: "right",
-      value: (i) => money(i.unitCostExTax) });
+      value: (i) => money(isAssemblyLine(i) ? assemblyCostRate(i, false) : i.unitCostExTax) });
   if (toggles.unitCostIncTax)
     columns.push({ key: "uinc", label: "Unit (inc)", width: 56, align: "right",
       value: (i) => {
+        if (isAssemblyLine(i)) return money(assemblyCostRate(i, true));
         const tax = Math.round(i.unitCostExTax * (estimate.taxRate || 10)) / 100;
         return money(Math.round((i.unitCostExTax + tax) * 100) / 100);
       } });
   if (toggles.markup)
     columns.push({ key: "mkup", label: "Markup %", width: 38, align: "right",
-      value: (i) => `${i.markupPercent ?? 0}%` });
+      value: (i) => (isAssemblyLine(i) ? "" : `${i.markupPercent ?? 0}%`) });
   if (toggles.amountExTax)
     columns.push({ key: "aex", label: "Amount (ex)", width: 60, align: "right",
-      value: (i) => amountCell(i, lineExTaxClient(i)) });
+      value: (i) => amountCell(i, rowExTaxClient(i)) });
   if (toggles.amountIncTax)
     columns.push({ key: "ainc", label: "Amount (inc)", width: 64, align: "right",
-      value: (i) => amountCell(i, lineIncTaxClient(i)) });
+      value: (i) => amountCell(i, rowIncTaxClient(i)) });
 
   const visibleItems = (rows: EstimateItem[]) =>
-    rows.filter((i) => toggles.showZeroLines || preMarginIncTax(i) !== 0);
+    rows.filter((i) => toggles.showZeroLines || rowAmount(i, preMarginIncTax) !== 0);
 
   const groupTotal = (groupId: string): string => {
     const { incTax, exTax } = calculateGroupSubtotals(collectGroupMoneyItems(groupId));
