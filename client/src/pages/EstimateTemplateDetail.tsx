@@ -108,6 +108,9 @@ interface TemplateItem {
   sortOrder: number;
   isGroup: boolean;
   parentGroupName?: string;
+  /** An assembly component: the template line id of its assembly line. */
+  parentItemId?: string | null;
+  assemblyId?: string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -283,7 +286,8 @@ export default function EstimateTemplateDetail() {
   const handleDeleteItem = (item: TemplateItem) => setDeleteConfirmItem(item);
   const confirmDeleteItem = () => {
     if (!deleteConfirmItem) return;
-    saveItems(items.filter((i) => i.id !== deleteConfirmItem.id));
+    // An assembly line takes its components with it.
+    saveItems(items.filter((i) => i.id !== deleteConfirmItem.id && i.parentItemId !== deleteConfirmItem.id));
     setDeleteConfirmItem(null);
   };
 
@@ -387,10 +391,12 @@ export default function EstimateTemplateDetail() {
           "Cost Code": code ? `${code.code} - ${code.title}` : i.costCodeTitle || "",
           Allowance: i.allowance || "None",
           Notes: "",
-          // Templates have no sub-ITEMS (lines under lines), so the column is
-          // written blank rather than omitted, keeping the sheet
-          // interchangeable with a job estimate's.
-          "Sub-item": "",
+          // An assembly's components are a template's only sub-lines. They go
+          // out as sub-items under the assembly line (linesForApply puts them
+          // straight after it), so the money survives the sheet: the line is
+          // $0 and its components carry the cost. The LINK to the Library
+          // assembly doesn't travel in a sheet yet.
+          "Sub-item": i.parentItemId ? "Yes" : "",
         };
       });
 

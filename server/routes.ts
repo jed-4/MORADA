@@ -81,7 +81,7 @@ import {
 import { registerDeliveryRoutes, deliverySummaryFor } from "./deliveries";
 import {
   registerAssemblyRoutes, applyAssemblyPatchRules, applyAssemblyBulkRules, afterAssemblyLineSaved,
-  copyAssemblyComponents,
+  copyAssemblyComponents, resolveImportedAssemblyRefs, rescaleAssemblyComponents,
 } from "./assemblies";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
@@ -9115,6 +9115,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!list.some((n) => n.toLowerCase() === name.toLowerCase())) list.push(name);
       };
 
+      // Assemblies, when a template that holds them is applied. Only this
+      // company's ids are kept (resolveImportedAssemblyRefs).
+      const assemblyRefs = await resolveImportedAssemblyRefs((req.user as any).companyId, items);
+
       // Validate all items first
       const validatedItems: any[] = [];
       // Parallel to validatedItems: whether that row said it is a sub-item.
@@ -9152,7 +9156,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const rawGroupPath = typeof item.group === "string" ? item.group.trim() : "";
         const groupIdToStore = rawGroupPath ? (groupIdByRawPath.get(rawGroupPath) ?? null) : null;
         
-        const unitCostExTax = item.unitCostExTax || 0;
+        // An assembly line carries no money of its own — its components do.
+        const isAssemblyLine =
+          typeof item.assemblyId === "string" && assemblyRefs.assemblyIds.has(item.assemblyId) && item.isSubItem !== true;
+        const isComponent =
+          item.isSubItem === true && (item.assemblyQtyMode === "per_unit" || item.assemblyQtyMode === "fixed");
+        const unitCostExTax = isAssemblyLine ? 0 : (item.unitCostExTax || 0);
         const takeoffLink = takeoffIndex
           ? linkTemplateFormula(item.quantityFormula, takeoffIndex.byName, takeoffIndex.quantities)
           : null;
@@ -9206,8 +9215,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           shownAs: item.shownAs || undefined,
           trackLabourHours: false,
           order: index,
+          ...(isAssemblyLine
+            ? {
+                assemblyId: item.assemblyId,
+                assemblyVersion: Number.isFinite(Number(item.assemblyVersion)) ? Number(item.assemblyVersion) : null,
+                markupPercent: null,
+                wastagePercent: 0,
+              }
+            : {}),
+          ...(isComponent
+            ? {
+                assemblyComponentId:
+                  typeof item.assemblyComponentId === "string" && assemblyRefs.componentIds.has(item.assemblyComponentId)
+                    ? item.assemblyComponentId
+                    : null,
+                assemblyQtyMode: item.assemblyQtyMode,
+                assemblyQtyFactor: Number(item.assemblyQtyFactor) || 0,
+                assemblyQtyOverridden: item.assemblyQtyOverridden === true,
+              }
+            : {}),
         };
-        
+
         const validationResult = insertEstimateItemSchema.safeParse(itemData);
         
         if (!validationResult.success) {
@@ -9287,6 +9315,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (takeoffIndex) {
         await insertRefsForNewItems(createdItems as any[], new Set(takeoffIndex.quantities.keys()));
+      }
+
+      // An assembly line whose quantity came from this job's take-off now has
+      // a quantity the template didn't know; its components follow it. Lines
+      // with a typed quantity arrive already in step, so they're skipped (each
+      // rescale is a few round trips).
+      for (const line of createdParents as any[]) {
+        if (line?.assemblyId && line.quantityFormula) await rescaleAssemblyComponents(line.id);
       }
 
       if (createdItems.length > 0) {

@@ -68,13 +68,21 @@ import {
 } from "@/components/estimates/estimateColumns";
 import { priceListItemToLineFields, priceListSelectToast } from "@/components/estimates/PriceListItemPicker";
 import { useCommitOnDismiss } from "@/hooks/useCommitOnDismiss";
+import type { AssemblyWithComponents } from "@shared/schema";
+import {
+  buildTemplateAssembly,
+  catalogueExGstCents,
+  normaliseTemplateSubLines,
+  rescaleTemplateAssembly,
+  type TemplateAssemblyFields,
+} from "@/components/estimates/templateAssemblies";
 
 // ─── The template's own row shape ────────────────────────────────────────────
 // Mirrors the TemplateItem in EstimateTemplateDetail. `isGroup` rows have been
 // part of this array's contract from the start — the apply-to-estimate path in
 // EstimateDetail already filters them out — they were simply never written.
 
-export interface TemplateItem {
+export interface TemplateItem extends TemplateAssemblyFields {
   id: string;
   groupName?: string;
   name: string;
@@ -148,9 +156,16 @@ function toEstimateItem(t: TemplateItem): EstimateItem {
     shownAs: t.shownAs || "price",
     proposalVisible: t.proposalVisible ?? true,
     notes: "",
-    parentItemId: null,
+    // Templates hold one kind of sub-line: an assembly's components.
+    parentItemId: t.parentItemId ?? null,
     isSelection: false,
     priceListItemId: t.priceListItemId ?? null,
+    assemblyId: t.assemblyId ?? null,
+    assemblyVersion: t.assemblyVersion ?? null,
+    assemblyComponentId: t.assemblyComponentId ?? null,
+    assemblyQtyMode: t.assemblyQtyMode ?? null,
+    assemblyQtyFactor: t.assemblyQtyFactor ?? null,
+    assemblyQtyOverridden: t.assemblyQtyOverridden ?? false,
   } as unknown as EstimateItem;
 }
 
@@ -172,6 +187,27 @@ export function unlinkIfRepriced(
   if (!existing.priceListItemId) return {};
   const costChanged = patch.unitPrice !== undefined && patch.unitPrice !== existing.unitPrice;
   return costChanged ? { priceListItemId: null } : {};
+}
+
+/**
+ * The estimate's assembly rules (applyAssemblyPatchRules, server-side there),
+ * for a template line. Returned as the extra patch to lay over `patch`:
+ *  - an assembly line has no money of its own, so money fields are put back;
+ *  - a component quantity typed by hand stops following the assembly.
+ */
+export function assemblyPatchRules(existing: TemplateItem, patch: Partial<TemplateItem>): Partial<TemplateItem> {
+  if (existing.assemblyId) {
+    const restore: Partial<TemplateItem> = {};
+    if ("unitPrice" in patch) restore.unitPrice = 0;
+    if ("markup" in patch) restore.markup = 0;
+    if ("wastagePercent" in patch) restore.wastagePercent = 0;
+    if ("priceListItemId" in patch) restore.priceListItemId = null;
+    return restore;
+  }
+  if (existing.parentItemId && existing.assemblyQtyMode && "quantity" in patch && !("assemblyQtyOverridden" in patch)) {
+    return patch.quantity !== existing.quantity ? { assemblyQtyOverridden: true } : {};
+  }
+  return {};
 }
 
 /** Reverse of toEstimateItem for the fields the shared cells can write. */
@@ -213,6 +249,8 @@ export function toTemplatePatch(
   // dropped here on the belief that a template had nowhere to put them.
   if ("proposalVisible" in data) patch.proposalVisible = !!data.proposalVisible;
   if ("shownAs" in data) patch.shownAs = data.shownAs;
+  // The reset button on an overridden component quantity.
+  if ("assemblyQtyOverridden" in data) patch.assemblyQtyOverridden = !!data.assemblyQtyOverridden;
   // status / notes remain estimate-only: a template has no workflow.
   return patch;
 }
@@ -326,7 +364,9 @@ export function TemplateEstimateGrid({
   }
   const commit = useCallback(
     (build: (current: TemplateItem[]) => TemplateItem[]) => {
-      const next = build(latestItems.current);
+      // Components follow their assembly line: deleted with it, and always in
+      // its group. Done here so no write path has to remember it.
+      const next = normaliseTemplateSubLines(build(latestItems.current));
       latestItems.current = next;
       onSave(next);
     },
@@ -422,18 +462,37 @@ export function TemplateEstimateGrid({
     }) as unknown as EstimateGroup);
   }, [groupRows, items]);
 
-  const groupedItems: Record<string, EstimateItem[]> = useMemo(() => {
-    const out: Record<string, EstimateItem[]> = {};
-    groups.forEach((g) => { out[g.id] = []; });
+  // A sub-line (an assembly's component) is drawn under its parent by the
+  // shared row renderer, not as a row of the group — but its money still
+  // counts toward the group, so totals read `allByGroup`.
+  const lineIds = useMemo(() => new Set(lineItems.map((i) => i.id)), [lineItems]);
+  const isSubLine = useCallback((i: TemplateItem) => !!i.parentItemId && lineIds.has(i.parentItemId), [lineIds]);
+
+  const { groupedItems, allByGroup } = useMemo(() => {
+    const top: Record<string, EstimateItem[]> = {};
+    const all: Record<string, EstimateItem[]> = {};
+    groups.forEach((g) => { top[g.id] = []; all[g.id] = []; });
     lineItems
       .slice()
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
       .forEach((i) => {
         const g = i.groupName || UNGROUPED;
-        (out[g] ||= []).push(toEstimateItem(i));
+        const row = toEstimateItem(i);
+        (all[g] ||= []).push(row);
+        if (!isSubLine(i)) (top[g] ||= []).push(row);
       });
-    return out;
-  }, [groups, lineItems]);
+    return { groupedItems: top, allByGroup: all };
+  }, [groups, lineItems, isSubLine]);
+
+  const subItemsByParent = useMemo(() => {
+    const map = new Map<string, EstimateItem[]>();
+    lineItems
+      .filter(isSubLine)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .forEach((i) => map.set(i.parentItemId!, [...(map.get(i.parentItemId!) ?? []), toEstimateItem(i)]));
+    return map;
+  }, [lineItems, isSubLine]);
+  const [collapsedItems, setCollapsedItems] = useState<Set<string>>(new Set());
 
   // ── Pricing ────────────────────────────────────────────────────────────────
   const calculatePricingValues = useCallback((item: EstimateItem) => {
@@ -458,7 +517,7 @@ export function TemplateEstimateGrid({
   const groupTotalsMap = useMemo(() => {
     const out: Record<string, any> = {};
     groups.forEach((g) => {
-      const rows = groupedItems[g.id] || [];
+      const rows = allByGroup[g.id] || [];
       const t = rows.reduce(
         (acc, r) => {
           const p = calculatePricingValues(r);
@@ -501,7 +560,7 @@ export function TemplateEstimateGrid({
       };
     });
     return out;
-  }, [groups, groupedItems, calculatePricingValues]);
+  }, [groups, allByGroup, calculatePricingValues]);
 
   /** The units this template's own Field Settings list offers. */
   const templateUnitNames = useMemo(
@@ -531,8 +590,8 @@ export function TemplateEstimateGrid({
       const movesGroup = "groupId" in data;
       const groupName = data.groupId === UNGROUPED || data.groupId === "none" ? undefined : data.groupId;
       if (Object.keys(patch).length === 0 && !movesGroup) return;
-      commit((current) =>
-        current.map((i) =>
+      commit((current) => {
+        let next = current.map((i) =>
           ids.has(i.id) && !i.isGroup
             ? {
                 ...i,
@@ -540,10 +599,15 @@ export function TemplateEstimateGrid({
                 ...(movesGroup ? { groupName } : {}),
                 // Bulk-setting a cost unlinks too — the same rule as typing one.
                 ...unlinkIfRepriced(i, patch, data),
+                ...assemblyPatchRules(i, patch),
               }
             : i,
-        ),
-      );
+        );
+        if ("quantity" in patch) {
+          for (const i of next) if (ids.has(i.id) && i.assemblyId) next = rescaleTemplateAssembly(next, i.id);
+        }
+        return next;
+      });
     },
     [commit, costCodes],
   );
@@ -636,9 +700,19 @@ export function TemplateEstimateGrid({
     (itemId: string, data: Record<string, any>) => {
       const patch = toTemplatePatch(data, costCodes);
       if (Object.keys(patch).length === 0) return;
-      commit((current) =>
-        current.map((i) => (i.id === itemId ? { ...i, ...patch, ...unlinkIfRepriced(i, patch, data) } : i)),
-      );
+      commit((current) => {
+        const existing = current.find((i) => i.id === itemId);
+        if (!existing) return current;
+        const next = { ...patch, ...unlinkIfRepriced(existing, patch, data), ...assemblyPatchRules(existing, patch) };
+        const updated = current.map((i) => (i.id === itemId ? { ...i, ...next } : i));
+        // The assembly line's quantity moved, or a component was reset: bring
+        // the components back into step.
+        if (existing.assemblyId && "quantity" in next) return rescaleTemplateAssembly(updated, itemId);
+        if (existing.parentItemId && next.assemblyQtyOverridden === false) {
+          return rescaleTemplateAssembly(updated, existing.parentItemId);
+        }
+        return updated;
+      });
     },
     [commit, costCodes],
   );
@@ -1228,6 +1302,53 @@ export function TemplateEstimateGrid({
     [takeoffItems, quantityPreview],
   );
 
+  /**
+   * An assembly was picked in a line's name cell: that line becomes the
+   * assembly line and its components drop in under it. The price list is read
+   * first so a component keeps its catalogue link only while its cost still
+   * matches — the same rule the estimate applies on insert.
+   */
+  const selectAssembly = useCallback(
+    async (lineId: string, assembly: AssemblyWithComponents) => {
+      setEditingCell(null);
+      setEditingValue("");
+      const linked = Array.from(
+        new Set(assembly.components.map((c) => c.priceListItemId).filter((x): x is string => !!x)),
+      );
+      let catalogueCents = new Map<string, number>();
+      if (linked.length > 0) {
+        try {
+          const res = await fetch(`/api/price-list/items/by-ids?ids=${encodeURIComponent(linked.join(","))}`, {
+            credentials: "include",
+          });
+          const rows: Array<{ id: string; costPrice: number; gstInclusive?: boolean }> = res.ok ? await res.json() : [];
+          catalogueCents = new Map(rows.map((r) => [r.id, catalogueExGstCents(r)] as const));
+        } catch {
+          // No catalogue answer: components drop in unlinked, at the assembly's
+          // own cost. Never a price we didn't read.
+        }
+      }
+      let added = 0;
+      commit((current) => {
+        const line = current.find((i) => i.id === lineId);
+        if (!line || line.isGroup || line.parentItemId || line.assemblyId) return current;
+        if (current.some((i) => i.parentItemId === lineId)) return current;
+        const { linePatch, components } = buildTemplateAssembly(line, assembly, {
+          costCodes,
+          catalogueCents,
+          nextSortOrder: current.length,
+        });
+        added = components.length;
+        return [...current.map((i) => (i.id === lineId ? { ...i, ...linePatch } : i)), ...(components as TemplateItem[])];
+      });
+      toast({
+        title: `${assembly.name} added`,
+        description: `${added} component${added === 1 ? "" : "s"} under this line, hidden from the client. Change its quantity and they rescale.`,
+      });
+    },
+    [commit, costCodes, toast],
+  );
+
   const ctx: EstimateGridCtx = {
     editingCell, activeCell, editingValue, setEditingValue, setEditingCell, setActiveCell,
     handleCellEdit, handleCellSave, handleCellCancel, handleCellKeyDown, handleEditorFocus,
@@ -1241,6 +1362,7 @@ export function TemplateEstimateGrid({
       patchItem(item.id, priceListItemToLineFields(picked, { allowedUnits: templateUnitNames }));
       toast(priceListSelectToast(picked));
     },
+    handleAssemblySelect: (item, assembly) => { void selectAssembly(item.id, assembly); },
     estimate: { isLocked: false, taxRate: TAX_RATE, projectMarkupPercent: null },
     columns,
     costCodes,
@@ -1252,11 +1374,17 @@ export function TemplateEstimateGrid({
     estimateItemUnitCategory: unitCategory,
     calculatePricingValues,
     formatCurrency,
-    getSubItems: () => [],            // templates are one level deep
+    // An assembly's components, drawn under it. One level, as on the estimate.
+    getSubItems: (id: string) => subItemsByParent.get(id) ?? [],
     selectedItems,
     handleToggleSelection,
-    collapsedItems: new Set(),
-    handleToggleItemCollapse: () => {},
+    collapsedItems,
+    handleToggleItemCollapse: (id: string) =>
+      setCollapsedItems((prev) => {
+        const next = new Set(prev);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return next;
+      }),
     dropTarget,
     activeId,
     updateItemMutation,
@@ -1264,7 +1392,13 @@ export function TemplateEstimateGrid({
     handleDuplicateItem: (id: string) => {
       commit((current) => {
         const src = current.find((i) => i.id === id);
-        return src ? [...current, { ...src, id: crypto.randomUUID(), sortOrder: current.length }] : current;
+        if (!src) return current;
+        // An assembly line brings its components, re-pointed at the copy.
+        const copyId = crypto.randomUUID();
+        const kids = current
+          .filter((i) => i.parentItemId === id)
+          .map((k, n) => ({ ...k, id: crypto.randomUUID(), parentItemId: copyId, sortOrder: current.length + 1 + n }));
+        return [...current, { ...src, id: copyId, sortOrder: current.length }, ...kids];
       });
     },
     handleCopyItem: () => {},

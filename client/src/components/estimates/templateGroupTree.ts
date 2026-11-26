@@ -12,6 +12,7 @@
  *
  * Kept free of React so it can be tested with plain `npx tsx`.
  */
+import { nestSubLines } from "./templateAssemblies";
 import { formatGroupPath, parseGroupPath } from "@shared/import";
 
 /** The bucket for lines with no group. Shown as "General"; never nested. */
@@ -26,6 +27,8 @@ export interface TemplateRowLike {
   parentGroupName?: string;
   sortOrder: number;
   isCollapsed?: boolean;
+  /** A sub-line (an assembly's component): applied straight after its parent. */
+  parentItemId?: string | null;
 }
 
 export const groupKey = (row: { name?: string }) => row.name || UNGROUPED;
@@ -198,7 +201,7 @@ export function linesForApply<T extends TemplateRowLike>(items: T[]): Array<{ li
     return formatGroupPath(segments);
   };
 
-  return items
+  const ordered = items
     .filter((i) => !i.isGroup)
     .map((line, arrayIndex) => ({ line, arrayIndex }))
     .sort((a, b) => {
@@ -209,6 +212,9 @@ export function linesForApply<T extends TemplateRowLike>(items: T[]): Array<{ li
       return so !== 0 ? so : a.arrayIndex - b.arrayIndex;
     })
     .map(({ line }) => ({ line, groupPath: pathOf(line.groupName || UNGROUPED) }));
+  // An assembly's components go straight after their assembly line: the
+  // import route and the sheet hang a sub-item under the row above it.
+  return nestSubLines(ordered, (x) => x.line);
 }
 
 /**
