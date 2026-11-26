@@ -831,6 +831,17 @@ export default function EstimateDetail() {
           // stored these applies as it always did: visible, shown as a price.
           proposalVisible: item.proposalVisible ?? true,
           shownAs: item.shownAs || "price",
+          // Assemblies: components arrive straight after their assembly line
+          // (linesForApply), flagged as sub-items so the route hangs them under
+          // it, with the link to the Library assembly. The server checks every
+          // id belongs to this company before keeping it.
+          isSubItem: !!item.parentItemId,
+          assemblyId: item.assemblyId || undefined,
+          assemblyVersion: item.assemblyVersion ?? undefined,
+          assemblyComponentId: item.assemblyComponentId || undefined,
+          assemblyQtyMode: item.assemblyQtyMode || undefined,
+          assemblyQtyFactor: item.assemblyQtyFactor ?? undefined,
+          assemblyQtyOverridden: item.assemblyQtyOverridden ?? undefined,
         }));
       if (lineItems.length === 0) throw new Error("This template has no line items to import.");
       // The template's group rows carry what a line can't: the group's

@@ -674,3 +674,36 @@ export function registerAssemblyRoutes(
     }
   });
 }
+
+/**
+ * Which assembly ids in an import payload (a template being applied) are this
+ * company's. Ids arrive from the client: an unknown or foreign one is dropped
+ * — the line comes in as a plain line rather than pointing at someone else's
+ * Library, or at an assembly deleted since the template was saved.
+ */
+export async function resolveImportedAssemblyRefs(
+  companyId: string,
+  items: Array<{ assemblyId?: unknown; assemblyComponentId?: unknown }>,
+): Promise<{ assemblyIds: Set<string>; componentIds: Set<string> }> {
+  const askedAssemblies = Array.from(new Set(
+    items.map((i) => i?.assemblyId).filter((x): x is string => typeof x === "string" && !!x),
+  ));
+  const askedComponents = Array.from(new Set(
+    items.map((i) => i?.assemblyComponentId).filter((x): x is string => typeof x === "string" && !!x),
+  ));
+  if (askedAssemblies.length === 0 && askedComponents.length === 0) {
+    return { assemblyIds: new Set(), componentIds: new Set() };
+  }
+  const [owned, components] = await Promise.all([
+    askedAssemblies.length
+      ? db.select({ id: schema.assemblies.id }).from(schema.assemblies)
+          .where(and(eq(schema.assemblies.companyId, companyId), inArray(schema.assemblies.id, askedAssemblies)))
+      : Promise.resolve([] as { id: string }[]),
+    askedComponents.length
+      ? db.select({ id: schema.assemblyComponents.id }).from(schema.assemblyComponents)
+          .innerJoin(schema.assemblies, eq(schema.assemblies.id, schema.assemblyComponents.assemblyId))
+          .where(and(eq(schema.assemblies.companyId, companyId), inArray(schema.assemblyComponents.id, askedComponents)))
+      : Promise.resolve([] as { id: string }[]),
+  ]);
+  return { assemblyIds: new Set(owned.map((r) => r.id)), componentIds: new Set(components.map((r) => r.id)) };
+}
