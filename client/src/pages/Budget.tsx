@@ -1328,6 +1328,12 @@ export default function BudgetPage() {
     contractKnown && revisedContractCents > 0 ? (cents / revisedContractCents) * 100 : null;
   const plannedMarginPct = pctOfContract(plannedMarginCents);
   const forecastMarginPct = pctOfContract(forecastMarginCents);
+  // Gross profit to date (Costs tab): the whole job's revised contract price
+  // ex GST less what has actually been spent — bills + labour. Nothing from
+  // the Forecast tab (committed POs, Complete ticks, budgets) feeds it, so the
+  // two tabs can't move each other.
+  const grossProfitToDateCents = revisedContractCents - costTotals.spentCents;
+  const grossProfitToDatePct = pctOfContract(grossProfitToDateCents);
   const money = (cents: number, known = true) => (known ? formatCurrency(cents) : "—");
   const pct = (value: number | null) => (value === null ? "—" : `${value.toFixed(1)}%`);
   // Cost to date: how much of the budget has been spent.
@@ -1517,34 +1523,37 @@ export default function BudgetPage() {
                   </div>
                 ))}
               </div>
-              {/* Gross margin — contract less forecast final cost, the same
-                  figure the Forecast tab leads with. Right-aligned so the cost
-                  figures on the left stay a pure "budget vs spent" read. */}
-              <div className="ml-auto flex items-center gap-4 pl-4 border-l border-border flex-shrink-0">
+              {/* Gross profit to date — revised contract ex GST less bills +
+                  labour. Deliberately NOT the Forecast tab's margin: nothing
+                  set on the Forecast tab changes this figure. */}
+              <div
+                className="ml-auto flex items-center gap-4 pl-4 border-l border-border flex-shrink-0"
+                title="Revised contract price ex GST, less bills and labour spent to date"
+              >
                 <div className="flex flex-col leading-tight items-end">
                   <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
-                    Gross margin <span className="normal-case font-normal">ex GST</span>
+                    Gross profit <span className="normal-case font-normal">ex GST</span>
                   </span>
                   <span
                     className={cn(
                       "text-sm font-semibold tabular-nums",
-                      contractKnown ? getVarianceColor(forecastMarginCents) : "text-muted-foreground",
+                      contractKnown ? getVarianceColor(grossProfitToDateCents) : "text-muted-foreground",
                     )}
                     data-testid="header-costs-margin-amount"
                   >
-                    {money(forecastMarginCents, contractKnown)}
+                    {money(grossProfitToDateCents, contractKnown)}
                   </span>
                 </div>
                 <div className="flex flex-col leading-none items-end">
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Margin</span>
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">GP</span>
                   <span
                     className={cn(
                       "text-3xl font-bold tabular-nums leading-none",
-                      contractKnown ? getVarianceColor(forecastMarginCents) : "text-muted-foreground",
+                      contractKnown ? getVarianceColor(grossProfitToDateCents) : "text-muted-foreground",
                     )}
                     data-testid="header-costs-margin-percent"
                   >
-                    {pct(forecastMarginPct)}
+                    {pct(grossProfitToDatePct)}
                   </span>
                 </div>
               </div>
@@ -1631,12 +1640,14 @@ export default function BudgetPage() {
           />
         </button>
 
-        {/* EXPANDED DETAIL — Costs (cost to date): budget, spent, remaining. */}
+        {/* EXPANDED DETAIL — Costs (cost to date): budget, spent, remaining,
+            and the gross profit sum. */}
         {headerExpanded && activeTab === "costs" && canViewActuals && !summaryOnly && (
           <div
-            className="px-3 pb-2.5 pt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] bg-[hsl(var(--bp-subtle))] border-t border-border"
+            className="px-3 pb-2.5 pt-1.5 flex flex-col gap-2 text-[11px] bg-[hsl(var(--bp-subtle))] border-t border-border"
             data-testid="header-detail-costs"
           >
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
             <span className="w-16 flex-shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
               Cost
               <span className="block normal-case font-normal">ex GST</span>
@@ -1667,6 +1678,35 @@ export default function BudgetPage() {
                 },
               ]}
             />
+          </div>
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap" data-testid="band-gross-profit">
+            <span className="w-16 flex-shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground font-semibold">
+              Profit
+              <span className="block normal-case font-normal">ex GST</span>
+            </span>
+            <HeaderSum
+              parts={[
+                {
+                  label: "Revised contract",
+                  value: money(revisedContractCents, contractKnown),
+                  note: contractKnown
+                    ? `Original ${formatCurrency(originalContractCents)} · Variations ${formatCurrency(contractVariationsCents)}`
+                    : undefined,
+                  testid: "stat-gp-contract",
+                },
+                { op: "−", label: "Spent", value: formatCurrency(costTotals.spentCents), testid: "stat-gp-spent" },
+                {
+                  op: "=",
+                  label: "Gross profit",
+                  value: `${money(grossProfitToDateCents, contractKnown)} (${pct(grossProfitToDatePct)})`,
+                  color: contractKnown ? getVarianceColor(grossProfitToDateCents) : "text-muted-foreground",
+                  strong: true,
+                  testid: "stat-gp",
+                },
+              ]}
+            />
+            {!contractKnown && <span className="text-muted-foreground italic">Contract price unavailable</span>}
+          </div>
           </div>
         )}
 
