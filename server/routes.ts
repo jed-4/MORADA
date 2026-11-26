@@ -20,6 +20,7 @@ import {
 import { describeAllowanceUse, isFinalisedAllowance } from "@shared/allowanceUsage";
 import { resolveClockTime, StaleClientTimeError } from "./clockTime";
 import { timesheetHours, timesheetTotalExGstCents, exGstFromInc, incGstFromEx, gstSplit, formatCents } from "@shared/money";
+import { COST_CATEGORY_SCOPE, filterLabourHoursRows, labourHoursCategoryScope } from "@shared/labourHoursScope";
 import { computePOTotalsCents, hasPricedLine, poLineCents } from "@shared/poTotals";
 import { subPoLineParts } from "@shared/subPoLines";
 import { canMovePOStatus, poStatusMoveError } from "@shared/poStatus";
@@ -12660,6 +12661,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // bypass: built-in role AND name matches admin / owner / general manage.
       const effectivePermissions: Record<string, string[]> = {};
       let isAdminLike = false;
+      // Labour hours limited to these cost categories; null = all of them.
+      let labourHoursCostCategoryIds: string[] | null = null;
       if (user.roleId) {
         try {
           const role = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
@@ -12689,6 +12692,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
               : [];
             effectivePermissions[perm.key] = actions;
           }
+          if (!isAdminLike) {
+            labourHoursCostCategoryIds = labourHoursCategoryScope(
+              rps.map((rp: any) => ({
+                key: permById.get(rp.permissionId)?.key ?? "",
+                allowedActions: rp.allowedActions,
+                viewScope: rp.viewScope,
+                viewableRoleIds: rp.viewableRoleIds,
+              })),
+            );
+          }
         } catch (permErr) {
           console.error('[GET /api/auth/user] effectivePermissions error:', permErr);
         }
@@ -12702,7 +12715,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         companyNickname,
         isAdminLike,
       });
-      res.json({ ...safeUser, companyNickname, effectivePermissions, isAdminLike, ...planInfo, referralCode });
+      res.json({ ...safeUser, companyNickname, effectivePermissions, isAdminLike, labourHoursCostCategoryIds, ...planInfo, referralCode });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -17347,7 +17360,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const permissionSchema = z.object({
         permissionId: z.string(),
         allowedActions: z.array(z.enum(["view", "add", "edit", "delete", "approve", "send", "convert", "summary_only", "close"])),
-        viewScope: z.enum(["own", "selected_roles", "all"]).optional(),
+        // "cost_categories" is only meaningful on financial.budget_labour
+        // (see shared/labourHoursScope.ts).
+        viewScope: z.enum(["own", "selected_roles", "all", "cost_categories"]).optional(),
         viewableRoleIds: z.array(z.string()).optional(),
       });
       
@@ -36628,7 +36643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const labourHours = await storage.getLabourHoursBudget(req.params.projectId);
-      res.json(labourHours);
+      res.json(await scopeLabourHoursRows(req.user, labourHours));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to fetch labour hours budget",
@@ -36646,6 +36661,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const costCodeId = typeof req.query.costCodeId === "string" ? req.query.costCodeId : "";
       const status = req.query.status === "submitted" ? "submitted" : req.query.status === "approved" ? "approved" : null;
       if (!costCodeId || !status) return res.status(400).json({ error: "costCodeId and status (submitted|approved) are required" });
+      // A role limited to some cost categories can't drill into the others.
+      if ((await scopeLabourHoursRows(req.user, [{ costCodeId }])).length === 0) {
+        return res.status(403).json({ error: "Your role can't see the hours for this cost code" });
+      }
       const { loadLabourHoursEntries } = await import("./services/labourHoursEntries");
       res.json(await loadLabourHoursEntries(req.params.projectId, costCodeId, status));
     } catch (error: any) {
@@ -36658,7 +36677,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!(await enforceProjectCompany(req, res, req.params.projectId, "Project not found"))) return;
       const labourHours = await storage.recalculateLabourHoursBudget(req.params.projectId);
-      res.json(labourHours);
+      res.json(await scopeLabourHoursRows(req.user, labourHours));
     } catch (error: any) {
       res.status(500).json({ 
         error: "Failed to recalculate labour hours budget",
@@ -37079,6 +37098,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const permission = permById.get(rp.permissionId);
         if (permission?.key === "financial.budget_labour") {
           const allowedActions = Array.isArray(rp.allowedActions) ? (rp.allowedActions as string[]) : [];
+          // Limited to some cost categories = hours only, never allowance money.
+          if ((rp as any).viewScope === COST_CATEGORY_SCOPE) return false;
           if (allowedActions.includes("view")) return true;
         }
       }
@@ -37086,6 +37107,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // fall through to false — a permission-check failure must not widen access
     }
     return false;
+  }
+
+  /**
+   * The cost categories this user's labour hours are limited to, or null for
+   * all of them (admins, unlimited grants). See shared/labourHoursScope.ts.
+   * A lookup failure limits to nothing rather than widening to everything.
+   */
+  async function labourHoursScopeFor(user: any): Promise<string[] | null> {
+    if (!user?.roleId) return null;
+    try {
+      const role = user.companyId ? await storage.getUserRole(user.roleId, user.companyId) : undefined;
+      if (role && isAdminRole(role)) return null;
+      const [rolePermissions, allPermissions] = await Promise.all([
+        storage.getRolePermissions(user.roleId),
+        storage.getPermissions(),
+      ]);
+      const keyById = new Map(allPermissions.map((p) => [p.id, p.key]));
+      return labourHoursCategoryScope(
+        rolePermissions.map((rp: any) => ({
+          key: keyById.get(rp.permissionId) ?? "",
+          allowedActions: rp.allowedActions,
+          viewScope: rp.viewScope,
+          viewableRoleIds: rp.viewableRoleIds,
+        })),
+      );
+    } catch (err) {
+      console.error("[labourHoursScopeFor] failed:", err);
+      return [];
+    }
+  }
+
+  /** Drop the labour-hours rows the user's role can't see (by cost category). */
+  async function scopeLabourHoursRows<T extends { costCodeId?: string | null }>(user: any, rows: T[]): Promise<T[]> {
+    const categoryIds = await labourHoursScopeFor(user);
+    if (categoryIds === null) return rows;
+    const codes = user?.companyId ? await storage.getCostCodes(user.companyId) : [];
+    const categoryOf = new Map(codes.map((c: any) => [c.id, c.categoryId ?? null] as const));
+    return filterLabourHoursRows(rows, categoryIds, categoryOf);
   }
 
   async function enrichTimesheetsWithCostCodes(timesheets: any[]) {
