@@ -53,6 +53,12 @@ test("a component whose Library row was deleted (FK set null) still counts as dr
   assert.ok(!plan.components.some((c) => c.kind === "remove" && c.name === "Added by hand"));
 });
 
+test("a recipe spelt differently (× vs *, spacing) is not a change", () => {
+  const sameRecipe = comps.map((c) => (c.id === "c1" ? { ...c, unitCostCents: 29000, qtyFormula: "{input:qty}×{input:t}" } : c));
+  const plan = planAssemblyUpdate(line, sameRecipe, LIB, new Map([["pl1", 29000]]))!;
+  assert.ok(!plan.components.some((c) => c.kind === "update" && c.name === "Concrete"));
+});
+
 test("a component whose Library cost differs from the catalogue arrives unlinked", () => {
   const plan = planAssemblyUpdate(line, comps, LIB, new Map([["pl1", 31000]]))!;
   assert.equal((plan.components[0] as any).next.priceListItemId, null);

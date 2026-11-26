@@ -40,6 +40,7 @@ import {
   type PriceDrift,
 } from "@shared/assemblyDrift";
 import { centsToDollars, dollarsToCents } from "@shared/money";
+import { planSheetAssemblies } from "@shared/assemblySheet";
 import { resolveEstimateStoredPrice } from "@shared/pricing";
 import { exGstFromInc } from "@shared/money";
 import { requireAuth, requireTeamMember, getSessionCompanyId } from "./middleware/auth";
@@ -985,6 +986,106 @@ export function registerAssemblyRoutes(
     }
   });
 
+  /**
+   * Save a line and its sub-items as a new Library assembly, and link them to
+   * it — the way in for an assembly imported from Buildern (or built by hand)
+   * that the Library doesn't have yet. Body: { name? }.
+   *
+   * Per-unit amounts are the sub-items' quantities ÷ the line's. The line must
+   * carry no money of its own: as an assembly line it would stop counting, and
+   * the estimate's total would quietly drop.
+   */
+  app.post("/api/estimate-items/:id/save-as-assembly", requireAuth, requireTeamMember, async (req, res) => {
+    const companyId = company(req, res);
+    if (!companyId) return;
+    try {
+      const [line] = await db.select().from(schema.estimateItems).where(eq(schema.estimateItems.id, req.params.id));
+      const estimate = line ? await getCompanyEstimate(line.estimateId, companyId) : null;
+      if (!line || !estimate) return res.status(404).json({ error: "Line not found" });
+      if (estimate.isLocked) return res.status(409).json({ error: "This estimate is locked — unlock it first" });
+      if (line.parentItemId) return res.status(400).json({ error: "A sub-item can't be an assembly" });
+      if (line.assemblyId) return res.status(400).json({ error: "This line is already a Library assembly" });
+      if (Math.abs(Number(line.unitCostExTax) || 0) > 0.0001) {
+        return res.status(400).json({
+          error: "This line has a cost of its own. An assembly line is priced by its components only — move that cost onto a sub-item first, so the total doesn't change.",
+        });
+      }
+      const children = await db
+        .select()
+        .from(schema.estimateItems)
+        .where(eq(schema.estimateItems.parentItemId, line.id))
+        .orderBy(asc(schema.estimateItems.order));
+      if (children.length === 0) return res.status(400).json({ error: "Add the components as sub-items first" });
+
+      const name = (typeof req.body?.name === "string" && req.body.name.trim()) || line.name.trim();
+      const clash = (await listAssemblies(companyId)).find((a) => a.name.trim().toLowerCase() === name.toLowerCase());
+      if (clash) {
+        return res.status(409).json({ error: `Your Library already has an assembly called "${clash.name}" — give this one another name` });
+      }
+      const lineQty = Number(line.quantity) || 0;
+      const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+      const components: AssemblyComponentInput[] = children.map((c) => ({
+        name: c.name,
+        type: c.type || "Material",
+        priceListItemId: c.priceListItemId ?? null,
+        unitType: c.unitType || "each",
+        unitCostCents: Math.max(0, dollarsToCents(c.unitCostExTax)),
+        // Per unit of the line; with no line quantity to divide by, fixed.
+        qtyMode: lineQty > 0 ? "per_unit" : "fixed",
+        qtyFactor: lineQty > 0 ? round6((Number(c.quantity) || 0) / lineQty) : Number(c.quantity) || 0,
+        wastagePercent: Math.round(Number(c.wastagePercent) || 0),
+        markupPercent: c.markupPercent ?? null,
+        costCodeId: c.costCode ?? null,
+      }));
+      const bad = await checkForeignIds(companyId, [line.costCode, ...components.map((c) => c.costCodeId)], components.map((c) => c.priceListItemId));
+      if (bad) return res.status(400).json({ error: bad });
+
+      const saved = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(schema.assemblies)
+          .values({
+            companyId,
+            name,
+            description: line.description ?? null,
+            unitType: line.unitType || "each",
+            costCodeId: line.costCode ?? null,
+            createdBy: (req.user as any)?.id ?? null,
+          })
+          .returning();
+        await writeComponents(tx, row.id, components);
+        const made = await tx
+          .select()
+          .from(schema.assemblyComponents)
+          .where(eq(schema.assemblyComponents.assemblyId, row.id))
+          .orderBy(asc(schema.assemblyComponents.order));
+        await tx.update(schema.estimateItems).set({
+          assemblyId: row.id,
+          assemblyVersion: row.version,
+          assemblyQtyLabel: null,
+          assemblyInputs: [],
+          updatedAt: new Date(),
+        }).where(eq(schema.estimateItems.id, line.id));
+        // Components keep their quantities; they now follow the line from here.
+        for (let i = 0; i < children.length; i++) {
+          await tx.update(schema.estimateItems).set({
+            assemblyComponentId: made[i].id,
+            assemblyQtyMode: made[i].qtyMode,
+            assemblyQtyFactor: made[i].qtyFactor,
+            assemblyQtyFormula: null,
+            assemblyQtyOverridden: false,
+            updatedAt: new Date(),
+          }).where(eq(schema.estimateItems.id, children[i].id));
+        }
+        return row;
+      });
+      hooks.onEstimateItemsChanged(estimate.id);
+      res.status(201).json(await getAssembly(saved.id, companyId));
+    } catch (error: any) {
+      console.error("[assemblies] save as assembly:", error);
+      res.status(500).json({ error: "Failed to save the assembly" });
+    }
+  });
+
   /** Drop an assembly into an estimate. Body: { assemblyId, quantity?, groupId?, intoItemId? } */
   app.post("/api/estimates/:id/assemblies", requireAuth, requireTeamMember, async (req, res) => {
     const companyId = company(req, res);
@@ -1045,6 +1146,41 @@ export function registerAssemblyRoutes(
       res.status(500).json({ error: "Failed to add the assembly" });
     }
   });
+}
+
+/**
+ * Assemblies named in an imported SHEET (phase 5): the `assembly` column on a
+ * line names a Library assembly; its sub-item rows are the components.
+ *
+ * Returns, per row index, the extra fields that row should be created with,
+ * and the names no Library assembly answers to (those rows import as a plain
+ * line with sub-items; "Save as assembly" on the line makes one).
+ *
+ *  - The line links by NAME, case-insensitively, to exactly one of the
+ *    company's assemblies (active ones first). Its own cost goes to 0 — the
+ *    components carry the money. Inputs come from the Inputs cell, by name,
+ *    defaults for the rest.
+ *  - A component row matches a Library component by name (first unused one);
+ *    its rule is the Qty Rule cell, or the Library's when the cell is blank.
+ *    The quantity in the sheet is kept; if it isn't what the rule gives, the
+ *    row is marked overridden, so an edit made in Excel survives.
+ *  - A sub-item row that matches no component is a hand-added line: no rule.
+ */
+export async function resolveSheetAssemblies(
+  companyId: string,
+  items: Array<Record<string, any>>,
+  parentRowOf: Map<number, number>,
+): Promise<{ fields: Map<number, Record<string, any>>; unlinked: string[]; warnings: string[] }> {
+  if (!items.some((it, i) => typeof it?.assembly === "string" && it.assembly.trim() && !parentRowOf.has(i))) {
+    return { fields: new Map(), unlinked: [], warnings: [] };
+  }
+  const library = await listAssemblies(companyId, { includeArchived: true });
+  const plan = planSheetAssemblies(items, parentRowOf, library as any);
+  // On an estimate the assembly line's own money goes to 0: its components carry it.
+  for (const f of Array.from(plan.fields.values())) {
+    if (f.assemblyId) Object.assign(f, { unitCostExTax: 0, markupPercent: null, wastagePercent: 0 });
+  }
+  return plan;
 }
 
 /**

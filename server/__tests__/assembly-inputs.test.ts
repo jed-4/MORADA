@@ -42,7 +42,7 @@ test("a recipe typed with labels is stored by key, and reads back", () => {
   const r = recipeFromDisplay("Area × Thickness × 1.05", { ...SRC, quantity: 120, defaults: DEFAULTS });
   assert.ok(r.ok);
   if (!r.ok) return;
-  assert.equal(r.formula, "{input:qty} × {input:t} × 1.05");
+  assert.equal(r.formula, "{input:qty} * {input:t} * 1.05");
   assert.equal(r.sample, 12.6);
   assert.equal(recipeToDisplay(r.formula, SRC), "Area × Thickness × 1.05");
 });
@@ -51,7 +51,7 @@ test("multi-word labels go in braces; case doesn't matter; ROUND still works", (
   const r = recipeFromDisplay("ROUND({edge length} / 2.4) + area*0", { ...SRC, defaults: [{ key: "t", defaultValue: 0.1 }, { key: "e", defaultValue: 44 }] });
   assert.ok(r.ok);
   if (!r.ok) return;
-  assert.equal(r.formula, "ROUND({input:e} / 2.4) + {input:qty}*0");
+  assert.equal(r.formula, "ROUND({input:e} / 2.4) + {input:qty} * 0");
   assert.equal(r.sample, 19);
   assert.equal(recipeToDisplay(r.formula, SRC), "ROUND({Edge length} ÷ 2.4) + Area × 0");
   assert.deepEqual(recipeInputKeys(r.formula), ["e", "qty"]);

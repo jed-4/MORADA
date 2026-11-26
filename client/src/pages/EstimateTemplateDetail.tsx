@@ -74,7 +74,8 @@ import {
   templateGroupOrder,
   templateGroupParents,
 } from "@/components/estimates/templateGroupTree";
-import { formatGroupPath } from "@shared/import";
+import { formatGroupPath, linkSubItemRows } from "@shared/import";
+import { formatInputs, formatQtyRule, planSheetAssemblies } from "@shared/assemblySheet";
 import {
   ImportEstimateItemsDialog,
   type ImportMergeMode,
@@ -370,7 +371,7 @@ export default function EstimateTemplateDetail() {
   // sheet exported here imports into an estimate and vice versa. Group header
   // rows are skipped: the Group column already carries the grouping.
 
-  const buildExportRows = (): EstimateExportRow[] =>
+  const buildExportRows = (assemblyNames: Map<string, string> = new Map()): EstimateExportRow[] =>
     // In the order the template shows, with each line's group as a PATH —
     // "Kitchen > Joinery" — the same convention the estimate sheet uses (#317),
     // so subgroups survive the round trip instead of being flattened.
@@ -397,12 +398,22 @@ export default function EstimateTemplateDetail() {
           // $0 and its components carry the cost. The LINK to the Library
           // assembly doesn't travel in a sheet yet.
           "Sub-item": i.parentItemId ? "Yes" : "",
+          // The Library link travels by NAME (shared/assemblySheet.ts), with
+          // the line's inputs and each component's rule.
+          Assembly: i.assemblyId ? assemblyNames.get(i.assemblyId) ?? i.name : "",
+          Inputs: i.assemblyId ? formatInputs((i as any).assemblyInputs) : "",
+          "Qty Rule": i.parentItemId ? formatQtyRule(i as any, items.find((p) => p.id === i.parentItemId) as any) : "",
         };
       });
 
   const handleExportXLSX = async () => {
     if (!template) return;
-    const rows = buildExportRows();
+    let assemblyNames = new Map<string, string>();
+    if (items.some((i) => i.assemblyId)) {
+      const res = await fetch("/api/assemblies?includeArchived=true", { credentials: "include" });
+      if (res.ok) assemblyNames = new Map(((await res.json()) as Array<{ id: string; name: string }>).map((a) => [a.id, a.name]));
+    }
+    const rows = buildExportRows(assemblyNames);
     if (rows.length === 0) {
       toast({ title: "Nothing to export", description: "This template has no items yet." });
       return;
@@ -433,7 +444,7 @@ export default function EstimateTemplateDetail() {
   const handleImportCommit = async (
     imported: ImportEstimateItem[],
     mode: ImportMergeMode,
-  ): Promise<number> => {
+  ) => {
     // The Group column is a PATH: "Kitchen > Joinery" puts the line in
     // Joinery, inside Kitchen, creating either if missing. A plain name is a
     // top-level group, as it always was.
@@ -465,9 +476,36 @@ export default function EstimateTemplateDetail() {
       };
     });
 
+    // Sub-items hang under the nearest row above that isn't one, in its group —
+    // the sheet's convention, which this import used to flatten.
+    const parentRowOf = linkSubItemRows(imported.map((r) => r.isSubItem === true));
+    parentRowOf.forEach((parent, row) => {
+      mapped[row].parentItemId = mapped[parent].id;
+      mapped[row].groupName = mapped[parent].groupName;
+      (mapped[row] as any).proposalVisible = false;
+    });
+
+    // Assembly columns → Library links (same matcher as the estimate import).
+    let assemblies: { linked: number; unlinked: string[]; warnings: string[] } | undefined;
+    if (imported.some((r) => r.assembly)) {
+      const res = await fetch("/api/assemblies?includeArchived=true", { credentials: "include" });
+      const library = res.ok ? await res.json() : [];
+      const plan = planSheetAssemblies(imported, parentRowOf, library);
+      plan.fields.forEach((f, row) => {
+        Object.assign(mapped[row], f);
+        // An assembly line carries no money of its own in a template either.
+        if (f.assemblyId) Object.assign(mapped[row], { unitPrice: 0, markup: 0, wastagePercent: 0, priceListItemId: null });
+      });
+      assemblies = {
+        linked: Array.from(plan.fields.values()).filter((f) => f.assemblyId).length,
+        unlinked: plan.unlinked,
+        warnings: plan.warnings,
+      };
+    }
+
     await saveItems([...base, ...mapped]);
 
-    return mapped.length;
+    return { count: mapped.length, assemblies };
   };
 
   const handleOpenSettings = () => {

@@ -285,6 +285,13 @@ export const importEstimateItemSchema = z.object({
   status: z.string().default("incomplete"),
   proposalVisible: z.boolean().default(true),
   shownAs: z.string().optional(),
+  // Assemblies (shared/assemblySheet.ts). On an assembly line: the LIBRARY
+  // assembly's name, linked on import, and its input values. On a component
+  // sub-item: how its quantity follows the line ("per unit 0.105", "fixed",
+  // "= Area × 1.1"). All three optional — a sheet without them is unchanged.
+  assembly: z.string().optional(),
+  inputs: z.string().optional(),
+  qtyRule: z.string().optional(),
 });
 
 export type ImportEstimateItem = z.infer<typeof importEstimateItemSchema>;
@@ -397,6 +404,13 @@ export const defaultColumnMappings: Record<string, keyof ImportEstimateItem> = {
   "status": "status",
   
   // Proposal visibility variations
+  "assembly": "assembly",
+  "library assembly": "assembly",
+  "inputs": "inputs",
+  "assembly inputs": "inputs",
+  "qty rule": "qtyRule",
+  "quantity rule": "qtyRule",
+
   "sub-item": "isSubItem",
   "sub item": "isSubItem",
   "subitem": "isSubItem",
@@ -1084,6 +1098,10 @@ export function parseImportRow(
           } else {
             data[fieldKey] = undefined; // leave the field's Zod default in place
           }
+        } else if (fieldKey === "assembly" || fieldKey === "inputs" || fieldKey === "qtyRule") {
+          // Free text — a number in the cell (Excel turns "1" into 1) is still text here.
+          const t = value === undefined || value === null ? "" : String(value).trim();
+          data[fieldKey] = t || undefined;
         } else {
           data[fieldKey] = value || undefined;
         }
@@ -1468,6 +1486,9 @@ export const ESTIMATE_EXPORT_HEADERS = [
   'Allowance',
   'Notes',
   'Sub-item',
+  'Assembly',
+  'Inputs',
+  'Qty Rule',
 ] as const;
 
 export type EstimateExportHeader = (typeof ESTIMATE_EXPORT_HEADERS)[number];
@@ -1493,6 +1514,9 @@ export const ESTIMATE_IMPORT_EXAMPLE_ROW: Record<EstimateExportHeader, string | 
   Allowance: 'None',
   Notes: '',
   'Sub-item': '',
+  Assembly: '',
+  Inputs: '',
+  'Qty Rule': '',
 };
 
 /** Shown under the row above it — the only place the convention is spelled out. */

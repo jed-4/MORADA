@@ -102,6 +102,7 @@ import { BulkEditDropdown } from "@/components/estimates/BulkEditDropdown";
 import { AssemblyPickerDialog } from "@/components/estimates/AssemblyPickerDialog";
 import { componentQuantityOf, isAssemblyLine, mergeInputEdits } from "@shared/assemblies";
 import type { AssemblyDrift, PriceDrift } from "@shared/assemblyDrift";
+import { formatInputs, formatQtyRule } from "@shared/assemblySheet";
 import { DriftReviewDialog } from "@/components/estimates/DriftReviewDialog";
 import { EstimateBreadcrumb } from "@/components/estimates/EstimateBreadcrumb";
 import { NEST_ZONE_BOTTOM, NEST_ZONE_TOP, descendantsOf, hiddenGroupIds, pickItemDropTarget, planGroupDrop, type DropTarget } from "@/components/estimates/estimateDragTypes";
@@ -802,6 +803,22 @@ export default function EstimateDetail() {
     return map;
   }, [drift]);
   const driftCount = (drift?.prices.length ?? 0) + (drift?.assemblies.length ?? 0);
+
+  // A line + its sub-items → a new Library assembly, linked (phase 5).
+  const saveAsAssemblyMutation = useMutation({
+    mutationFn: (itemId: string) =>
+      apiRequest(`/api/estimate-items/${itemId}/save-as-assembly`, "POST", {}) as Promise<{ name: string; components: unknown[] }>,
+    onSuccess: (a) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", effectiveEstimateId, "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/assemblies"] });
+      toast({
+        title: `Saved "${a.name}" to your Library`,
+        description: `${a.components.length} components, each per unit of this line. Change any to fixed or a recipe in Templates → Assemblies.`,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Couldn't save as an assembly", description: e.message, variant: "destructive" }),
+  });
   const [driftOpen, setDriftOpen] = useState(false);
   const [driftFocus, setDriftFocus] = useState<string | null>(null);
   const applyDriftMutation = useMutation({
@@ -3606,7 +3623,7 @@ export default function EstimateDetail() {
   // Only the IMPORTABLE fields, with headers the importer auto-detects, so an
   // exported estimate re-imports cleanly (unlike the CSV dump above, which
   // includes computed columns the importer can't take back).
-  const buildExportRows = (): EstimateExportRow[] => {
+  const buildExportRows = (assemblyNames: Map<string, string> = new Map()): EstimateExportRow[] => {
     /* The section's full path, root first.
        Writing only the section's own name lost the nesting: re-importing put
        every subsection back at the top level, silently flattening the estimate
@@ -3644,6 +3661,13 @@ export default function EstimateDetail() {
         // below is the whole encoding: a sub-item belongs to the nearest
         // preceding row without it.
         'Sub-item': it.parentItemId ? 'Yes' : '',
+        // Assemblies (shared/assemblySheet.ts): the LIBRARY assembly's name —
+        // the line may be renamed — its inputs, and each component's rule.
+        Assembly: (it as any).assemblyId ? assemblyNames.get((it as any).assemblyId) ?? it.name : '',
+        Inputs: (it as any).assemblyId ? formatInputs((it as any).assemblyInputs) : '',
+        'Qty Rule': it.parentItemId
+          ? formatQtyRule(it as any, items.find(p => p.id === it.parentItemId) as any)
+          : '',
       };
     };
     // Parent items in order, each followed by its sub-items.
@@ -3654,7 +3678,13 @@ export default function EstimateDetail() {
 
   const handleExportEstimateXLSX = async () => {
     if (!estimate || !items) return;
-    const rows = buildExportRows();
+    // Library names for assembly lines, archived ones included.
+    let assemblyNames = new Map<string, string>();
+    if (items.some(i => (i as any).assemblyId)) {
+      const res = await fetch('/api/assemblies?includeArchived=true', { credentials: 'include' });
+      if (res.ok) assemblyNames = new Map(((await res.json()) as Array<{ id: string; name: string }>).map(a => [a.id, a.name]));
+    }
+    const rows = buildExportRows(assemblyNames);
     await exportEstimateRows(rows, { name: estimate.name, sheetName: 'Estimate' });
     toast({ title: 'Exported to Excel', description: `${rows.length} lines. Re-imports cleanly via Import Items.` });
   };
@@ -4684,6 +4714,7 @@ export default function EstimateDetail() {
     selectionByEstimateItemId, estimateItemStatusCategory, estimateItemUnitCategory,
     calculatePricingValues, formatCurrency, getSubItems, getItem,
     driftByItem, onOpenDrift: (itemId: string) => { setDriftFocus(itemId); setDriftOpen(true); },
+    handleSaveAsAssembly: (item: EstimateItem) => saveAsAssemblyMutation.mutate(item.id),
     selectedItems, handleToggleSelection, collapsedItems, handleToggleItemCollapse,
     dropTarget, activeId,
     updateItemMutation, costCodeMutation, createSelectionFromItemMutation, handleDuplicateItem, handleCopyItem,
