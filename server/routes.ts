@@ -89,7 +89,7 @@ import {
 import { registerDeliveryRoutes, deliverySummaryFor } from "./deliveries";
 import {
   registerAssemblyRoutes, applyAssemblyPatchRules, applyAssemblyBulkRules, afterAssemblyLineSaved,
-  copyAssemblyComponents, resolveImportedAssemblyRefs, rescaleAssemblyComponents,
+  copyAssemblyComponents, resolveImportedAssemblyRefs, rescaleAssemblyComponents, resolveSheetAssemblies,
 } from "./assemblies";
 import { sendInvitationEmail, sendClientPortalInviteEmail, initializeEmailServices, sendGenericEmail, notifySenderOfProblem } from "./utils/email";
 import { renderReminderText } from "@shared/rfqReminders";
@@ -9130,6 +9130,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Assemblies, when a template that holds them is applied. Only this
       // company's ids are kept (resolveImportedAssemblyRefs).
       const assemblyRefs = await resolveImportedAssemblyRefs((req.user as any).companyId, items);
+      // …and when a SHEET names one in its Assembly column (phase 5): linked
+      // by name to the Library, components matched by name.
+      const sheetAssemblies = await resolveSheetAssemblies(
+        (req.user as any).companyId,
+        items,
+        linkSubItemRows(items.map((i: any) => i?.isSubItem === true)),
+      );
 
       // Validate all items first
       const validatedItems: any[] = [];
@@ -9169,8 +9176,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const groupIdToStore = rawGroupPath ? (groupIdByRawPath.get(rawGroupPath) ?? null) : null;
         
         // An assembly line carries no money of its own — its components do.
+        const sheetFields = sheetAssemblies.fields.get(index);
         const isAssemblyLine =
-          typeof item.assemblyId === "string" && assemblyRefs.assemblyIds.has(item.assemblyId) && item.isSubItem !== true;
+          (typeof item.assemblyId === "string" && assemblyRefs.assemblyIds.has(item.assemblyId) && item.isSubItem !== true)
+          || !!sheetFields?.assemblyId;
         const isComponent =
           item.isSubItem === true && (item.assemblyQtyMode === "per_unit" || item.assemblyQtyMode === "fixed"
             // A recipe reads the assembly's named inputs only — never a take-off item.
@@ -9278,6 +9287,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 assemblyQtyOverridden: item.assemblyQtyOverridden === true,
               }
             : {}),
+          // A sheet's Assembly / Inputs / Qty Rule columns, resolved above.
+          ...(sheetFields ?? {}),
         };
 
         const validationResult = insertEstimateItemSchema.safeParse(itemData);
@@ -9379,6 +9390,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         count: createdItems.length,
         items: createdItems,
         ...(takeoffIndex ? { takeoff: takeoffSummary } : {}),
+        // Assembly names in the sheet the Library doesn't have, and cells that didn't read.
+        assemblies: {
+          linked: Array.from(sheetAssemblies.fields.values()).filter((f) => f.assemblyId).length,
+          unlinked: sheetAssemblies.unlinked,
+          warnings: sheetAssemblies.warnings,
+        },
       });
     } catch (error: any) {
       if (error.message?.includes("locked estimate")) {

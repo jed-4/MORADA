@@ -40,6 +40,7 @@ import {
 } from "@shared/import";
 import { useToast } from "@/hooks/use-toast";
 import { EstimateGroup, FieldOption, FieldCategoryWithOptions } from "@shared/schema";
+import { convertBuildernEstimateItems, isBuildernEstimateItems } from "@shared/buildernEstimateItems";
 
 /** Append the imported lines, or replace everything already there. */
 export type ImportMergeMode = "append" | "replace";
@@ -62,7 +63,10 @@ interface ImportEstimateItemsDialogProps {
    * Commit hook. When present it replaces the POST to the estimate items
    * import route, and must return how many rows were written.
    */
-  onCommit?: (items: ImportEstimateItem[], mode: ImportMergeMode) => Promise<number>;
+  onCommit?: (
+    items: ImportEstimateItem[],
+    mode: ImportMergeMode,
+  ) => Promise<number | { count: number; assemblies?: { linked: number; unlinked: string[]; warnings: string[] } }>;
   /** Offer the Replace / Append choice. Requires `onCommit`. */
   offerMergeMode?: boolean;
   /** Row count shown in the "replace" warning. */
@@ -86,6 +90,9 @@ const FIELD_LABELS: Record<keyof ImportEstimateItem, string> = {
   status: "Status",
   proposalVisible: "Proposal Visible",
   shownAs: "Shown As",
+  assembly: "Assembly",
+  inputs: "Inputs",
+  qtyRule: "Qty Rule",
 };
 
 // Core mapping fields to display at the top
@@ -115,6 +122,8 @@ export function ImportEstimateItemsDialog({
 }: ImportEstimateItemsDialogProps) {
   const { toast } = useToast();
   const [fileName, setFileName] = useState<string>("");
+  // Set when the file was a Buildern "Estimate Items" export, read for us.
+  const [buildernNote, setBuildernNote] = useState<string | null>(null);
   const [fileData, setFileData] = useState<any[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
@@ -264,17 +273,35 @@ export function ImportEstimateItemsDialog({
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
 
       // Extract headers and data
-      const headerRow = jsonData[0] as string[];
+      let headerRow = jsonData[0] as string[];
       const dataRows = jsonData.slice(1).filter(row => row.some(cell => cell !== undefined && cell !== ""));
 
       // Convert to object array
-      const objectData = dataRows.map(row => {
+      let objectData = dataRows.map(row => {
         const obj: any = {};
         headerRow.forEach((header, index) => {
           obj[header] = row[index];
         });
         return obj;
       });
+
+      // A Buildern "Estimate Items" export has no parent column: its sections
+      // and assemblies are rebuilt from the row order and the money
+      // (shared/buildernEstimateItems.ts) into Morada's own sheet columns.
+      setBuildernNote(null);
+      if (isBuildernEstimateItems(headerRow)) {
+        const converted = convertBuildernEstimateItems(objectData);
+        objectData = converted.rows;
+        headerRow = Array.from(new Set(converted.rows.flatMap((r) => Object.keys(r))));
+        setBuildernNote(
+          `Read as a Buildern export: ${converted.sections} section${converted.sections === 1 ? "" : "s"}` +
+          (converted.assemblies ? `, ${converted.assemblies} assembl${converted.assemblies === 1 ? "y" : "ies"} with their components underneath` : "") +
+          "." +
+          (converted.unbalancedAssemblies.length
+            ? ` Check ${converted.unbalancedAssemblies.join(", ")} — the rows under ${converted.unbalancedAssemblies.length === 1 ? "it" : "them"} don't add up to Buildern's total.`
+            : ""),
+        );
+      }
 
       setHeaders(headerRow);
       setFileData(objectData);
@@ -384,12 +411,19 @@ export function ImportEstimateItemsDialog({
         }
       });
 
+      let assemblySummary: { linked: number; unlinked: string[]; warnings: string[] } | null = null;
       // Callers that own their own storage (estimate templates keep line items
       // in a jsonb blob, not the estimate_items table) commit the rows
       // themselves; everyone else posts to the estimate import route.
       let importedCount: number;
       if (onCommit) {
-        importedCount = await onCommit(validRows as ImportEstimateItem[], mergeMode);
+        const committed = await onCommit(validRows as ImportEstimateItem[], mergeMode);
+        if (typeof committed === "number") {
+          importedCount = committed;
+        } else {
+          importedCount = committed.count;
+          assemblySummary = committed.assemblies ?? null;
+        }
       } else {
         const response = await fetch(`/api/estimates/${estimateId}/items/import`, {
           method: "POST",
@@ -404,11 +438,24 @@ export function ImportEstimateItemsDialog({
 
         const result = await response.json();
         importedCount = result.count;
+        assemblySummary = result.assemblies ?? null;
       }
-      
+
+      const asm = assemblySummary;
       toast({
         title: "Success",
-        description: `Successfully imported ${importedCount} items!`,
+        description: [
+          `Successfully imported ${importedCount} items!`,
+          asm?.linked ? `${asm.linked} line${asm.linked === 1 ? "" : "s"} linked to your Library assemblies.` : "",
+          asm?.unlinked?.length
+            ? onCommit
+              // Templates have no "Save as assembly" — that's an estimate action.
+              ? `Not in your Library: ${asm.unlinked.join(", ")} — imported as lines with sub-items.`
+              : `Not in your Library yet: ${asm.unlinked.join(", ")}. To make one, use "Save as assembly" in that line's ⋮ menu.`
+            : "",
+          ...(asm?.warnings ?? []),
+        ].filter(Boolean).join(" "),
+        duration: asm?.unlinked?.length || asm?.warnings?.length ? 15000 : undefined,
       });
       
       handleClose();
@@ -427,6 +474,7 @@ export function ImportEstimateItemsDialog({
 
   const handleClose = () => {
     setMergeMode("append");
+    setBuildernNote(null);
     setFileName("");
     setFileData([]);
     setHeaders([]);
@@ -529,6 +577,9 @@ export function ImportEstimateItemsDialog({
                   Working
                 </span>
                 <span className="text-muted-foreground">and match your columns to Morada</span>
+                {buildernNote && (
+                  <span className="basis-full text-xs text-muted-foreground" data-testid="text-buildern-note">{buildernNote}</span>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"

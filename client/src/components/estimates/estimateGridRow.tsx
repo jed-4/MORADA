@@ -296,6 +296,8 @@ export interface EstimateGridCtx {
   calculatePricingValues: (item: EstimateItem) => any;
   formatCurrency: (amount: number) => string;
   getSubItems: (itemId: string) => EstimateItem[];
+  /** Save a line + its sub-items as a new Library assembly (phase 5). Estimate only. */
+  handleSaveAsAssembly?: (item: EstimateItem) => void;
   /** Lines out of date with the price list or the Library (phase 4): id → why. */
   driftByItem?: Map<string, string>;
   /** Open the "Updates available" review at this line. */
@@ -1495,7 +1497,7 @@ export function renderEstimateItemWithSubItems(
     visibleCols?: ColumnConfig[],
     rowIndex: number = 0
 ) {
-  const { getSubItems, collapsedItems, estimate, columns, editingCell, selectedItems, dropTarget, activeId, setEditingItemId, setIsEditDialogOpen, handleToggleSelection, form, setIsAddItemOpen, handleDuplicateItem, handleCopyItem, selectionByEstimateItemId, setLocation, createSelectionFromItemMutation, setItemToDelete, setIsDeleteDialogOpen } = ctx;
+  const { getSubItems, handleSaveAsAssembly, collapsedItems, estimate, columns, editingCell, selectedItems, dropTarget, activeId, setEditingItemId, setIsEditDialogOpen, handleToggleSelection, form, setIsAddItemOpen, handleDuplicateItem, handleCopyItem, selectionByEstimateItemId, setLocation, createSelectionFromItemMutation, setItemToDelete, setIsDeleteDialogOpen } = ctx;
   const renderCell = (cellItem: EstimateItem, columnId: string) => renderEstimateCell(ctx, cellItem, columnId);
     const subItems = getSubItems(item.id);
     const isCollapsed = collapsedItems.has(item.id);
@@ -1603,6 +1605,18 @@ export function renderEstimateItemWithSubItems(
                 <Plus className="w-4 h-4 mr-2" />
                 Add Sub-Item
               </DropdownMenuItem>
+              {/* A line with sub-items that isn't a Library assembly yet — e.g. one
+                  imported from Buildern — can become one. */}
+              {handleSaveAsAssembly && !item.parentItemId && !isAssemblyLine(item) && getSubItems(item.id).length > 0 && (
+                <DropdownMenuItem
+                  onClick={() => handleSaveAsAssembly(item)}
+                  data-testid={`button-save-as-assembly-${item.id}`}
+                  disabled={estimate?.isLocked}
+                >
+                  <Boxes className="w-4 h-4 mr-2" />
+                  Save as assembly
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem 
                 onClick={() => {
                   setEditingItemId(item.id);

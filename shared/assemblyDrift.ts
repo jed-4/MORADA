@@ -24,7 +24,7 @@
  * Everything here is CENTS so a template (cents) and an estimate (dollars,
  * converted by the caller) share one comparison. Pure: callers load and save.
  */
-import type { AssemblyInputDef, AssemblyInputValue, AssemblySource } from "./assemblies";
+import { canonicalRecipe, type AssemblyInputDef, type AssemblyInputValue, type AssemblySource } from "./assemblies";
 
 // ── Price drift ──────────────────────────────────────────────────────────────
 
@@ -215,7 +215,9 @@ export function planAssemblyUpdate(
     for (const k of Object.keys(before) as Array<keyof ComponentFields>) {
       // A per-unit factor that doesn't apply to the new mode isn't a change worth showing.
       if (k === "qtyFactor" && next.qtyMode === "formula") continue;
-      const unset = (v: unknown) => (opts.zeroMarkupIsUnset && k === "markupPercent" && !v ? null : v);
+      const unset = (v: unknown) =>
+        k === "qtyFormula" ? canonicalRecipe(v as string | null)
+        : opts.zeroMarkupIsUnset && k === "markupPercent" && !v ? null : v;
       if (!same(unset(before[k]), unset(next[k]))) fieldChanges.push({ field: k, before: before[k], after: next[k] });
     }
     if (fieldChanges.length > 0) {

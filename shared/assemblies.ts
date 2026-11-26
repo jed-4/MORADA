@@ -158,7 +158,7 @@ export function recipeFromDisplay(
   const values = inputValueMap(src.quantity ?? 1, src.defaults ?? []);
   const r = evaluateQuantityFormula(formula, values, { decimals: 4 });
   if (!r.ok) return { ok: false, error: r.error };
-  return { ok: true, formula, sample: r.value };
+  return { ok: true, formula: canonicalRecipe(formula)!, sample: r.value };
 }
 
 /**
@@ -190,6 +190,21 @@ export function resolveInputFormulas(
 /** The take-off formulas a line's inputs follow — for the take-off ref index. */
 export function inputFormulas(inputs: AssemblyInputValue[] | null | undefined): string[] {
   return (inputs ?? []).map((i) => i.formula).filter((f): f is string => !!f && f.trim() !== "");
+}
+
+/**
+ * One spelling of a recipe: `×`/`÷`/`−` as `*`/`/`/`-`, single spaces around
+ * operators. Typed, pasted and exported recipes all land the same, so a
+ * round trip through a sheet never reads as "the recipe changed".
+ */
+export function canonicalRecipe(formula: string | null | undefined): string | null {
+  if (!formula) return formula ?? null;
+  return formula
+    .replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-")
+    .replace(/\s*([*/+-])\s*/g, " $1 ")
+    .replace(/\(\s+/g, "(").replace(/\s+\)/g, ")")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Every input key a recipe reads. */
