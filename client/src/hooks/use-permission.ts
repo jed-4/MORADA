@@ -9,6 +9,8 @@ interface AuthUserWithPerms {
   userCategory?: string | null;
   isAdminLike?: boolean;
   effectivePermissions?: Record<string, string[]>;
+  /** Labour hours limited to these cost categories; null/absent = all. */
+  labourHoursCostCategoryIds?: string[] | null;
 }
 
 /**
@@ -45,14 +47,28 @@ export function useFinancialPermission(): boolean {
     if (!u) return false;
     if (u.isAdminLike) return true;
     const perms = u.effectivePermissions ?? {};
+    // Labour hours limited to some cost categories is hours only — it doesn't
+    // open the money widgets (shared/labourHoursScope.ts).
+    const labourLimited = Array.isArray(u.labourHoursCostCategoryIds);
     const keys = [
-      "financial.budget_labour",
+      ...(labourLimited ? [] : ["financial.budget_labour"]),
       "financial.budget_actuals",
       "financial.bills",
       "dashboard.financial",
     ];
     return keys.some((k) => Array.isArray(perms[k]) && perms[k].includes("view"));
   }, [user]);
+}
+
+/**
+ * The cost categories the user's labour hours are limited to, or null when
+ * they see every cost code. The server filters the hours itself; this is for
+ * saying so on screen.
+ */
+export function useLabourHoursCategoryScope(): string[] | null {
+  const { user } = useAuth();
+  const ids = (user as AuthUserWithPerms | null)?.labourHoursCostCategoryIds;
+  return Array.isArray(ids) ? ids : null;
 }
 
 /**

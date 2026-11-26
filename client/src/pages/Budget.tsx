@@ -29,7 +29,7 @@ import type { ProjectCostRow, ProjectCostTotals, ProjectCostSummaryOnly, BudgetT
 import { budgetTone as sharedBudgetTone } from "@shared/projectCost";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
-import { usePermission, useBudgetAccess } from "@/hooks/use-permission";
+import { usePermission, useBudgetAccess, useLabourHoursCategoryScope } from "@/hooks/use-permission";
 import { useAuth } from "@/hooks/use-auth";
 import { TimesheetDialog } from "@/components/TimesheetDialog";
 import type { Timesheet } from "@shared/schema";
@@ -145,6 +145,9 @@ export default function BudgetPage() {
   const pageTitle = usePageTitle({ pageName: "Budget" });
   const { isLoading: authLoading, user: authUser } = useAuth();
   const canViewLabour = usePermission("financial.budget_labour", "view");
+  // Set when this role sees only some cost categories' hours — the server
+  // already filtered them; the page just says so.
+  const labourCategoryScope = useLabourHoursCategoryScope();
   // A role with "Summary Only" and no "View" on the cost budget: the server
   // answers cost-summary with % used and status per category, and refuses
   // every dollar route. The page follows what the server sent
@@ -2132,7 +2135,14 @@ export default function BudgetPage() {
             <Card className="flex flex-col h-full">
               <CardHeader className="py-1.5 px-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <CardTitle className="text-sm">Hours by Cost Code</CardTitle>
+                  <div className="min-w-0">
+                    <CardTitle className="text-sm">Hours by Cost Code</CardTitle>
+                    {labourCategoryScope && (
+                      <p className="text-xs text-muted-foreground" data-testid="text-hours-category-scope">
+                        Showing your role's cost categories only
+                      </p>
+                    )}
+                  </div>
                   {labourHours.length > 0 && (
                     <div className="flex items-center gap-2">
                       <Button

@@ -67,6 +67,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ClientPortalPermissions } from "@/components/roles/ClientPortalPermissions";
+import { COST_CATEGORY_SCOPE, LABOUR_HOURS_PERMISSION_KEY } from "@shared/labourHoursScope";
 import { isPortalPermissionKey } from "@shared/clientPortalPermissions";
 
 type PermissionAction = "view" | "add" | "edit" | "delete" | "approve" | "send" | "convert" | "summary_only" | "close";
@@ -79,7 +80,9 @@ interface PermissionMatrix {
 
 interface ViewScopeData {
   [permissionId: string]: {
-    viewScope: "own" | "selected_roles" | "all";
+    /** "cost_categories" only on financial.budget_labour — viewableRoleIds
+     *  then holds cost CATEGORY ids (shared/labourHoursScope.ts). */
+    viewScope: "own" | "selected_roles" | "all" | "cost_categories";
     viewableRoleIds: string[];
   };
 }
@@ -186,6 +189,11 @@ export default function RolesPermissions() {
     queryKey: ["/api/permissions"],
   });
 
+  // Cost categories, for limiting Labour Hours Budget to some of them.
+  const { data: costCategories = [] } = useQuery<Array<{ id: string; code: string; title: string; isActive?: boolean }>>({
+    queryKey: ["/api/cost-categories"],
+  });
+
   // Fetch role permissions for selected role
   const { data: rolePermissions = EMPTY_ROLE_PERMISSIONS, isLoading: rolePermissionsLoading } = useQuery<RolePermission[]>({
     queryKey: ["/api/user-roles", selectedRoleId, "permissions"],
@@ -200,7 +208,7 @@ export default function RolesPermissions() {
       rolePermissions.forEach((rp) => {
         matrix[selectedRoleId][rp.permissionId] = rp.allowedActions as PermissionAction[];
         scopeData[rp.permissionId] = {
-          viewScope: ((rp as any).viewScope as "own" | "selected_roles" | "all") || "own",
+          viewScope: ((rp as any).viewScope as ViewScopeData[string]["viewScope"]) || "own",
           viewableRoleIds: ((rp as any).viewableRoleIds as string[]) || [],
         };
       });
@@ -720,6 +728,63 @@ export default function RolesPermissions() {
                                           );
                                         })}
                                       </div>
+                                      {permission.key === LABOUR_HOURS_PERMISSION_KEY && viewEnabled && (() => {
+                                        const limited = currentScope === COST_CATEGORY_SCOPE;
+                                        const setScope = (viewScope: ViewScopeData[string]["viewScope"], ids: string[]) => {
+                                          setViewScopeData(prev => ({ ...prev, [permission.id]: { viewScope, viewableRoleIds: ids } }));
+                                          setHasUnsavedChanges(true);
+                                        };
+                                        return (
+                                          <div className="ml-4 mt-2 mb-1 flex items-center gap-3 flex-wrap" data-testid="labour-hours-category-scope">
+                                            <span className="text-xs text-muted-foreground">Cost codes:</span>
+                                            <Select
+                                              value={limited ? COST_CATEGORY_SCOPE : "all"}
+                                              onValueChange={(value) =>
+                                                setScope(value === COST_CATEGORY_SCOPE ? COST_CATEGORY_SCOPE : "all", value === COST_CATEGORY_SCOPE ? currentViewableRoleIds : [])
+                                              }
+                                            >
+                                              <SelectTrigger className="w-[190px] h-8 text-xs" data-testid="select-labour-hours-scope">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="all">All cost codes</SelectItem>
+                                                <SelectItem value={COST_CATEGORY_SCOPE}>Selected cost categories</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                            {limited && (
+                                              <div className="flex items-center gap-x-3 gap-y-1.5 flex-wrap">
+                                                {costCategories.length === 0 && (
+                                                  <span className="text-xs text-muted-foreground">
+                                                    No cost categories yet — set them up in Settings → Cost Codes.
+                                                  </span>
+                                                )}
+                                                {costCategories.map(cat => (
+                                                  <label key={cat.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                                    <Checkbox
+                                                      checked={currentViewableRoleIds.includes(cat.id)}
+                                                      onCheckedChange={(checked) =>
+                                                        setScope(
+                                                          COST_CATEGORY_SCOPE,
+                                                          checked
+                                                            ? [...currentViewableRoleIds, cat.id]
+                                                            : currentViewableRoleIds.filter(id => id !== cat.id),
+                                                        )
+                                                      }
+                                                      data-testid={`checkbox-labour-category-${cat.id}`}
+                                                    />
+                                                    <span>{cat.title}</span>
+                                                  </label>
+                                                ))}
+                                              </div>
+                                            )}
+                                            {limited && (
+                                              <p className="basis-full text-xs text-muted-foreground">
+                                                Hours only — this role sees no labour rates or costs, and can't manage allowances.
+                                              </p>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
                                       {hasViewScope && viewEnabled && (
                                         <div className="ml-4 mt-2 mb-1 flex items-center gap-3 flex-wrap">
                                           <span className="text-xs text-muted-foreground">View scope:</span>
