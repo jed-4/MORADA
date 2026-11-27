@@ -819,7 +819,7 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
 
       {/* ── Content ── */}
       {/* Table view: the table fills what's left of the screen and scrolls on
-          its own, so its totals footer pins to the bottom of the screen. The
+          its own, so the status totals bar under it pins to the bottom of the screen. The
           Kanban board scrolls the page as before. */}
       <div className={cn(
         "flex-1 min-h-0 px-3 pb-3 pt-1.5 relative",
@@ -915,34 +915,37 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
               onRowClick={(v) => handleRowClick(v.id)}
               rowClassName={(v) => selectedIds.has(v.id) ? "bg-primary/8 dark:bg-primary/10" : ""}
               className="h-auto min-h-0"
-              footer={(columnId) => {
-                // Totals of the rows listed (this tab + search). Rejected
-                // rows are listed but left out of the money.
-                const live = filteredVariations.filter((v) => v.status !== "rejected");
-                const sum = (f: (v: Variation) => number) => live.reduce((t, v) => t + (f(v) || 0), 0);
-                switch (columnId) {
-                  case "number":
-                    return <span data-testid="footer-label">Total</span>;
-                  case "name":
-                    return (
-                      <span className="font-normal text-muted-foreground">
-                        {filteredVariations.length} variation{filteredVariations.length === 1 ? "" : "s"}
-                        {filteredVariations.length !== live.length && " · rejected not counted"}
-                      </span>
-                    );
-                  case "total":
-                    return <span data-testid="footer-total">{formatCurrency(sum((v) => v.totalAmount))}</span>;
-                  case "paid":
-                    return <span className="text-status-success" data-testid="footer-paid">{formatCurrency(sum((v) => v.paidAmount))}</span>;
-                  case "balance": {
-                    const due = sum(owedOn);
-                    return <span className={due > 0 ? "text-destructive" : undefined} data-testid="footer-balance">{formatCurrency(due)}</span>;
-                  }
-                  default:
-                    return null;
-                }
-              }}
             />
+          )}
+
+          {/* Status totals bar — under the table, so it sits right below the
+              last row, and stays on screen (pinned to the bottom) when the
+              rows run past it: the table above scrolls, this doesn't. Every
+              status, whatever tab is open. Inc GST. */}
+          {currentView === "table" && variations.length > 0 && (
+            <div
+              className="flex-shrink-0 flex items-center gap-x-5 gap-y-1 flex-wrap px-3 py-2 border-t border-border bg-muted text-xs"
+              data-testid="variations-status-totals"
+            >
+              {STATUS_OPTIONS.slice(1).map((status, i) => (
+                <div key={status.key} className="flex items-center gap-x-5">
+                  {i > 0 && <div className="w-px h-3.5 bg-border" />}
+                  <div className="flex items-center gap-1.5" data-testid={`status-total-${status.key}`}>
+                    <span className="text-muted-foreground">{status.label}</span>
+                    <span
+                      className={cn(
+                        "font-semibold tabular-nums",
+                        status.key === "approved" && "text-status-success",
+                        status.key === "rejected" && "text-muted-foreground",
+                      )}
+                    >
+                      {formatCurrency(statusTotals[status.key] ?? 0)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              <span className="ml-auto text-muted-foreground/70">inc GST</span>
+            </div>
           )}
         </div>
 
