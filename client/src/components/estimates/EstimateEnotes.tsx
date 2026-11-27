@@ -185,13 +185,37 @@ function NotePopover({
           )}
         </span>
       </PopoverTrigger>
-      <PopoverContent className="w-72 p-2" align="start" side="bottom">
+      {/* The popover renders in a portal, but React still bubbles its events
+          up to the grid cell that owns it — whose mousedown makes the cell
+          active and FOCUSES it, which pulled focus out of the textarea and
+          closed the box the moment you clicked to place the cursor. Nothing
+          inside the box is the grid's business, so it stops here. */}
+      <PopoverContent
+        className="w-72 p-2"
+        align="start"
+        side="bottom"
+        onMouseDown={e => e.stopPropagation()}
+        onPointerDown={e => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
+        onKeyDown={e => e.stopPropagation()}
+      >
         <Textarea
           autoFocus
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => {
-            if (e.key === "Escape" || e.key === "Enter") {
+            // Like a spreadsheet note: Enter saves, Shift+Enter is a new
+            // line (Alt/Cmd+Enter too — Google Sheets' keys). Esc closes.
+            if (e.key === "Enter" && (e.altKey || e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              const el = e.currentTarget;
+              const at = el.selectionStart ?? draft.length;
+              const end = el.selectionEnd ?? at;
+              setDraft(draft.slice(0, at) + "\n" + draft.slice(end));
+              requestAnimationFrame(() => el.setSelectionRange(at + 1, at + 1));
+              return;
+            }
+            if (e.key === "Escape" || (e.key === "Enter" && !e.shiftKey)) {
               e.preventDefault();
               handleOpenChange(false);
             }
@@ -201,7 +225,7 @@ function NotePopover({
           rows={4}
         />
         <div className="flex justify-between items-center mt-1.5">
-          <span className="text-data text-muted-foreground">Enter or click Save</span>
+          <span className="text-data text-muted-foreground">Enter to save · Shift+Enter new line</span>
           <Button size="sm" className="h-6 text-xs px-2" onClick={() => handleOpenChange(false)}>
             Save
           </Button>
@@ -1358,7 +1382,17 @@ export default function EstimateEnotes({ estimateId }: Props) {
                             data-cell-row={rowIdx}
                             data-cell-col={colIdx}
                             tabIndex={active ? 0 : -1}
-                            onMouseDown={() => nav.setActive({ row: rowIdx, col: colIdx })}
+                            onMouseDown={e => {
+                              // Not when the click is INSIDE an editor in the
+                              // cell (date, select, the RFQ-date box) or in a
+                              // popover the cell owns: making the cell active
+                              // focuses it, which stole focus from the editor
+                              // and closed it before you could type.
+                              const t = e.target as HTMLElement;
+                              if (!e.currentTarget.contains(t)) return;
+                              if (t.closest("input, textarea, select, [contenteditable='true']")) return;
+                              nav.setActive({ row: rowIdx, col: colIdx });
+                            }}
                             className={`overflow-hidden outline-none rounded-sm ${
                               active && !isCheckboxCol ? "ring-2 ring-primary ring-inset bg-primary/5" : ""
                             }`}

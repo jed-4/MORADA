@@ -227,8 +227,21 @@ function SortableTaskRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const dndStyle = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
 
-  const handleKeyDown = (field: 'description' | 'numMen' | 'hoursPerMan') => (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (field: 'description' | 'numMen' | 'hoursPerMan') => (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (e.key === 'Escape') { setEditingCell(null); return; }
+    // Description is multi-line: Shift+Enter (or Alt/Cmd+Enter, Google
+    // Sheets' keys) adds a line; plain Enter saves and moves down.
+    if (e.key === 'Enter' && field === 'description' && (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey)) {
+      if (!e.shiftKey) {
+        e.preventDefault();
+        const el = e.currentTarget;
+        const at = el.selectionStart ?? editValue.length;
+        const end = el.selectionEnd ?? at;
+        setEditValue(editValue.slice(0, at) + '\n' + editValue.slice(end));
+        requestAnimationFrame(() => el.setSelectionRange(at + 1, at + 1));
+      }
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       suppressBlurRef.current = true;
@@ -260,18 +273,26 @@ function SortableTaskRow({
         return (
     <div className="pr-2 py-0.5">
       {editingCell?.taskId === task.id && editingCell.field === 'description' ? (
-        <Input
+        // Grows with its text so a multi-line description is all visible
+        // while you edit it. Cursor goes to the end, not select-all — select-
+        // all meant the first click to place the cursor wiped the selection.
+        <textarea
           autoFocus
+          rows={1}
           value={editValue}
           onChange={e => setEditValue(e.target.value)}
-          onFocus={e => e.target.select()}
+          onFocus={e => { const n = e.target.value.length; e.target.setSelectionRange(n, n); }}
           onBlur={handleBlur('description')}
           onKeyDown={handleKeyDown('description')}
-          className="h-6 text-sm focus-visible:ring-0 border-primary"
+          ref={el => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } }}
+          onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; }}
+          className="block w-full resize-none overflow-hidden rounded-md border border-primary bg-background px-2 py-0.5 text-sm leading-5 outline-none"
+          data-testid={`textarea-labour-description-${task.id}`}
         />
       ) : (
         <span
-          className="text-sm cursor-pointer hover:text-foreground truncate block"
+          className="text-sm cursor-pointer hover:text-foreground whitespace-pre-line line-clamp-2 block"
+          title={task.description || undefined}
           onClick={() => startEdit(task.id, 'description', task.description)}
         >
           {task.description || <span className="text-muted-foreground italic text-xs">Click to edit…</span>}
