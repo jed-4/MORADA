@@ -138,6 +138,13 @@ export interface DataTableProps<TData> {
     order: string[];
     label: (key: string) => string;
   };
+  /**
+   * A totals row pinned to the bottom of the scroll area (sticky, so it sits
+   * at the bottom of the screen while the rows run past it, and right under
+   * the last row when they don't). Called once per visible column, in the
+   * table's current order; return null for an empty cell.
+   */
+  footer?: (columnId: string) => React.ReactNode;
 }
 
 interface LegacyColumnConfigEntry { id: string; visible: boolean; order: number }
@@ -285,6 +292,7 @@ export function DataTable<TData>({
   renderExpandedPanel,
   isRowExpandable,
   groupBy,
+  footer,
 }: DataTableProps<TData>) {
   // One-time migration of legacy `[{id,visible,order}]` storage into the new keys.
   useMemo(() => migrateLegacyConfig(storageKey, legacyConfigKey), [storageKey, legacyConfigKey]);
@@ -777,6 +785,36 @@ export function DataTable<TData>({
               })
             )}
           </tbody>
+
+          {footer && table.getRowModel().rows.length > 0 && (
+            <tfoot className="sticky bottom-0 z-20" data-testid={`datatable-${storageKey}-footer`}>
+              <tr>
+                {visibleLeafColumns.map((col) => {
+                  const meta = (col.columnDef.meta as DataTableColumnMeta | undefined) ?? {};
+                  const isSticky = col.id === firstVisibleId;
+                  const isPinnedRight = pinnedRightVisible && col.id === pinnedRightId;
+                  const cellClass = "h-8 px-2 border-t border-border bg-muted text-xs font-semibold tabular-nums whitespace-nowrap";
+                  return (
+                    <Fragment key={col.id}>
+                      {isPinnedRight && <td aria-hidden className={cellClass} />}
+                      <td
+                        className={cn(cellClass, meta.align === "right" && "text-right", meta.align === "center" && "text-center")}
+                        style={{
+                          position: isSticky || isPinnedRight ? "sticky" : undefined,
+                          left: isSticky ? 0 : undefined,
+                          right: isPinnedRight ? 0 : undefined,
+                          zIndex: isSticky || isPinnedRight ? 3 : undefined,
+                        }}
+                      >
+                        {footer(col.id)}
+                      </td>
+                    </Fragment>
+                  );
+                })}
+                {!pinnedRightVisible && <td aria-hidden className="h-8 border-t border-border bg-muted" />}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </DndContext>
     </div>
