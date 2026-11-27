@@ -21,6 +21,7 @@ import {
 import {
   Plus,
   Columns3,
+  SquareKanban,
   Search,
   Eye,
   EyeOff,
@@ -368,6 +369,20 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
     return t;
   }, [variations]);
 
+  // Money in vs still owed, from the client invoices that claim each
+  // variation (variations.paid_amount / balance_amount, kept in step by the
+  // invoice payment sync). Balance due counts APPROVED variations only — a
+  // draft or pending one isn't owed yet, and a rejected one never will be.
+  const paymentTotals = useMemo(() => {
+    let paid = 0;
+    let due = 0;
+    for (const v of variations) {
+      paid += v.paidAmount || 0;
+      if (v.status === "approved" && v.balanceAmount > 0) due += v.balanceAmount;
+    }
+    return { paid, due };
+  }, [variations]);
+
   const filteredVariations = useMemo(() => {
     return variations.filter((v) => {
       if (selectedStatus !== "all" && v.status !== selectedStatus) return false;
@@ -504,11 +519,19 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
               "text-xs font-medium tabular-nums",
               row.original.balanceAmount > 0
                 ? "text-destructive"
-                : "text-status-success",
+                : row.original.paidAmount > 0
+                  ? "text-status-success"
+                  : "text-muted-foreground",
             )}
             data-testid={`cell-balance-${row.original.id}`}
           >
-            {formatCurrency(row.original.balanceAmount)}
+            {/* Fully paid reads "Paid"; nothing owed and nothing paid (a $0
+                variation) is a dash rather than a green $0. */}
+            {row.original.balanceAmount > 0
+              ? formatCurrency(row.original.balanceAmount)
+              : row.original.paidAmount > 0
+                ? "Paid"
+                : "-"}
           </span>
         ),
         size: 100,
@@ -804,9 +827,28 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
               </div>
             </Fragment>
           ))}
-          <div className="ml-auto flex items-center gap-1.5" data-testid="text-total-all">
+          <div className="w-px h-3.5 bg-primary/40" />
+          <div className="flex items-center gap-1.5" data-testid="text-total-all">
             <span className="text-muted-foreground">Total excl. rejected</span>
             <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.all)}</span>
+          </div>
+          {/* Right: where the money's up to. */}
+          <div className="ml-auto flex items-center gap-x-5">
+            <div className="flex items-center gap-1.5" data-testid="text-total-paid">
+              <span className="text-muted-foreground">Paid</span>
+              <span className="font-semibold tabular-nums text-status-success">{formatCurrency(paymentTotals.paid)}</span>
+            </div>
+            <div className="w-px h-3.5 bg-primary/40" />
+            <div
+              className="flex items-center gap-1.5"
+              title="Approved variations not yet paid"
+              data-testid="text-total-balance-due"
+            >
+              <span className="text-muted-foreground">Balance due</span>
+              <span className={cn("font-semibold tabular-nums", paymentTotals.due > 0 && "text-destructive")}>
+                {formatCurrency(paymentTotals.due)}
+              </span>
+            </div>
             <span className="text-muted-foreground/70">inc GST</span>
           </div>
         </div>
@@ -820,23 +862,6 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
 
           {/* Search / controls row — always visible for both views */}
           <div className="h-9 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">
-            {/* Kanban toggle — leftmost */}
-            <button
-              onClick={() => setCurrentView(currentView === "kanban" ? "table" : "kanban")}
-              className={cn(
-                "h-6 w-auto px-2 text-xs border rounded-md flex items-center gap-1 flex-shrink-0",
-                currentView === "kanban"
-                  ? "bg-primary text-white border-primary/20"
-                  : "hover-elevate active-elevate-2"
-              )}
-              data-testid="button-kanban-view"
-            >
-              <Columns3 className="w-3 h-3" />
-              <span>Kanban</span>
-            </button>
-
-            <div className="w-px h-4 bg-border mx-0.5 flex-shrink-0" />
-
             {/* Search — left, thin border */}
             <div className="relative flex-shrink-0">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
@@ -848,6 +873,22 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
                 data-testid="variations-search-input"
               />
             </div>
+
+            {/* Kanban toggle — icon only, beside the search */}
+            <button
+              onClick={() => setCurrentView(currentView === "kanban" ? "table" : "kanban")}
+              className={cn(
+                "h-6 w-6 flex items-center justify-center rounded-md border flex-shrink-0",
+                currentView === "kanban"
+                  ? "bg-primary text-white border-primary/20"
+                  : "border-border/40 text-muted-foreground hover-elevate active-elevate-2"
+              )}
+              title={currentView === "kanban" ? "Back to table" : "Kanban view"}
+              aria-label={currentView === "kanban" ? "Back to table" : "Kanban view"}
+              data-testid="button-kanban-view"
+            >
+              <SquareKanban className="w-3.5 h-3.5" />
+            </button>
 
             {/* Column picker — far right (only relevant in table view) */}
             {currentView === "table" && (
