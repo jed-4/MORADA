@@ -1,35 +1,68 @@
-import { memo, useMemo } from 'react';
+import { Fragment, forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { fontSize, fontWeight, type Theme } from '../../theme';
+import { CalendarDays } from 'lucide-react-native';
+import { metrics, space, tabular, type, useColors } from '../../theme';
 import { dateStrOf, toLocalDateStr } from '../../lib/dates';
+import { CalendarBlock, Card, Divider, EmptyState, FAB_CLEARANCE, NowLine } from '../kit';
 import {
-  EventCard,
-  formatDayHeader,
+  eventBlockColor,
+  formatClock,
+  formatClockRange,
+  formatDateRange,
+  isEventAllDay,
   isToday,
+  timeToMinutes,
   type CalendarEvent,
   type EventsByDay,
 } from './shared';
 
-// Agenda feed: events from 30 days back to 60 days ahead, grouped by day.
-// Receives pre-bucketed eventsByDay — no per-render filtering.
+// Agenda list: events from 30 days back to 60 days ahead, grouped by day,
+// each day one card. Receives pre-bucketed eventsByDay — no per-render filtering.
+
+const L = metrics.calendar.list;
+const DAY_FMT: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' };
 
 interface FeedViewProps {
-  theme: Theme;
   eventsByDay: EventsByDay;
+  nowMinutes: number;
   refreshing: boolean;
   onRefresh: () => void;
   onEventPress: (event: CalendarEvent) => void;
-  /** Long-press on a day header → create a task on that day. */
+  /** Long-press on a day label → create a task on that day. */
   onDayLongPress: (dateKey: string) => void;
 }
 
-type FeedItem =
-  | { type: 'header'; dateKey: string; count: number }
-  | { type: 'event'; event: CalendarEvent; dateKey: string };
+interface DayGroup {
+  dateKey: string;
+  events: CalendarEvent[];
+}
 
-function FeedViewInner({ theme, eventsByDay, refreshing, onRefresh, onEventPress, onDayLongPress }: FeedViewProps) {
-  const items = useMemo(() => {
+/** Second line under the title: time range (+ project), or the multi-day span. */
+function subLine(event: CalendarEvent): string | null {
+  const parts: string[] = [];
+  if (event.startTime) parts.push(formatClockRange(event.startTime, event.endTime));
+  else if (event.type === 'schedule') {
+    const span = formatDateRange(event.date, event.endDate);
+    if (span) parts.push(span);
+  }
+  if (event.projectName && !event.title.includes(event.projectName)) parts.push(event.projectName);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+export interface FeedViewHandle {
+  /** Scroll to today, or the next day with events. */
+  scrollToToday: (animated?: boolean) => void;
+}
+
+const FeedViewInner = forwardRef<FeedViewHandle, FeedViewProps>(function FeedViewInner(
+  { eventsByDay, nowMinutes, refreshing, onRefresh, onEventPress, onDayLongPress },
+  ref,
+) {
+  const c = useColors();
+  const listRef = useRef<FlatList<DayGroup>>(null);
+  const landed = useRef(false);
+
+  const days = useMemo(() => {
     const now = new Date();
     const cutoffStart = new Date(now);
     cutoffStart.setDate(cutoffStart.getDate() - 30);
@@ -38,91 +71,129 @@ function FeedViewInner({ theme, eventsByDay, refreshing, onRefresh, onEventPress
     const startKey = toLocalDateStr(cutoffStart);
     const endKey = toLocalDateStr(cutoffEnd);
 
-    const sortedDates = Object.keys(eventsByDay)
+    const list: DayGroup[] = [];
+    Object.keys(eventsByDay)
       .filter(k => k >= startKey && k <= endKey)
-      .sort();
-
-    const list: FeedItem[] = [];
-    sortedDates.forEach(dateKey => {
-      // Multi-day events are bucketed onto every day they span (for the week
-      // and month grids); the feed lists each event once, on its start day.
-      const dayEvents = (eventsByDay[dateKey] || []).filter(e => dateStrOf(e.date) === dateKey);
-      if (dayEvents.length === 0) return;
-      list.push({ type: 'header', dateKey, count: dayEvents.length });
-      dayEvents.forEach(event => list.push({ type: 'event', event, dateKey }));
-    });
+      .sort()
+      .forEach(dateKey => {
+        // Multi-day events are bucketed onto every day they span (for the week
+        // and month grids); the list shows each event once, on its start day.
+        const events = (eventsByDay[dateKey] || []).filter(e => dateStrOf(e.date) === dateKey);
+        if (events.length === 0) return;
+        // All-day first, then by start time.
+        events.sort((a, b) => {
+          const aa = isEventAllDay(a) ? -1 : timeToMinutes(a.startTime!);
+          const bb = isEventAllDay(b) ? -1 : timeToMinutes(b.startTime!);
+          return aa - bb;
+        });
+        list.push({ dateKey, events });
+      });
     return list;
   }, [eventsByDay]);
 
+  const todayIndex = useMemo(() => {
+    const key = toLocalDateStr(new Date());
+    const i = days.findIndex(d => d.dateKey >= key);
+    return i === -1 ? Math.max(0, days.length - 1) : i;
+  }, [days]);
+
+  const scrollToToday = useCallback(
+    (animated = true) => {
+      if (days.length === 0) return;
+      listRef.current?.scrollToIndex({ index: todayIndex, animated, viewPosition: 0 });
+    },
+    [days.length, todayIndex],
+  );
+  useImperativeHandle(ref, () => ({ scrollToToday }), [scrollToToday]);
+
+  const renderDay = ({ item }: { item: DayGroup }) => {
+    const d = new Date(item.dateKey + 'T12:00:00');
+    const today = isToday(d);
+    const label = d.toLocaleDateString('en-AU', DAY_FMT).replace(',', '');
+    // Today: the Now row goes before the first timed event that hasn't started.
+    const nowIndex = today
+      ? (() => {
+          const i = item.events.findIndex(e => !isEventAllDay(e) && timeToMinutes(e.startTime!) > nowMinutes);
+          return i === -1 ? item.events.length : i;
+        })()
+      : -1;
+    const nowRow = (
+      <View key="now" style={s.nowRow} accessibilityLabel={`Now, ${formatClock(`${Math.floor(nowMinutes / 60)}:${nowMinutes % 60}`)}`}>
+        <Text style={[type.micro, tabular, s.nowLabel, { color: c.accent }]}>
+          {formatClock(`${Math.floor(nowMinutes / 60)}:${nowMinutes % 60}`)}
+        </Text>
+        <View style={s.flex}>
+          <NowLine />
+        </View>
+      </View>
+    );
+
+    return (
+      <View style={s.day}>
+        <Pressable onLongPress={() => onDayLongPress(item.dateKey)} delayLongPress={metrics.longPressMs}>
+          <Text style={[type.meta, { color: c.muted }]}>{today ? `Today · ${label}` : label}</Text>
+        </Pressable>
+        <Card style={s.card}>
+          {item.events.map((event, i) => (
+            <Fragment key={`${event.id}-${i}`}>
+              {i === nowIndex ? nowRow : i > 0 ? <Divider /> : null}
+              <Pressable
+                onPress={() => onEventPress(event)}
+                accessibilityRole="button"
+                style={({ pressed }) => [s.row, { opacity: pressed ? metrics.pressedOpacity : 1 }]}
+              >
+                <Text style={[type.meta, tabular, s.time, { color: c.muted }]}>
+                  {isEventAllDay(event) ? 'All day' : formatClock(event.startTime)}
+                </Text>
+                <View style={s.flex}>
+                  <CalendarBlock variant="list" title={event.title} time={subLine(event)} color={eventBlockColor(event)} />
+                </View>
+              </Pressable>
+            </Fragment>
+          ))}
+          {nowIndex === item.events.length ? nowRow : null}
+        </Card>
+      </View>
+    );
+  };
+
   return (
     <FlatList
-      style={{ flex: 1 }}
-      contentContainerStyle={[{ paddingBottom: 40 }, items.length === 0 && { flex: 1 }]}
-      data={items}
-      keyExtractor={(item, idx) => item.type === 'header' ? `hdr-${item.dateKey}` : `ev-${item.event.id}-${idx}`}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
-      ListEmptyComponent={
-        <View style={styles.emptyState}>
-          <Ionicons name="calendar-outline" size={52} color={theme.textMuted} />
-          <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>No events</Text>
-          <Text style={[styles.emptyDesc, { color: theme.textMuted }]}>
-            Events from the next 60 days will appear here.
-          </Text>
-        </View>
-      }
-      renderItem={({ item }) => {
-        if (item.type === 'header') {
-          const d = new Date(item.dateKey + 'T12:00:00');
-          const headerIsToday = isToday(d);
-          return (
-            <Pressable
-              style={styles.dayHeader}
-              onLongPress={() => onDayLongPress(item.dateKey)}
-            >
-              <Text style={[styles.dayHeaderTitle, { color: theme.textPrimary }]}>
-                {headerIsToday ? "Today's Events" : formatDayHeader(d)}
-              </Text>
-              <Text style={[styles.dayHeaderCount, { color: theme.primary }]}>
-                {item.count} {item.count === 1 ? 'event' : 'events'}
-              </Text>
-            </Pressable>
-          );
-        }
-        return (
-          <View style={styles.cardWrap}>
-            <EventCard event={item.event} theme={theme} onPress={onEventPress} />
-          </View>
-        );
+      ref={listRef}
+      style={s.flex}
+      // The list keeps 30 days of history above; open at today, once.
+      onContentSizeChange={() => {
+        if (landed.current || days.length === 0) return;
+        landed.current = true;
+        scrollToToday(false);
       }}
+      onScrollToIndexFailed={info => {
+        // Rows are variable height: jump near it, then try again once laid out.
+        listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
+        setTimeout(() => listRef.current?.scrollToIndex({ index: info.index, animated: false }), 50);
+      }}
+      contentContainerStyle={[s.list, days.length === 0 && s.grow]}
+      data={days}
+      keyExtractor={item => item.dateKey}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
+      ListEmptyComponent={
+        <EmptyState icon={CalendarDays} title="No events" helper="Events from the next 60 days will appear here." />
+      }
+      renderItem={renderDay}
     />
   );
-}
+});
 
 export const FeedView = memo(FeedViewInner);
 
-const styles = StyleSheet.create({
-  dayHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  dayHeaderTitle: {
-    fontSize: fontSize.bodyLg,
-    fontWeight: fontWeight.semibold,
-    flex: 1,
-  },
-  dayHeaderCount: { fontSize: fontSize.xs },
-  cardWrap: { marginHorizontal: 16 },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 32,
-    gap: 10,
-  },
-  emptyTitle: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
-  emptyDesc: { fontSize: fontSize.bodySm, textAlign: 'center', lineHeight: 18 },
+const s = StyleSheet.create({
+  flex: { flex: 1 },
+  grow: { flexGrow: 1 },
+  list: { paddingHorizontal: L.padX, paddingBottom: space.screenBottom + FAB_CLEARANCE, gap: L.gap },
+  day: { gap: L.dayGap },
+  card: { paddingTop: 0, paddingBottom: 0 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: L.rowGap, paddingVertical: L.rowPadY },
+  time: { width: L.timeCol, paddingTop: metrics.calendarBlock.listPad.y },
+  nowRow: { flexDirection: 'row', alignItems: 'center', gap: L.nowGap, paddingVertical: L.rowPadY / 2 },
+  nowLabel: { width: L.timeCol - L.nowGap },
 });

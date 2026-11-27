@@ -11,6 +11,7 @@
     "node": "20.x"
   },
   "dependencies": {
+    "@expo-google-fonts/inter": "^0.4.2",
     "@expo/ngrok": "^4.1.0",
     "@expo/ui": "~58.0.28",
     "@expo/vector-icons": "^15.0.3",
@@ -50,6 +51,7 @@
     "expo-updates": "~58.0.22",
     "expo-web-browser": "~58.0.8",
     "expo-widgets": "~58.0.28",
+    "lucide-react-native": "^1.77.0",
     "react": "19.3.0",
     "react-native": "0.88.1",
     "react-native-document-scanner-plugin": "2.0.4",

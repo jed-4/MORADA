@@ -1,7 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { PressableScale } from '../ui/PressableScale';
-import { lightTheme, projectColors, fontSize, fontWeight, radius, type Theme } from '../../theme';
+import { lightTheme, projectColors } from '../../theme';
 
 // Shared types, colour maps, and helpers for the Calendar screen and its
 // three extracted views (FeedView / WeekView / MonthView).
@@ -209,108 +207,21 @@ export function getTypeIcon(type: string): React.ComponentProps<typeof Ionicons>
   }
 }
 
-// ── EventCard — the list/agenda row used by FeedView and MonthView ─────────
-
-interface EventCardProps {
-  event: CalendarEvent;
-  theme: Theme;
-  onPress: (event: CalendarEvent) => void;
-  /** Status chip config (month agenda shows these; feed does not). */
-  statusChip?: { label: string; color: string } | null;
+/** "9:30", "10:00", "2:00": 12-hour clock without AM/PM (revamp calendar). */
+export function formatClock(timeStr: string | null | undefined): string {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':').map(Number);
+  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${displayH}:${(m || 0).toString().padStart(2, '0')}`;
 }
 
-export function EventCard({ event, theme, onPress, statusChip }: EventCardProps) {
-  const barColor = event.color;
-  const dateRange = event.type === 'schedule' ? formatDateRange(event.date, event.endDate) : null;
-  const timesheetHours = event.type === 'timesheet'
-    ? (() => {
-        const h = parseFloat(event.raw?.duration ?? event.raw?.totalHours ?? '');
-        if (!isFinite(h) || h <= 0) return '';
-        return h % 1 === 0 ? `${h}h` : `${h.toFixed(1)}h`;
-      })()
-    : '';
-  return (
-    <PressableScale
-      haptics
-      style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}
-      onPress={() => onPress(event)}
-    >
-      <View style={{ width: 4, backgroundColor: barColor }} />
-      <View style={styles.cardBody}>
-        <Text style={[styles.cardTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-          {event.title}
-        </Text>
-        <Text style={[styles.cardTime, { color: theme.textSecondary }]}>
-          {event.startTime
-            ? `${formatTime(event.startTime)}${event.endTime ? ` – ${formatTime(event.endTime)}` : ''}`
-            : (dateRange || 'All day')}
-        </Text>
-        {statusChip && (
-          <View style={styles.chipRow}>
-            <View style={[styles.statusChip, { backgroundColor: statusChip.color + '22' }]}>
-              <Text style={[styles.statusChipText, { color: statusChip.color }]}>{statusChip.label}</Text>
-            </View>
-          </View>
-        )}
-        {event.projectName && (
-          <View style={[styles.projectChip, { backgroundColor: barColor + '20' }]}>
-            <View style={[styles.projectDot, { backgroundColor: barColor }]} />
-            <Text style={[styles.projectChipText, { color: theme.textSecondary }]}>
-              {event.projectName}
-            </Text>
-          </View>
-        )}
-      </View>
-      {!!timesheetHours && (
-        <Text style={[styles.hours, { color: theme.textPrimary }]}>{timesheetHours}</Text>
-      )}
-    </PressableScale>
-  );
+/** "9:30 – 10:30", or just the start when there is no end. */
+export function formatClockRange(start?: string | null, end?: string | null): string {
+  if (!start) return '';
+  return end ? `${formatClock(start)} – ${formatClock(end)}` : formatClock(start);
 }
 
-const styles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    marginBottom: 10,
-    overflow: 'hidden',
-    minHeight: 64,
-  },
-  cardBody: { flex: 1, paddingHorizontal: 12, paddingVertical: 12 },
-  cardTitle: {
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-    marginBottom: 4,
-  },
-  cardTime: { fontSize: fontSize.table },
-  chipRow: { flexDirection: 'row', marginTop: 6 },
-  statusChip: {
-    borderRadius: radius.md,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  statusChipText: { fontSize: fontSize.data, fontWeight: fontWeight.semibold },
-  projectChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.lg,
-  },
-  projectDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 5,
-  },
-  projectChipText: { fontSize: fontSize.label, fontWeight: fontWeight.medium },
-  hours: {
-    fontSize: fontSize.bodyLg,
-    fontWeight: fontWeight.bold,
-    paddingRight: 14,
-    alignSelf: 'center',
-  },
-});
+/** Only project-linked events carry colour; everything else is internal grey. */
+export function eventBlockColor(event: CalendarEvent): string | null {
+  return event.projectId ? event.color : null;
+}

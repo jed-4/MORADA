@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { Theme } from '../../theme';
+import { radii, size, space, tabular, type, useColors, type Theme } from '../../theme';
 import type { MessageReaction } from './types';
 
 // Grouped reaction pills under a message bubble (icon + count, highlighted
@@ -33,6 +33,8 @@ interface ReactionPillsProps {
 }
 
 export function ReactionPills({ reactions, currentUserId, alignRight, theme, onToggle }: ReactionPillsProps) {
+  const c = useColors();
+  void theme;
   if (!reactions || reactions.length === 0) return null;
 
   // Group by emoji id, preserving the server enum order.
@@ -60,12 +62,12 @@ export function ReactionPills({ reactions, currentUserId, alignRight, theme, onT
           style={[
             styles.pill,
             g.mine
-              ? { backgroundColor: theme.primaryLight, borderColor: theme.primary }
-              : { backgroundColor: theme.card, borderColor: theme.border },
+              ? { backgroundColor: c.tint, borderColor: c.accent }
+              : { backgroundColor: c.surface, borderColor: c.border },
           ]}
         >
-          <Ionicons name={g.icon} size={12} color={g.mine ? theme.primary : theme.textSecondary} />
-          <Text style={[styles.count, { color: g.mine ? theme.primary : theme.textSecondary }]}>
+          <Ionicons name={g.icon} size={size.icon.caret} color={g.mine ? c.accent : c.icon} />
+          <Text style={[type.caption, tabular, { color: g.mine ? c.link : c.muted }]}>
             {g.count}
           </Text>
         </Pressable>
@@ -75,16 +77,15 @@ export function ReactionPills({ reactions, currentUserId, alignRight, theme, onT
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: space.inlineSm, marginTop: space.inlineSm },
   rowRight: { justifyContent: 'flex-end' },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    borderWidth: 1,
+    gap: space.inlineSm,
+    paddingHorizontal: space.inline,
+    paddingVertical: space.inlineSm / 2,
+    borderRadius: radii.pill,
+    borderWidth: size.border,
   },
-  count: { fontSize: 11, fontWeight: '600' },
 });

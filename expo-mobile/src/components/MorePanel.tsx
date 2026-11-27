@@ -1,28 +1,22 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ChevronRight, CircleQuestionMark, LogOut, Palette, Settings, type LucideIcon } from 'lucide-react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest } from '../services/api';
-import { useTheme, fontSize, fontWeight, radius, type Theme, MAX_FONT_SCALE } from '../theme';
+import { useColors, metrics, size, space, tabular, type } from '../theme';
+import { Avatar, CaptureChip, Card, PrimaryButton, SheetBody, TextField } from './kit';
+import { SuggestionSheet } from './more/SuggestionSheet';
 import { haptic } from '../lib/haptics';
-import { Sheet, SheetTextInput, type SheetRef } from './ui/Sheet';
+import { DESIGN_PREVIEW } from '../lib/designPreview';
+import { Sheet, type SheetRef } from './ui/Sheet';
 import { useToast } from './ui/Toast';
-import { SectionHeader } from './ui/SectionHeader';
-import { PressableScale } from './ui/PressableScale';
 import { usePermission } from '../lib/usePermission';
-import {
-  workspaceItems,
-  createItems,
-  MORE_COLOR_BG,
-  type MoreTile,
-} from './more/items';
+import { workspaceItems, createItems, type MoreTile } from './more/items';
 
-// The app's single More surface — a grouped bottom sheet over the tab bar.
+// The app's single More surface: a bottom sheet over the tab bar (design P06).
 // Content config lives in ./more/items.ts; the New Task sub-flow is a stacked
-// sheet pushed on top. Settings is reached via the profile row; Log Out and
-// Suggest an Idea live in the Dashboard avatar menu (kept away from the
-// thumb-friendly bottom of this sheet).
+// sheet pushed on top. Settings, Help & feedback and Sign out sit in the
+// bottom card.
 
 export interface MorePanelHandle {
   present: () => void;
@@ -36,53 +30,48 @@ interface MorePanelProps {
   messagesUnread?: number;
 }
 
-function Tile({
-  tile,
-  unread,
-  onPress,
-}: {
-  tile: MoreTile;
-  unread?: number;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  const fg = tile.destructive ? theme.statusDanger : theme[tile.color];
-  const bg = tile.destructive
-    ? theme.statusDangerBg
-    : theme[MORE_COLOR_BG[tile.color] as keyof Theme];
-  const showBadge = tile.showUnreadBadge && (unread ?? 0) > 0;
-
+function Row({ icon: Glyph, label, count, muted, onPress }: { icon: LucideIcon; label: string; count?: number | null; muted?: boolean; onPress: () => void }) {
+  const c = useColors();
   return (
-    <PressableScale haptics onPress={onPress} style={styles.tile}>
-      <View style={[styles.iconCircle, { backgroundColor: bg }]}>
-        <Ionicons name={tile.icon} size={24} color={fg} />
-        {showBadge && (
-          <View style={[styles.unreadPill, { backgroundColor: theme.primary }]}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.unreadText}>{unread! > 99 ? '99+' : unread}</Text>
-          </View>
-        )}
-      </View>
-      <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-        style={[
-          styles.tileLabel,
-          { color: tile.destructive ? theme.statusDanger : theme.textPrimary },
-        ]}
-        numberOfLines={2}
-      >
-        {tile.label}
-      </Text>
-    </PressableScale>
+    <Pressable
+      onPress={() => { haptic.light(); onPress(); }}
+      accessibilityRole="button"
+      accessibilityLabel={count ? `${label}, ${count}` : label}
+      style={({ pressed }) => [mx.row, { opacity: pressed ? metrics.pressedOpacity : 1 }]}
+    >
+      <Glyph size={mx_icon} color={c.icon} strokeWidth={metrics.iconStroke} />
+      <Text style={[type.rowTitle, mx.label, { color: muted ? c.muted : c.text }]} numberOfLines={1}>{label}</Text>
+      {count ? <Text style={[type.meta, tabular, { color: c.muted }]}>{count}</Text> : null}
+      {muted ? null : <ChevronRight size={size.icon.row} color={c.muted} strokeWidth={metrics.iconStroke} />}
+    </Pressable>
   );
 }
+
+const mx_icon = size.icon.header;
 
 const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel({
   navigationRef,
   onVisibilityChange,
   messagesUnread = 0,
 }, ref) {
-  const theme = useTheme();
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const k = useColors();
+  const suggestionSheetRef = useRef<SheetRef>(null);
+
+  const confirmSignOut = () => {
+    Alert.alert('Sign out?', 'You will need to sign in again to use Morada on this phone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: () => {
+          sheetRef.current?.dismiss();
+          logout();
+        },
+      },
+    ]);
+  };
   // The Selections tile is only offered to roles that can view selections.
   const canViewSelections = usePermission('projects.selections');
   const canViewDefects = usePermission('projects.defects');
@@ -157,235 +146,112 @@ const MorePanel = forwardRef<MorePanelHandle, MorePanelProps>(function MorePanel
     }
   };
 
-  const displayName =
-    user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : user?.email;
-
-  const inputStyle = {
-    backgroundColor: theme.background,
-    color: theme.textPrimary,
-    borderColor: theme.border,
-  };
+  const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email;
 
   return (
     <>
       <Sheet ref={sheetRef} scrollable onDismiss={() => onVisibilityChange?.(false)}>
-        {user && (
-          <Animated.View entering={FadeInDown.duration(300)}>
-            <PressableScale
-              haptics
-              onPress={() => goToMoreScreen('Settings')}
-              style={[styles.profileRow, { borderBottomColor: theme.border }]}
+        <View style={mx.body}>
+          {user ? (
+            <Pressable
+              onPress={() => { haptic.light(); goToMoreScreen('Settings'); }}
+              accessibilityRole="button"
+              accessibilityLabel={`${displayName}, open settings`}
+              style={({ pressed }) => [mx.profile, { borderBottomColor: k.border, opacity: pressed ? metrics.pressedOpacity : 1 }]}
             >
-              <View style={[styles.avatar, { backgroundColor: theme.primary }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.avatarText}>
-                  {(user.firstName?.[0] || user.email?.[0] || '?').toUpperCase()}
-                </Text>
+              <Avatar name={user.firstName || user.email} size="profile" />
+              <View style={mx.profileText}>
+                <Text style={[type.sheetTitle, { color: k.text }]} numberOfLines={1}>{displayName}</Text>
+                <Text style={[type.meta, { color: k.muted }]} numberOfLines={1}>{user.email}</Text>
               </View>
-              <View style={styles.profileInfo}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.profileName, { color: theme.textPrimary }]} numberOfLines={1}>
-                  {displayName}
-                </Text>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-                  style={[styles.profileEmail, { color: theme.textSecondary }]}
-                  numberOfLines={1}
-                >
-                  {user.email}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-            </PressableScale>
-          </Animated.View>
-        )}
+              <ChevronRight size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+          ) : null}
 
-        <Animated.View entering={FadeInDown.duration(300).delay(60)} style={styles.section}>
-          <SectionHeader title="Workspace" />
-          <View style={styles.grid}>
+          <View style={mx.chips}>
+            {createItems.map((tile) => (
+              <CaptureChip key={tile.id} variant="sheet" icon={tile.icon} label={tile.label} onPress={() => runAction(tile)} style={mx.chip} />
+            ))}
+          </View>
+
+          <Card variant="list">
             {workspaceItems
               .filter((tile) => tile.id !== 'selections' || canViewSelections)
               .filter((tile) => tile.id !== 'my-defects' || canViewDefects)
               .map((tile) => (
-              <Tile
-                key={tile.id}
-                tile={tile}
-                unread={messagesUnread}
-                onPress={() => runAction(tile)}
-              />
-            ))}
-          </View>
-        </Animated.View>
+                <Row key={tile.id} icon={tile.icon} label={tile.label} onPress={() => runAction(tile)} />
+              ))}
+            {DESIGN_PREVIEW ? (
+              <Row key="design-preview" icon={Palette} label="Design preview" onPress={() => goToMoreScreen('DesignPreview')} />
+            ) : null}
+          </Card>
 
-        <Animated.View entering={FadeInDown.duration(300).delay(120)} style={styles.section}>
-          <SectionHeader title="Create" />
-          <View style={styles.grid}>
-            {createItems.map((tile) => (
-              <Tile key={tile.id} tile={tile} onPress={() => runAction(tile)} />
-            ))}
-          </View>
-        </Animated.View>
+          <Card variant="list">
+            <Row key="settings" icon={Settings} label="Settings" onPress={() => goToMoreScreen('Settings')} />
+            <Row
+              key="help"
+              icon={CircleQuestionMark}
+              label="Help & feedback"
+              onPress={() => {
+                sheetRef.current?.dismiss();
+                setTimeout(() => suggestionSheetRef.current?.present(), metrics.sheetSwapMs);
+              }}
+            />
+            <Row key="signout" icon={LogOut} label="Sign out" muted onPress={confirmSignOut} />
+          </Card>
+        </View>
       </Sheet>
 
       <Sheet
         ref={taskSheetRef}
-        title="New Task"
+        title="New task"
         stackBehavior="push"
         // Create button pinned at the bottom, above the keyboard.
-        footer={
-          <PressableScale
-            haptics
-            disabled={saving}
-            onPress={saveTask}
-            style={[styles.submitBtn, { backgroundColor: theme.primary, opacity: saving ? 0.7 : 1 }]}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.submitText} maxFontSizeMultiplier={1.4}>Create Task</Text>
-            )}
-          </PressableScale>
-        }
+        footer={<PrimaryButton label="Create task" onPress={saveTask} loading={saving} disabled={!taskTitle.trim()} />}
       >
-        <View style={styles.form}>
-          <SheetTextInput
-            style={[styles.input, inputStyle]}
+        <SheetBody>
+          <TextField
+            inSheet
             value={taskTitle}
             onChangeText={setTaskTitle}
             placeholder="Task title"
-            placeholderTextColor={theme.textMuted}
             autoFocus
             autoCapitalize="sentences"
             returnKeyType="next"
             submitBehavior="submit"
             onSubmitEditing={() => descRef.current?.focus()}
+            accessibilityLabel="Task title"
           />
-          <SheetTextInput
+          <TextField
+            inSheet
+            multilineBox
             ref={descRef}
             autoCapitalize="sentences"
-            style={[styles.textArea, inputStyle]}
             value={taskDescription}
             onChangeText={setTaskDescription}
             placeholder="Description (optional)"
-            placeholderTextColor={theme.textMuted}
-            multiline
-            textAlignVertical="top"
+            accessibilityLabel="Description"
           />
-        </View>
+        </SheetBody>
       </Sheet>
 
+      <SuggestionSheet ref={suggestionSheetRef} sourcePage="more-sheet" />
     </>
   );
 });
 
 export default MorePanel;
 
-const styles = StyleSheet.create({
-  profileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 16,
-    marginBottom: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
-  },
-  profileInfo: {
-    flex: 1,
-    marginRight: 8,
-  },
-  profileName: {
-    fontSize: fontSize.base,
-    fontWeight: fontWeight.semibold,
-  },
-  profileEmail: {
-    fontSize: fontSize.bodySm,
-    marginTop: 2,
-  },
-  section: {
-    marginBottom: 8,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 12,
-  },
-  tile: {
-    width: '25%',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-  },
-  iconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: radius.xxl,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  unreadPill: {
-    position: 'absolute',
-    top: -4,
-    right: -8,
-    minWidth: 18,
-    height: 18,
-    borderRadius: radius.full,
-    paddingHorizontal: 5,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  unreadText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.data,
-    fontWeight: fontWeight.bold,
-  },
-  tileLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
-    textAlign: 'center',
-  },
-  form: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: fontSize.base,
-    marginBottom: 12,
-  },
-  textArea: {
-    borderWidth: 1,
-    borderRadius: radius.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: fontSize.base,
-    height: 120,
-  },
-  submitBtn: {
-    flex: 1,
-    minHeight: 50,
-    borderRadius: radius.xl,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.base,
-    fontWeight: fontWeight.semibold,
-  },
+
+const M = metrics.more;
+
+const mx = StyleSheet.create({
+  body: { paddingHorizontal: space.screenX, gap: M.gap },
+  profile: { flexDirection: 'row', alignItems: 'center', gap: M.rowGap, minHeight: M.profileHeight, paddingBottom: M.profilePadBottom, borderBottomWidth: size.border },
+  profileText: { flex: 1, gap: M.profileTextGap },
+  chips: { flexDirection: 'row', gap: M.chipGap },
+  // Three equal chips; minWidth 0 lets them share a narrow phone.
+  chip: { flex: 1, minWidth: 0 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: M.rowGap, minHeight: M.rowHeight, paddingVertical: M.rowPadY },
+  label: { flex: 1 },
 });

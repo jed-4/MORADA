@@ -3,7 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLayout } from '../../lib/useLayout';
-import { useTheme, fontSize } from '../../theme';
+import { metrics, radii, shadow, size, space, type, useColors } from '../../theme';
+import { ChevronLeft, Menu, X } from 'lucide-react-native';
 
 /**
  * List on the left, the open item on the right — on a big screen only.
@@ -34,7 +35,7 @@ export const useTwoPaneDetail = () => useContext(DetailContext);
 /** Width of the left list panel on a big screen. */
 export const LIST_PANE_WIDTH = 360;
 /** Width of the collapsed sidebar (`rail`) when an item is open. */
-export const RAIL_WIDTH = 76;
+export const RAIL_WIDTH = size.railWidth;
 
 /**
  * For the `rail` content: expand the full list as an overlay. The rail itself
@@ -52,6 +53,8 @@ interface TwoPaneProps {
   /** Shown on the right when wide and nothing is selected. */
   emptyTitle?: string;
   emptyIcon?: keyof typeof Ionicons.glyphMap;
+  /** Replaces the default empty state (e.g. a kit EmptyState). */
+  empty?: ReactNode;
   /** Override the list width (defaults to LIST_PANE_WIDTH). */
   listWidth?: number;
   /** From useTwoPaneSelection: folded with an item open — show it full width. */
@@ -76,6 +79,7 @@ export function TwoPane({
   detail,
   emptyTitle = 'Select an item',
   emptyIcon = 'albums-outline',
+  empty,
   listWidth,
   narrowDetail = false,
   onCloseDetail,
@@ -83,7 +87,7 @@ export function TwoPane({
   detailKey,
 }: TwoPaneProps) {
   const { isWide } = useLayout();
-  const theme = useTheme();
+  const c = useColors();
   const insets = useSafeAreaInsets();
   const hasDetail = detail != null;
   const collapsible = !!rail && isWide;
@@ -101,7 +105,7 @@ export function TwoPane({
   return (
     <View style={styles.row}>
       {railMode ? (
-        <View key="rail" style={[styles.rail, { backgroundColor: theme.card, borderRightColor: theme.border, paddingTop: insets.top + 8 }]}>
+        <View key="rail" style={[styles.rail, { backgroundColor: c.bg, borderRightColor: c.border, paddingTop: insets.top + space.inline }]}>
           {/* Back to the full list — top-left, where back is on every other
               screen (Jed, 11-21: back buttons weren't consistently placed). */}
           {onCloseDetail ? (
@@ -112,7 +116,7 @@ export function TwoPane({
               accessibilityLabel="Back to the full list"
               style={styles.railToggle}
             >
-              <Ionicons name="chevron-back" size={26} color={theme.textPrimary} />
+              <ChevronLeft size={metrics.pageHeader.backTasks} color={c.accent} strokeWidth={metrics.iconStroke} />
             </Pressable>
           ) : null}
           <Pressable
@@ -120,11 +124,13 @@ export function TwoPane({
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={expanded ? 'Collapse list' : 'Show full list'}
-            style={[styles.railToggle, { backgroundColor: expanded ? theme.primaryLight : 'transparent' }]}
+            style={[styles.railToggle, { backgroundColor: expanded ? c.tint : 'transparent' }]}
           >
-            <Ionicons name={expanded ? 'close' : 'menu'} size={24} color={theme.textSecondary} />
+            {expanded
+              ? <X size={size.icon.header} color={c.accent} strokeWidth={metrics.iconStroke} />
+              : <Menu size={size.icon.header} color={c.icon} strokeWidth={metrics.iconStroke} />}
           </Pressable>
-          <View style={[styles.railDivider, { backgroundColor: theme.border }]} />
+          <View style={[styles.railDivider, { backgroundColor: c.border }]} />
           <RailContext.Provider value={{ expand: () => setExpanded(true) }}>{rail}</RailContext.Provider>
         </View>
       ) : null}
@@ -132,11 +138,11 @@ export function TwoPane({
         key="list"
         style={[
           styles.list,
-          isWide && !collapsible && { width, flex: 0, borderRightColor: theme.border, borderRightWidth: StyleSheet.hairlineWidth },
+          isWide && !collapsible && { width, flex: 0, borderRightColor: c.border, borderRightWidth: size.border },
           // Collapsed to the rail: the list floats over the detail when
           // expanded, and is hidden (never unmounted) otherwise.
           railMode && (expanded
-            ? [styles.overlay, { left: RAIL_WIDTH, width, backgroundColor: theme.background, borderRightColor: theme.border }]
+            ? [styles.overlay, { left: RAIL_WIDTH, width, backgroundColor: c.bg, borderRightColor: c.border }]
             : styles.hidden),
           // Hidden, never unmounted: the list keeps its scroll and search.
           narrowDetail && styles.hidden,
@@ -145,12 +151,14 @@ export function TwoPane({
         {list}
       </View>
       {showDetail ? (
-        <View key="detail" style={[styles.detail, { backgroundColor: theme.background }]}>
+        <View key="detail" style={[styles.detail, { backgroundColor: c.bg }]}>
           <DetailContext.Provider value={{ heldOnFold: narrowDetail }}>
-            {detail ?? (
+            {detail ?? empty ?? (
             <View style={styles.empty}>
-              <Ionicons name={emptyIcon} size={40} color={theme.textMuted} />
-              <Text style={[styles.emptyText, { color: theme.textMuted }]}>{emptyTitle}</Text>
+              <View style={[styles.emptyCircle, { backgroundColor: c.greyFill }]}>
+                <Ionicons name={emptyIcon} size={metrics.emptyState.icon} color={c.muted} />
+              </View>
+              <Text style={[type.emptyTitle, { color: c.muted }]}>{emptyTitle}</Text>
             </View>
             )}
           </DetailContext.Provider>
@@ -168,9 +176,9 @@ export function TwoPane({
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="Back to list"
-              style={[styles.back, { top: insets.top + 6, backgroundColor: theme.card, borderColor: theme.border }]}
+              style={[styles.back, { top: insets.top + 6, backgroundColor: c.surface, borderColor: c.border }]}
             >
-              <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
+              <ChevronLeft size={size.icon.header} color={c.accent} strokeWidth={metrics.iconStroke} />
             </Pressable>
           ) : null}
         </View>
@@ -184,36 +192,22 @@ const styles = StyleSheet.create({
   list: { flex: 1 },
   detail: { flex: 1 },
   hidden: { display: 'none' },
-  rail: { width: RAIL_WIDTH, borderRightWidth: StyleSheet.hairlineWidth, alignItems: 'center' },
-  railDivider: { width: 40, height: StyleSheet.hairlineWidth, marginBottom: 10 },
-  railToggle: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    zIndex: 10,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 4, height: 0 },
-    elevation: 12,
-  },
+  rail: { width: RAIL_WIDTH, borderRightWidth: size.border, alignItems: 'center' },
+  railDivider: { width: RAIL_WIDTH / 2, height: size.border, marginBottom: space.inline + space.inlineSm },
+  railToggle: { width: metrics.minHit, height: metrics.minHit, borderRadius: radii.lg, alignItems: 'center', justifyContent: 'center', marginBottom: space.inline },
+  // The expanded list floats over the detail, so it carries the sheet shadow.
+  overlay: { position: 'absolute', top: 0, bottom: 0, zIndex: 10, borderRightWidth: size.border, ...shadow.sheet },
   back: {
     position: 'absolute',
-    left: 12,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    left: space.rowGap,
+    width: metrics.minHit - space.inline,
+    height: metrics.minHit - space.inline,
+    borderRadius: (metrics.minHit - space.inline) / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    borderWidth: size.border,
+    ...shadow.fab,
   },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
-  emptyText: { fontSize: fontSize.bodyLg, textAlign: 'center' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: metrics.emptyState.gap },
+  emptyCircle: { width: metrics.emptyState.circle, height: metrics.emptyState.circle, borderRadius: metrics.emptyState.circle / 2, alignItems: 'center', justifyContent: 'center' },
 });

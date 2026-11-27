@@ -1,8 +1,7 @@
-import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { PressableScale } from '../ui/PressableScale';
+import { Pressable, Text, StyleSheet } from 'react-native';
+import { ChevronRight, Pin } from 'lucide-react-native';
 import { markupToDisplay } from './mentions';
-import type { Theme } from '../../theme';
+import { metrics, radii, size, space, tabular, type, useColors, type Theme } from '../../theme';
 import type { Message } from './types';
 
 // Slim banner under the thread header showing the most recently pinned message
@@ -19,24 +18,24 @@ interface PinnedBannerProps {
 }
 
 export function PinnedBanner({ message, count, theme, onPress }: PinnedBannerProps) {
+  const c = useColors();
+  void theme;
   const preview = markupToDisplay(message.content || '').trim();
   const hasImages = (message.attachments || []).length > 0;
   return (
-    <PressableScale
+    <Pressable
       onPress={onPress}
-      style={[styles.wrap, { backgroundColor: theme.primaryLight, borderBottomColor: theme.border }]}
+      accessibilityRole="button"
+      accessibilityLabel={`Pinned message: ${preview || 'photo'}`}
+      style={({ pressed }) => [styles.wrap, { backgroundColor: c.surface, borderColor: c.border, opacity: pressed ? metrics.pressedOpacity : 1 }]}
     >
-      <Ionicons name="pin" size={13} color={theme.primary} />
-      <View style={styles.body}>
-        <Text style={[styles.label, { color: theme.primary }]}>
-          {count > 1 ? `Pinned · ${count}` : 'Pinned'}
-        </Text>
-        <Text style={[styles.preview, { color: theme.textSecondary }]} numberOfLines={1}>
-          {preview || (hasImages ? 'Photo' : 'Message')}
-        </Text>
-      </View>
-      <Ionicons name="chevron-forward" size={14} color={theme.textMuted} />
-    </PressableScale>
+      <Pin size={size.icon.meta} color={c.icon} strokeWidth={metrics.iconStroke} />
+      <Text style={[type.metaSemi, tabular, { color: c.text }]}>{count > 1 ? `Pinned · ${count}` : 'Pinned'}</Text>
+      <Text style={[type.meta, styles.preview, { color: c.muted }]} numberOfLines={1}>
+        {preview || (hasImages ? 'Photo' : 'Message')}
+      </Text>
+      <ChevronRight size={size.icon.row} color={c.muted} strokeWidth={metrics.iconStroke} />
+    </Pressable>
   );
 }
 
@@ -44,12 +43,13 @@ const styles = StyleSheet.create({
   wrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: space.inline,
+    marginHorizontal: space.screenX,
+    marginBottom: space.inline,
+    paddingHorizontal: space.cardX,
+    paddingVertical: space.inline,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
   },
-  body: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
-  label: { fontSize: 11, fontWeight: '700' },
-  preview: { fontSize: 12, flexShrink: 1 },
+  preview: { flex: 1 },
 });

@@ -13,13 +13,14 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
-import { Ionicons } from '@expo/vector-icons';
+import { Camera, Image as ImageIcon, Lock } from 'lucide-react-native';
 import { usePreventRemove } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme, fontSize, fontWeight, radius } from '../theme';
+import { metrics, radii, size, space, type, useColors } from '../theme';
+import { EmptyState, SaveActionBar, SheetHeader } from '../components/kit';
 import { haptic } from '../lib/haptics';
 import { useDirtyGuard, confirmDiscard } from '../lib/useDirtyGuard';
 import { useKeyboardAwareScroll } from '../lib/useKeyboardAwareScroll';
@@ -80,13 +81,14 @@ const MAX_PHOTOS = 6;
  * next defect, and are remembered per project for the next walkthrough.
  */
 export default function DefectCaptureScreen({ navigation, route }: Props) {
-  const { projectId, projectName, sharedUris } = (route.params ?? {}) as {
+  const { projectId, projectName, projectColor, sharedUris } = (route.params ?? {}) as {
     projectId: string;
     projectName?: string;
+    projectColor?: string | null;
     /** Photos shared into Morada (#44): start with these instead of the camera. */
     sharedUris?: string[];
   };
-  const theme = useTheme();
+  const c = useColors();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const kb = useKeyboardAwareScroll({ extraSpace: 90 });
@@ -285,145 +287,123 @@ export default function DefectCaptureScreen({ navigation, route }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasContent, photos, title, description, sticky, dueDate]);
 
+  // Full-screen form with its own Cancel · New defect · Done header.
   useLayoutEffect(() => {
-    navigation.setOptions({
-      title: projectName ? `Defects · ${projectName}` : 'Add defects',
-      headerRight: () => (
-        <Pressable
-          onPress={finish}
-          disabled={saving}
-          hitSlop={8}
-          style={styles.headerBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Done"
-        >
-          <Text style={[styles.headerBtnText, { color: theme.primary }]}>Done</Text>
-        </Pressable>
-      ),
-    });
-  }, [navigation, finish, saving, projectName, theme.primary]);
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
+
+  const project = projectName ? { name: projectName, color: projectColor ?? null, id: projectId } : null;
+  const headerEl = (
+    <View style={[cs.header, { paddingTop: insets.top + metrics.schedule.top }]}>
+      <SheetHeader
+        title="New defect"
+        project={project}
+        onCancel={() => navigation.goBack()}
+        onDone={finish}
+        doneDisabled={saving}
+      />
+    </View>
+  );
 
   if (!canAdd) {
     return (
-      <View style={[styles.centre, { backgroundColor: theme.background }]}>
-        <Ionicons name="lock-closed-outline" size={32} color={theme.textMuted} />
-        <Text style={[styles.lockedText, { color: theme.textSecondary }]}>You don't have permission to add defects.</Text>
+      <View style={[cs.screen, { backgroundColor: c.bg }]}>
+        {headerEl}
+        <EmptyState icon={Lock} title="Can't add defects" helper="You don't have permission to add defects on this project." />
       </View>
     );
   }
 
+  const dm = metrics.defects;
+
   return (
     <KeyboardAvoidingView
-      style={[styles.screen, { backgroundColor: theme.background }]}
+      style={[cs.screen, { backgroundColor: c.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <ScrollView {...kb.scrollProps} contentContainerStyle={[styles.content, readableFrame]}>
+      {headerEl}
+      <ScrollView {...kb.scrollProps} contentContainerStyle={[cs.content, readableFrame]} keyboardShouldPersistTaps="handled">
         <PendingUploadsBanner projectId={projectId} types={['create-defect']} noun="defect" />
 
-        {addedCount > 0 && (
-          <View style={[styles.countPill, { backgroundColor: theme.statusSuccessBg }]}>
-            <Ionicons name="checkmark-circle" size={16} color={theme.statusSuccess} />
-            <Text style={[styles.countText, { color: theme.statusSuccess }]}>{addedCount} added</Text>
-          </View>
-        )}
-
-        {/* Photos */}
-        {photos.length === 0 ? (
-          <View style={styles.photoEmptyRow}>
+        {/* Photo tiles: dashed, side by side */}
+        {photos.length < MAX_PHOTOS && (
+          <View style={cs.tiles}>
             <Pressable
               onPress={takePhoto}
-              style={[styles.bigBtn, { backgroundColor: theme.primary }]}
+              style={({ pressed }) => [cs.tile, { backgroundColor: c.surface, borderColor: c.dashedBorder, opacity: pressed ? metrics.pressedOpacity : 1 }]}
               accessibilityRole="button"
               accessibilityLabel="Take photo"
             >
-              <Ionicons name="camera" size={26} color="#fff" />
-              <Text style={styles.bigBtnText}>Take photo</Text>
+              <Camera size={dm.photoTile.icon} color={c.accent} strokeWidth={metrics.iconStroke} />
+              <Text style={[type.body, { color: c.text }]}>Take photo</Text>
             </Pressable>
             <Pressable
               onPress={pickFromLibrary}
-              style={[styles.bigBtnAlt, { backgroundColor: theme.card, borderColor: theme.border }]}
+              style={({ pressed }) => [cs.tile, { backgroundColor: c.surface, borderColor: c.dashedBorder, opacity: pressed ? metrics.pressedOpacity : 1 }]}
               accessibilityRole="button"
               accessibilityLabel="Choose from library"
             >
-              <Ionicons name="images-outline" size={22} color={theme.primary} />
-              <Text style={[styles.bigBtnAltText, { color: theme.textPrimary }]}>Library</Text>
+              <ImageIcon size={dm.photoTile.icon} color={c.accent} strokeWidth={metrics.iconStroke} />
+              <Text style={[type.body, { color: c.text }]}>Library</Text>
             </Pressable>
           </View>
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbRow}>
-            {photos.map((uri, i) => (
-              <View key={`${uri}-${i}`} style={[styles.thumb, { backgroundColor: theme.subtle }]}>
-                <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                <View style={styles.thumbActions}>
-                  {canMarkup && (
-                    <Pressable
-                      onPress={() => markup(i)}
-                      style={styles.thumbBtn}
-                      accessibilityRole="button"
-                      accessibilityLabel="Mark up photo"
-                    >
-                      <Ionicons name="brush-outline" size={18} color="#fff" />
-                    </Pressable>
-                  )}
-                  <Pressable
-                    onPress={() => removePhoto(i)}
-                    style={styles.thumbBtn}
-                    accessibilityRole="button"
-                    accessibilityLabel="Remove photo"
-                  >
-                    <Ionicons name="close" size={20} color="#fff" />
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-            {photos.length < MAX_PHOTOS && (
-              <View style={styles.addMoreCol}>
-                <Pressable
-                  onPress={takePhoto}
-                  style={[styles.addMore, { borderColor: theme.border, backgroundColor: theme.card }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Take another photo"
-                >
-                  <Ionicons name="camera-outline" size={22} color={theme.primary} />
-                </Pressable>
-                <Pressable
-                  onPress={pickFromLibrary}
-                  style={[styles.addMore, { borderColor: theme.border, backgroundColor: theme.card }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add from library"
-                >
-                  <Ionicons name="images-outline" size={22} color={theme.primary} />
-                </Pressable>
-              </View>
-            )}
-          </ScrollView>
         )}
 
-        <TextInput
-          value={title}
-          onChangeText={setTitle}
-          onFocus={kb.onInputFocus}
-          placeholder={defaultDefectTitle(sticky.location)}
-          placeholderTextColor={theme.textMuted}
-          style={[styles.input, { backgroundColor: theme.card, borderColor: theme.border, color: theme.textPrimary }]}
-          returnKeyType="next"
-          maxLength={200}
-          accessibilityLabel="Title (optional)"
-        />
-        <View>
+        {/* Captured photos: tap to mark up (where available) or remove */}
+        {(photos.length > 0 || addedCount > 0) && (
+          <View style={cs.captured}>
+            {photos.map((uri, i) => (
+              <Pressable
+                key={`${uri}-${i}`}
+                onPress={() =>
+                  Alert.alert('Photo', undefined, [
+                    ...(canMarkup ? [{ text: 'Mark up', onPress: () => markup(i) }] : []),
+                    { text: 'Remove', style: 'destructive' as const, onPress: () => removePhoto(i) },
+                    { text: 'Cancel', style: 'cancel' as const },
+                  ])
+                }
+                accessibilityRole="button"
+                accessibilityLabel={`Photo ${i + 1}. Mark up or remove`}
+              >
+                <Image source={{ uri }} style={[cs.thumb, { backgroundColor: c.greyFill }]} resizeMode="cover" />
+              </Pressable>
+            ))}
+            <Text style={[type.body, { color: c.muted }]}>
+              {[
+                photos.length ? `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}` : null,
+                addedCount ? `${addedCount} saved` : null,
+              ].filter(Boolean).join(' · ')}
+            </Text>
+          </View>
+        )}
+
+        {/* Title + notes: borderless, like writing on the page */}
+        <View style={cs.fields}>
           <TextInput
-            value={description}
-            onChangeText={setDescription}
+            value={title}
+            onChangeText={setTitle}
             onFocus={kb.onInputFocus}
-            placeholder="Notes (optional)"
-            placeholderTextColor={theme.textMuted}
-            style={[styles.input, styles.multiline, styles.voiceInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.textPrimary }]}
-            multiline
-            accessibilityLabel="Notes (optional)"
+            placeholder={defaultDefectTitle(sticky.location) || 'Defect title'}
+            placeholderTextColor={c.placeholderLarge}
+            style={[type.headingSemi, cs.input, { color: c.text }]}
+            returnKeyType="next"
+            maxLength={200}
+            accessibilityLabel="Title (optional)"
           />
-          {/* Dictate the notes (#56) — sits in the box's bottom-right corner. */}
-          <VoiceInputButton value={description} onChangeText={setDescription} label="Dictate notes" compact style={styles.voiceBtn} />
+          <View style={cs.notesRow}>
+            <TextInput
+              value={description}
+              onChangeText={setDescription}
+              onFocus={kb.onInputFocus}
+              placeholder="Add notes (optional)"
+              placeholderTextColor={c.placeholderLarge}
+              style={[type.rowTitle, cs.input, { color: c.textLong, flex: 1 }]}
+              multiline
+              accessibilityLabel="Notes (optional)"
+            />
+            {/* Dictate the notes (#56). */}
+            <VoiceInputButton value={description} onChangeText={setDescription} label="Dictate notes" compact />
+          </View>
         </View>
 
         <DefectFieldRows
@@ -436,119 +416,37 @@ export default function DefectCaptureScreen({ navigation, route }: Props) {
         />
       </ScrollView>
 
-      <View style={[styles.footer, { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: insets.bottom + 10 }]}>
-        <View style={[styles.footerInner, readableFrame]}>
-          <Pressable
-            onPress={finish}
-            disabled={saving}
-            style={[styles.footerBtn, { borderColor: theme.border, backgroundColor: theme.background }]}
-            accessibilityRole="button"
-            accessibilityLabel="Done"
-          >
-            <Text style={[styles.footerBtnText, { color: theme.textPrimary }]}>Done</Text>
-          </Pressable>
-          <Pressable
-            onPress={saveAndNext}
-            disabled={saving || !hasContent}
-            style={[
-              styles.footerBtn,
-              styles.footerPrimary,
-              { backgroundColor: theme.primary, opacity: saving || !hasContent ? 0.5 : 1 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Save and next"
-          >
-            <Ionicons name="arrow-forward-circle" size={20} color="#fff" />
-            <Text style={[styles.footerBtnText, { color: '#fff' }]}>Save & next</Text>
-          </Pressable>
-        </View>
-      </View>
+      <SaveActionBar
+        onDone={finish}
+        onPrimary={saveAndNext}
+        primaryLabel="Save & next"
+        primaryDisabled={saving || !hasContent}
+      />
       {markupElement}
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
+const DM = metrics.defects;
+
+const cs = StyleSheet.create({
   screen: { flex: 1 },
-  centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32 },
-  lockedText: { fontSize: fontSize.base, textAlign: 'center' },
-  content: { padding: 16, gap: 12, paddingBottom: 32 },
-  headerBtn: { minHeight: 44, minWidth: 44, alignItems: 'flex-end', justifyContent: 'center' },
-  headerBtnText: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
-  countPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.full,
-  },
-  countText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  photoEmptyRow: { flexDirection: 'row', gap: 10 },
-  bigBtn: {
-    flex: 2,
-    minHeight: 120,
-    borderRadius: radius.xxl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  bigBtnText: { color: '#fff', fontSize: fontSize.base, fontWeight: fontWeight.semibold },
-  bigBtnAlt: {
+  header: { paddingHorizontal: space.screenX },
+  content: { paddingHorizontal: space.screenX, paddingTop: space.inlineSm, paddingBottom: space.screenBottom, gap: DM.formGap },
+  tiles: { flexDirection: 'row', gap: space.rowGap - 2 },
+  tile: {
     flex: 1,
-    minHeight: 120,
-    borderRadius: radius.xxl,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  bigBtnAltText: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
-  thumbRow: { gap: 10 },
-  thumb: { width: 150, height: 150, borderRadius: radius.xl, overflow: 'hidden' },
-  thumbActions: { position: 'absolute', top: 4, right: 4, flexDirection: 'row', gap: 4 },
-  thumbBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addMoreCol: { gap: 10 },
-  addMore: {
-    width: 70,
-    height: 70,
-    borderRadius: radius.xl,
-    borderWidth: 1,
+    minHeight: DM.photoTile.height,
+    borderRadius: radii.card,
+    borderWidth: size.border,
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: space.inline,
   },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    minHeight: 48,
-    fontSize: fontSize.base,
-  },
-  multiline: { minHeight: 80, textAlignVertical: 'top' },
-  voiceInput: { paddingRight: 52 },
-  voiceBtn: { position: 'absolute', right: 8, bottom: 8 },
-  footer: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, paddingHorizontal: 16 },
-  footerInner: { flexDirection: 'row', gap: 10 },
-  footerBtn: {
-    flex: 1,
-    minHeight: 50,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  footerPrimary: { flex: 2, borderWidth: 0 },
-  footerBtnText: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
+  captured: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: DM.capturedGap },
+  thumb: { width: DM.capturedThumb, height: DM.capturedThumb, borderRadius: radii.lg },
+  fields: { gap: DM.fieldGap },
+  input: { paddingVertical: 0, paddingHorizontal: 0 },
+  notesRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.inline },
 });

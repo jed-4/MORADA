@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, size } from '../../theme';
 
 /**
  * A client suggests a product they found, on a selection where the builder
@@ -117,7 +117,7 @@ export default function ClientSuggestOptionSheet({
             {submitting ? (
               <ActivityIndicator color={theme.primary} />
             ) : (
-              <Text style={[styles.barAction, { color: ready ? theme.primary : theme.textMuted, fontWeight: fontWeight.semibold }]}>Send</Text>
+              <Text style={[styles.barAction, { color: ready ? theme.primary : theme.textMuted, fontFamily: fonts.semibold }]}>Send</Text>
             )}
           </Pressable>
         </View>
@@ -193,18 +193,18 @@ export default function ClientSuggestOptionSheet({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
-  barTitle: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
+  bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: size.border },
+  barTitle: { fontSize: fontSize.base, fontFamily: fonts.semibold },
   barAction: { fontSize: fontSize.base },
   content: { padding: 16, paddingBottom: 48 },
   intro: { fontSize: fontSize.sm, lineHeight: 20, marginBottom: 8 },
-  label: { fontSize: fontSize.bodySm, fontWeight: fontWeight.medium, marginTop: 14, marginBottom: 6 },
+  label: { fontSize: fontSize.bodySm, fontFamily: fonts.medium, marginTop: 14, marginBottom: 6 },
   input: { borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: 12, paddingVertical: 11, fontSize: fontSize.base },
   multiline: { minHeight: 90, textAlignVertical: 'top' },
   error: { fontSize: fontSize.xs, marginTop: 4 },
   photoButtons: { flexDirection: 'row', gap: 10 },
   photoButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderRadius: radius.lg, paddingVertical: 12 },
-  photoButtonText: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
+  photoButtonText: { fontSize: fontSize.sm, fontFamily: fonts.medium },
   photoRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   photo: { width: 96, height: 96, borderRadius: radius.lg },
   remove: { flexDirection: 'row', alignItems: 'center', gap: 4 },

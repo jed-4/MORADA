@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
+  Pressable,
   Text,
   StyleSheet,
   ScrollView,
@@ -22,7 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, apiRequest, API_BASE_URL, isPermanentError } from '../services/api';
+import { apiFetch, apiRequest, isPermanentError } from '../services/api';
 import { isOnline, addToQueue, getQueue, saveQueue, syncQueue, addSyncListener } from '../services/offlineQueue';
 import {
   getOfflineDiaryEntries,
@@ -33,9 +34,13 @@ import {
 import { toLocalDateStr, dateStrOf, localDayISOString } from '../lib/dates';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme } from '../theme';
+import { metrics, radii, size, space, tabular, type, useColors, useTheme } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BookOpen, Camera, Check, ChevronLeft, ChevronRight, CloudOff, Pencil, Search, SlidersHorizontal, Trash2, X } from 'lucide-react-native';
+import {
+  Card, DetailHeader, EmptyState, FAB, FAB_CLEARANCE, ListRow, ModalSheet, PageHeader, ProjectSquare, PropertyRow, Segmented, SheetHeader,
+} from '../components/kit';
 import { useLayout } from '../lib/useLayout';
-import { sheetFrame } from '../components/ui/Sheet';
 import { TwoPane, LIST_PANE_WIDTH } from '../components/ui/TwoPane';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { DiaryPhotoGallery, DiaryPhotoViewer } from '../components/diary/DiaryPhotos';
@@ -45,6 +50,7 @@ import { haptic } from '../lib/haptics';
 import { PhotoUploadError } from '../lib/photosUpload';
 import { useDiaryPhotos, collectLocalPhotoUris, mapPhotoUris, isLocalPhotoUri } from '../components/diary/useDiaryPhotos';
 import { DiaryFormPhoto, DIARY_FORM_THUMB } from '../components/diary/DiaryFormPhoto';
+import { diaryPhotoList, diaryPhotoPath, isDiaryPhotoArray, withPhotoObjectsPreserved } from '../components/diary/diaryPhotoPath';
 import { useDiaryWeatherPrefill } from '../components/diary/diaryWeather';
 import { useFieldFocusChain } from '../components/diary/useFieldFocusChain';
 import { PendingUploadsBanner } from '../components/photo/PendingUploadsBanner';
@@ -91,6 +97,7 @@ interface SiteDiaryTemplate {
 interface Project {
   id: string;
   name: string;
+  color?: string | null;
   jobNumber?: string;
   currentSystemPhase?: string;
   isActive?: boolean;
@@ -191,9 +198,8 @@ function countPhotos(entry: SiteDiaryEntry): number {
   if (entry.fieldValues) {
     Object.entries(entry.fieldValues).forEach(([key, val]) => {
       if (key.startsWith('_')) return; // internal keys are not photos
-      if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && (val[0].startsWith('http') || val[0].startsWith('file') || val[0].startsWith('/'))) {
-        count += val.length;
-      }
+      // Strings (mobile) or { objectPath } file objects (web photo-gallery).
+      if (isDiaryPhotoArray(val)) count += diaryPhotoList(val).length;
     });
   }
   return count;
@@ -265,18 +271,21 @@ export default function SiteDiaryListScreen({ navigation }: Props) {
   const translateX = useRef(new Animated.Value(0)).current;
 
   const theme = useTheme();
-const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    muted: theme.textMuted,
-    inputBg: theme.card,
-    danger: theme.statusDanger,
-    success: theme.statusSuccess,
-};
+  const k = useColors();
+  const insets = useSafeAreaInsets();
+  // Revamp tokens for the form's inline colours.
+  const colors = {
+    bg: k.bg,
+    card: k.surface,
+    text: k.text,
+    secondary: k.muted,
+    border: k.border,
+    accent: k.accent,
+    muted: k.muted,
+    inputBg: k.surface,
+    danger: k.danger,
+    success: k.status.done,
+  };
 
   // The pan responder below is created once and keeps the first goToDay it
   // saw, so the width is read through a ref — otherwise a fold/unfold would
@@ -844,19 +853,24 @@ const colors = {
     }
   };
 
-  const renderFormPhoto = (fieldId: string | null, uri: string, idx: number) => (
-    <DiaryFormPhoto
-      key={`${idx}:${uri}`}
-      index={idx}
-      imageUri={getPhotoUrl(uri)}
-      item={diaryPhotos.itemFor(uri)}
-      busy={submitting}
-      dangerColor={colors.danger}
-      onRemove={() => removePhoto(fieldId, idx)}
-      onRetry={() => { haptic.light(); diaryPhotos.retry(uri); }}
-      onMarkup={diaryPhotos.canMarkup && isLocalPhotoUri(uri) ? () => markupPhotoAt(fieldId, idx, uri) : undefined}
-    />
-  );
+  // `value` is a stored photo: a string, or a web { objectPath } file object
+  // (kept as-is in form state so a save doesn't rewrite it).
+  const renderFormPhoto = (fieldId: string | null, value: unknown, idx: number) => {
+    const uri = diaryPhotoPath(value) ?? '';
+    return (
+      <DiaryFormPhoto
+        key={`${idx}:${uri}`}
+        index={idx}
+        imageUri={uri}
+        item={diaryPhotos.itemFor(uri)}
+        busy={submitting}
+        dangerColor={colors.danger}
+        onRemove={() => removePhoto(fieldId, idx)}
+        onRetry={() => { haptic.light(); diaryPhotos.retry(uri); }}
+        onMarkup={diaryPhotos.canMarkup && isLocalPhotoUri(value) ? () => markupPhotoAt(fieldId, idx, uri) : undefined}
+      />
+    );
+  };
 
   const removePhoto = (fieldId: string | null, index: number) => {
     const list = fieldId ? formFieldValues[fieldId] : formOverallPhotos;
@@ -875,11 +889,6 @@ const colors = {
         return copy;
       });
     }
-  };
-
-  const getPhotoUrl = (path: string): string => {
-    if (path.startsWith('http') || path.startsWith('file://') || path.startsWith('content://')) return path;
-    return `${API_BASE_URL}/api/uploads/serve/${encodeURIComponent(path)}`;
   };
 
   // Build the entry payload from the current form state.
@@ -981,7 +990,7 @@ const colors = {
       // (PhotoUploadError) before anything is saved if a photo fails — a
       // device-local URI must never reach the server.
       const uploadedMap = await diaryPhotos.uploadLocal(collectLocalPhotoUris(formPayload));
-      const body: any = mapPhotoUris(formPayload, uploadedMap);
+      const body: any = withPhotoObjectsPreserved(mapPhotoUris(formPayload, uploadedMap));
 
       if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
         await apiRequest(`/api/site-diary-entries/${selectedEntry.id}`, 'PATCH', body);
@@ -1146,7 +1155,7 @@ const colors = {
       case 'text':
         return (
           <View key={field.id} style={[styles.fieldContainer, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
@@ -1156,7 +1165,7 @@ const colors = {
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               autoCapitalize="sentences"
               autoCorrect
             />
@@ -1169,7 +1178,7 @@ const colors = {
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
             <View style={styles.voiceLabelRow}>
-              <Text style={[styles.fieldLabel, { color: colors.text, flexShrink: 1 }]}>
+              <Text style={[styles.fieldLabel, { color: colors.secondary, flexShrink: 1 }]}>
                 {field.title}{field.required ? ' *' : ''}
               </Text>
               <VoiceInputButton
@@ -1185,7 +1194,7 @@ const colors = {
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
@@ -1198,7 +1207,7 @@ const colors = {
       case 'number':
         return (
           <View key={field.id} style={[styles.fieldContainer, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
@@ -1208,7 +1217,7 @@ const colors = {
               value={value?.toString() || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               keyboardType="decimal-pad"
             />
           </View>
@@ -1217,7 +1226,7 @@ const colors = {
       case 'date':
         return (
           <View key={field.id} style={[styles.fieldContainer, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
@@ -1227,7 +1236,7 @@ const colors = {
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder="DD/MM/YYYY"
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               keyboardType="numbers-and-punctuation"
               autoCapitalize="none"
               autoCorrect={false}
@@ -1238,7 +1247,7 @@ const colors = {
       case 'select':
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
@@ -1250,13 +1259,13 @@ const colors = {
                     style={[
                       styles.chip,
                       {
-                        backgroundColor: selected ? colors.accent : colors.inputBg,
-                        borderColor: selected ? colors.accent : colors.border,
+                        backgroundColor: selected ? k.tint : k.surface,
+                        borderColor: selected ? k.accent : k.border,
                       },
                     ]}
                     onPress={() => setFormFieldValues(prev => ({ ...prev, [field.id]: opt.value }))}
                   >
-                    <Text style={[styles.chipText, { color: selected ? '#ffffff' : colors.text }]}>
+                    <Text style={[styles.chipText, { color: selected ? k.link : k.text }]}>
                       {opt.label}
                     </Text>
                   </TouchableOpacity>
@@ -1269,35 +1278,36 @@ const colors = {
       case 'checkbox':
         return (
           <View key={field.id} style={[styles.fieldContainer, styles.switchRow, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text, flex: 1, marginBottom: 0 }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary, flex: 1, marginBottom: 0 }]}>
               {field.title}
             </Text>
             <Switch
               value={!!value}
               onValueChange={val => setFormFieldValues(prev => ({ ...prev, [field.id]: val }))}
-              trackColor={{ false: colors.border, true: colors.accent }}
-              thumbColor="#ffffff"
+              trackColor={{ false: k.track, true: k.accent }}
+              thumbColor={k.surface}
+              ios_backgroundColor={k.track}
             />
           </View>
         );
 
       case 'photo-gallery':
-        const photos: string[] = Array.isArray(value) ? value : [];
+        const photos: unknown[] = Array.isArray(value) ? value : [];
         const maxPhotos = field.maxPhotos || 3;
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title} ({photos.length}/{maxPhotos})
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
               {photos.map((uri, idx) => renderFormPhoto(field.id, uri, idx))}
               {photos.length < maxPhotos && (
                 <TouchableOpacity
-                  style={[styles.addPhotoBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                  style={[styles.addPhotoBtn, { backgroundColor: k.surface, borderColor: k.dashedBorder }]}
                   onPress={() => pickPhoto(field.id)}
                   disabled={submitting}
                 >
-                  <Ionicons name="camera-outline" size={28} color={colors.accent} />
+                  <Camera size={metrics.diary.addPhotoIcon} color={k.accent} strokeWidth={metrics.iconStroke} />
                   <Text style={[styles.addPhotoText, { color: colors.secondary }]}>Add</Text>
                 </TouchableOpacity>
               )}
@@ -1310,59 +1320,38 @@ const colors = {
     }
   };
 
+  /** One content block: small muted label, then the value. Empty values hide. */
   const renderDetailFieldValue = (field: TemplateField, value: any) => {
     if (value === undefined || value === null || value === '') return null;
-
-    switch (field.type) {
-      case 'checkbox':
-        return (
-          <View key={field.id} style={styles.detailField}>
-            <Text style={[styles.detailFieldLabel, { color: colors.secondary }]}>{field.title}</Text>
-            <View style={styles.checkboxDisplay}>
-              <Ionicons
-                name={value ? 'checkbox-outline' : 'square-outline'}
-                size={20}
-                color={value ? colors.success : colors.secondary}
-              />
-              <Text style={[styles.detailFieldValue, { color: colors.text, marginLeft: 6 }]}>
-                {value ? 'Yes' : 'No'}
-              </Text>
-            </View>
-          </View>
-        );
-
-      case 'photo-gallery':
-        if (!Array.isArray(value) || value.length === 0) return null;
-        return (
-          <View key={field.id} style={styles.detailField}>
-            <Text style={[styles.detailFieldLabel, { color: colors.secondary }]}>{field.title}</Text>
-            <DiaryPhotoGallery
-              uris={value}
-              getUrl={getPhotoUrl}
-              onOpen={index => setViewer({ uris: value, index })}
-              thumbStyle={styles.detailPhoto}
-              scrollStyle={styles.photoScroll}
-            />
-          </View>
-        );
-
-      case 'select':
-        const opt = field.options?.find(o => o.value === value);
-        return (
-          <View key={field.id} style={styles.detailField}>
-            <Text style={[styles.detailFieldLabel, { color: colors.secondary }]}>{field.title}</Text>
-            <Text style={[styles.detailFieldValue, { color: colors.text }]}>{opt?.label || value}</Text>
-          </View>
-        );
-
-      default:
-        return (
-          <View key={field.id} style={styles.detailField}>
-            <Text style={[styles.detailFieldLabel, { color: colors.secondary }]}>{field.title}</Text>
-            <Text style={[styles.detailFieldValue, { color: colors.text }]}>{String(value)}</Text>
-          </View>
-        );
+    if (Array.isArray(value) && value.length === 0) return null;
+    if (field.type === 'photo-gallery') {
+      // Strings or web { objectPath } file objects → display paths.
+      const uris = diaryPhotoList(value);
+      if (uris.length === 0) return null;
+      return (
+        <View key={field.id} style={lx.block}>
+          <Text style={[type.caption, { color: k.muted }]}>{`${field.title} · ${uris.length}`}</Text>
+          <DiaryPhotoGallery
+            uris={uris}
+            onOpen={index => setViewer({ uris, index })}
+            thumbStyle={lx.photo}
+            scrollStyle={styles.photoScroll}
+          />
+        </View>
+      );
     }
+    const text =
+      field.type === 'checkbox'
+        ? value ? 'Yes' : 'No'
+        : field.type === 'select'
+          ? field.options?.find(o => o.value === value)?.label || String(value)
+          : String(value);
+    return (
+      <View key={field.id} style={lx.block}>
+        <Text style={[type.caption, { color: k.muted }]}>{field.title}</Text>
+        <Text style={[type.bodyRead, { color: k.textLong }]}>{text}</Text>
+      </View>
+    );
   };
 
   const pendingCount = offlineEntries.length;
@@ -1410,81 +1399,82 @@ const colors = {
   // width (no effect on a phone; it only bites in a wide full-screen view).
   const renderDetailBody = () => {
     if (!selectedEntry) return null;
+    const d = new Date(selectedEntry.entryDateTime);
+    const w = selectedEntry.weather;
+    const hasWeather = !!w && (!!w.condition || w.temp != null);
+    const tplName = detailTemplate?.name;
     return (
-      <ScrollView contentContainerStyle={[styles.detailContent, readableFrame]}>
-        {selectedEntry._isOffline && (
-          <View style={[styles.offlineDetailTag, { backgroundColor: theme.statusWarningBg, borderColor: theme.statusWarning }]}>
-            <Ionicons name="cloud-offline-outline" size={16} color={theme.statusWarning} />
-            <Text style={{ color: theme.statusWarning, marginLeft: 6, fontWeight: '500' }}>Pending sync</Text>
+      <ScrollView contentContainerStyle={[lx.detail, readableFrame, { paddingBottom: space.screenBottom + insets.bottom }]}>
+        <DetailHeader
+          onBack={closeDetail}
+          actions={[
+            { icon: Pencil, label: 'Edit entry', onPress: () => openEditModal(selectedEntry) },
+            { icon: Trash2, label: 'Delete entry', onPress: () => handleDeleteEntry(selectedEntry) },
+          ]}
+        />
+        {selectedEntry._isOffline ? (
+          <View style={lx.pending}>
+            <CloudOff size={size.icon.meta} color={k.status.pendingText} strokeWidth={metrics.iconStroke} />
+            <Text style={[type.caption, { color: k.status.pendingText }]}>Waiting to sync</Text>
           </View>
-        )}
-
-        <Text style={[styles.detailTitle, { color: colors.text }]}>{selectedEntry.title}</Text>
-        <Text style={[styles.detailDate, { color: colors.secondary }]}>
-          {formatDateTime(selectedEntry.entryDateTime)}
-        </Text>
-
-        {selectedEntry.createdByName && (
-          <View style={styles.detailMeta}>
-            <Ionicons name="person-outline" size={16} color={colors.secondary} />
-            <Text style={[styles.detailMetaText, { color: colors.secondary }]}>{selectedEntry.createdByName}</Text>
+        ) : null}
+        <View style={lx.titleBlock}>
+          <Text style={[type.title, { color: k.text }]}>
+            {d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '')}
+          </Text>
+          <View style={lx.subLine}>
+            <Text style={[type.meta, { color: k.muted, flexShrink: 1 }]} numberOfLines={1}>
+              {[formatTime(selectedEntry.entryDateTime), tplName].filter(Boolean).join(' · ')}
+              {' · '}
+            </Text>
+            <ProjectSquare color={projectMap.get(selectedEntry.projectId)?.color ?? null} fallbackKey={selectedEntry.projectId} size="header" />
+            <Text style={[type.meta, lx.shrink, { color: k.muted }]} numberOfLines={1}>{getProjectLabel(selectedEntry.projectId)}</Text>
           </View>
-        )}
-
-        <View style={styles.detailMeta}>
-          <Ionicons name="briefcase-outline" size={16} color={colors.secondary} />
-          <Text style={[styles.detailMetaText, { color: colors.secondary }]}>{getProjectLabel(selectedEntry.projectId)}</Text>
+          {selectedEntry.title && selectedEntry.title !== tplName && !/\b\d{2}\/\d{2}$/.test(selectedEntry.title.trim()) ? (
+            <Text style={[type.body, { color: k.textPreview }]}>{selectedEntry.title}</Text>
+          ) : null}
         </View>
 
-        {selectedEntry.weather && (selectedEntry.weather.condition || selectedEntry.weather.temp !== undefined) && (
-          <View style={[styles.weatherCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name={getWeatherIcon(selectedEntry.weather.condition) as any} size={24} color={colors.accent} />
-            <View style={styles.weatherCardInfo}>
-              {selectedEntry.weather.condition && (
-                <Text style={[styles.weatherCardText, { color: colors.text }]}>{selectedEntry.weather.condition}</Text>
-              )}
-              {selectedEntry.weather.temp !== undefined && (
-                <Text style={[styles.weatherCardTemp, { color: colors.secondary }]}>{selectedEntry.weather.temp}°C</Text>
-              )}
+        {(hasWeather || !!selectedEntry.createdByName) ? (
+          <Card variant="list">
+            {hasWeather ? (
+              <PropertyRow key="weather" label="Weather" labelWidth={metrics.diary.propLabel}>
+                <Ionicons name={getWeatherIcon(w?.condition) as any} size={metrics.propertyRow.valueIcon} color={k.icon} />
+                <Text style={[type.body, tabular, { color: k.text }]}>
+                  {[w?.condition, w?.temp != null ? `${w?.temp}°` : null].filter(Boolean).join(', ')}
+                </Text>
+              </PropertyRow>
+            ) : null}
+            {selectedEntry.createdByName ? (
+              <PropertyRow key="by" label="Written by" labelWidth={metrics.diary.propLabel} value={selectedEntry.createdByName} />
+            ) : null}
+          </Card>
+        ) : null}
+
+        {detailTemplate && detailTemplate.fields.length > 0 ? (
+          <Card variant="notes">
+            <View style={lx.blocks}>
+              {[...detailTemplate.fields]
+                .sort((a, b) => a.order - b.order)
+                .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
             </View>
-          </View>
-        )}
+          </Card>
+        ) : null}
 
-        {detailTemplate && detailTemplate.fields.length > 0 && (
-          <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
-            {[...detailTemplate.fields]
-              .sort((a, b) => a.order - b.order)
-              .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
-          </View>
-        )}
-
-        {selectedEntry.overallPhotos && selectedEntry.overallPhotos.length > 0 && (
-          <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
-            <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Photos</Text>
+        {diaryPhotoList(selectedEntry.overallPhotos).length > 0 ? (
+          <View style={lx.block}>
+            <Text style={[type.caption, { color: k.muted }]}>{`Photos · ${diaryPhotoList(selectedEntry.overallPhotos).length}`}</Text>
             <DiaryPhotoGallery
-              uris={selectedEntry.overallPhotos}
-              getUrl={getPhotoUrl}
-              onOpen={index => setViewer({ uris: selectedEntry.overallPhotos || [], index })}
-              thumbStyle={styles.detailPhoto}
+              uris={diaryPhotoList(selectedEntry.overallPhotos)}
+              onOpen={index => setViewer({ uris: diaryPhotoList(selectedEntry.overallPhotos), index })}
+              thumbStyle={lx.photo}
               scrollStyle={styles.photoScroll}
             />
           </View>
-        )}
+        ) : null}
       </ScrollView>
     );
   };
-
-  const renderDetailActions = () => (
-    <View style={styles.detailActions}>
-      <TouchableOpacity onPress={() => selectedEntry && openEditModal(selectedEntry)} style={[styles.detailEditBtn, { backgroundColor: colors.accent }]}>
-        <Ionicons name="create-outline" size={18} color="#ffffff" />
-        <Text style={styles.detailEditBtnText}>Edit</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => selectedEntry && handleDeleteEntry(selectedEntry)} style={styles.detailActionBtn}>
-        <Ionicons name="trash-outline" size={22} color={colors.danger} />
-      </TouchableOpacity>
-    </View>
-  );
 
   // One viewer per place it can be presented from; `show` picks the one for
   // the current size, and the open photo + index live in `viewer` above.
@@ -1493,7 +1483,6 @@ const colors = {
       visible={show && !!viewer}
       uris={viewer?.uris ?? []}
       index={viewer?.index ?? 0}
-      getUrl={getPhotoUrl}
       onIndexChange={index => setViewer(v => (v ? { ...v, index } : v))}
       onClose={() => setViewer(null)}
     />
@@ -1503,8 +1492,68 @@ const colors = {
   const isOpenInPane = (entry: SiteDiaryEntry) =>
     isWide && showDetailModal && selectedEntry?.id === entry.id;
 
+  /** One entry row (P13 style): title · time / project · author · weather · photos. */
+  const renderEntryRow = (entry: SiteDiaryEntry, showProject: boolean) => {
+    const open = isOpenInPane(entry);
+    const photoCount = countPhotos(entry);
+    const metaIcon = { size: size.icon.meta, color: k.muted, strokeWidth: metrics.iconStroke };
+    return (
+      <Pressable
+        key={entry.id}
+        onPress={() => openDetailModal(entry)}
+        accessibilityRole="button"
+        accessibilityLabel={`${entry.title}, ${formatTime(entry.entryDateTime)}`}
+        style={({ pressed }) => [lx.row, open && { backgroundColor: k.tint }, pressed && { opacity: metrics.pressedOpacity }]}
+      >
+        <View style={lx.rowTop}>
+          <Text style={[type.rowTitle, lx.flex, { color: k.text }]} numberOfLines={2}>{entry.title}</Text>
+          {entry._isOffline ? <Text style={[type.caption, { color: k.status.pendingText }]}>Offline</Text> : null}
+          <Text style={[type.meta, tabular, { color: k.muted }]}>{formatTime(entry.entryDateTime)}</Text>
+        </View>
+        <View style={lx.rowMeta}>
+          {showProject && entry.projectId ? (
+            <View style={lx.metaItem}>
+              <ProjectSquare color={projectMap.get(entry.projectId)?.color ?? null} fallbackKey={entry.projectId} size="header" />
+              <Text style={[type.caption, lx.shrink, { color: k.muted }]} numberOfLines={1}>{getProjectLabel(entry.projectId)}</Text>
+            </View>
+          ) : null}
+          {entry.createdByName ? <Text style={[type.caption, { color: k.muted }]} numberOfLines={1}>{entry.createdByName}</Text> : null}
+          {entry.weather?.condition ? (
+            <View style={lx.metaItem}>
+              <Ionicons name={getWeatherIcon(entry.weather.condition) as any} size={size.icon.meta} color={k.muted} />
+              {entry.weather.temp != null ? <Text style={[type.caption, tabular, { color: k.muted }]}>{`${entry.weather.temp}°`}</Text> : null}
+            </View>
+          ) : null}
+          {photoCount > 0 ? (
+            <View style={lx.metaItem}>
+              <Camera {...metaIcon} />
+              <Text style={[type.caption, tabular, { color: k.muted }]}>{photoCount}</Text>
+            </View>
+          ) : null}
+        </View>
+      </Pressable>
+    );
+  };
+
+  // Feed: the flat header/entry items, folded into one card per day.
+  const feedDays: { dateKey: string; entries: SiteDiaryEntry[] }[] = [];
+  filteredFeedItems.forEach(item => {
+    if (item.type === 'header') feedDays.push({ dateKey: item.dateKey, entries: [] });
+    else feedDays[feedDays.length - 1]?.entries.push((item as any).entry);
+  });
+
+  const emptyState = (day: boolean) => (
+    <View style={lx.empty}>
+      <EmptyState
+        icon={BookOpen}
+        title={searchQuery || filterProjectId ? 'No matching entries' : day ? 'No entries this day' : 'No diary entries yet'}
+        helper={searchQuery || filterProjectId ? 'Try a different search or project.' : day ? 'Nothing was recorded on this day.' : 'Tap + to write the first one.'}
+      />
+    </View>
+  );
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: k.bg }]}>
       {/* Entries on the left, the open entry on the right when wide. The list
           (search text, filters, scroll) stays the first child at every size,
           so folding never remounts it. */}
@@ -1512,136 +1561,80 @@ const colors = {
         emptyTitle="Select an entry"
         emptyIcon="book-outline"
         detail={showDetailModal && selectedEntry ? (
-          <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
-            <View style={[styles.modalHeader, styles.paneHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-              <TouchableOpacity onPress={closeDetail} accessibilityLabel="Close entry">
-                <Ionicons name="close" size={24} color={colors.text} />
-              </TouchableOpacity>
-              <Text style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Entry Details</Text>
-              {renderDetailActions()}
-            </View>
+          <View style={[styles.modalContainer, { backgroundColor: k.bg }]}>
             {renderDetailBody()}
           </View>
         ) : null}
         list={
       <>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Site Diary</Text>
-        <TouchableOpacity
-          onPress={() => openCreateModal()}
-          style={[styles.addBtn, { backgroundColor: colors.accent }]}
-        >
-          <Ionicons name="add" size={22} color="#ffffff" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={[styles.dayNav, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        {viewMode === 'day' ? (
-          <TouchableOpacity onPress={() => goToDay(-1)} style={styles.navArrow}>
-            <Ionicons name="chevron-back" size={22} color={colors.accent} />
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.navArrow} />
-        )}
-        <View style={styles.dayInfo}>
+      <View style={[lx.top, { paddingTop: insets.top + metrics.schedule.top }]}>
+        <PageHeader
+          title="Site diary"
+          onBack={() => navigation.goBack()}
+          actions={[
+            { icon: SlidersHorizontal, label: filterProjectId ? 'Project filter on' : 'Filter by project', onPress: () => setShowFilterPicker(true), active: !!filterProjectId },
+          ]}
+        />
+        <View style={lx.navRow}>
+          <Segmented
+            options={[{ key: 'feed', label: 'Feed' }, { key: 'day', label: 'Day' }]}
+            value={viewMode}
+            onChange={m => setViewMode(m as typeof viewMode)}
+          />
           {viewMode === 'day' ? (
-            <TouchableOpacity onPress={openCalendar} style={{ alignItems: 'center' }}>
-              <View style={styles.dayInfoRow}>
-                <Text style={[styles.dayLabel, { color: colors.text }]}>
-                  {isToday(currentDate) ? 'Today' : formatDayHeader(currentDate)}
+            <View style={lx.dayNav}>
+              <Pressable onPress={() => goToDay(-1)} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Previous day">
+                <ChevronLeft size={metrics.calendar.arrow} color={k.muted} strokeWidth={metrics.iconStroke} />
+              </Pressable>
+              <Pressable onPress={openCalendar} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Pick a day">
+                <Text style={[type.body, { color: k.text }]}>
+                  {isToday(currentDate) ? 'Today' : currentDate.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '')}
                 </Text>
-                <Ionicons name="calendar-outline" size={16} color={colors.secondary} style={{ marginLeft: 6 }} />
-              </View>
-              {isToday(currentDate) && (
-                <Text style={[styles.dayDate, { color: colors.secondary }]}>
-                  {formatDayHeader(currentDate)}
-                </Text>
-              )}
-            </TouchableOpacity>
-          ) : (
-            <Text style={[styles.dayLabel, { color: colors.text }]}>All Entries</Text>
-          )}
+              </Pressable>
+              <Pressable onPress={() => goToDay(1)} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Next day">
+                <ChevronRight size={metrics.calendar.arrow} color={k.muted} strokeWidth={metrics.iconStroke} />
+              </Pressable>
+            </View>
+          ) : null}
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <View style={[styles.viewToggle, { backgroundColor: theme.nav, borderColor: colors.border }]}>
-            <TouchableOpacity
-              style={[styles.viewToggleBtn, viewMode === 'feed' && { backgroundColor: colors.accent }]}
-              onPress={() => setViewMode('feed')}
-            >
-              <Text style={[styles.viewToggleBtnText, { color: viewMode === 'feed' ? '#fff' : colors.secondary }]}>Feed</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.viewToggleBtn, viewMode === 'day' && { backgroundColor: colors.accent }]}
-              onPress={() => setViewMode('day')}
-            >
-              <Text style={[styles.viewToggleBtnText, { color: viewMode === 'day' ? '#fff' : colors.secondary }]}>Day</Text>
-            </TouchableOpacity>
-          </View>
-          {viewMode === 'day' ? (
-            <TouchableOpacity onPress={() => goToDay(1)} style={styles.navArrow}>
-              <Ionicons name="chevron-forward" size={22} color={colors.accent} />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.navArrow} />
-          )}
-        </View>
-      </View>
-
-      <View style={[styles.searchRow, { borderBottomColor: colors.border }]}>
-        <View style={[styles.searchBox, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-          <Ionicons name="search" size={16} color={colors.secondary} />
+        <View style={[lx.search, { backgroundColor: k.surface, borderColor: k.border }]}>
+          <Search size={metrics.projects.searchIcon} color={k.muted} strokeWidth={metrics.iconStroke} />
           <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
+            style={[type.body, lx.searchInput, { color: k.text }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search entries..."
-            placeholderTextColor={colors.muted}
+            placeholder="Search entries"
+            placeholderTextColor={k.faint}
             returnKeyType="search"
             autoCapitalize="none"
-            clearButtonMode="never"
           />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={18} color={colors.secondary} />
-            </TouchableOpacity>
-          )}
+          {searchQuery.length > 0 ? (
+            <Pressable onPress={() => setSearchQuery('')} hitSlop={metrics.hitSlop} accessibilityLabel="Clear search">
+              <X size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+          ) : null}
         </View>
-        <TouchableOpacity
-          onPress={() => setShowFilterPicker(true)}
-          style={[
-            styles.filterBtn,
-            {
-              backgroundColor: filterProjectId ? colors.accent : 'transparent',
-              borderColor: filterProjectId ? colors.accent : colors.border,
-            },
-          ]}
-        >
-          <Ionicons name="funnel" size={16} color={filterProjectId ? '#ffffff' : colors.secondary} />
-        </TouchableOpacity>
+        {filterProjectId ? (
+          <Pressable
+            onPress={() => setFilterProjectId(null)}
+            style={[lx.filterPill, { backgroundColor: k.tint }]}
+            accessibilityRole="button"
+            accessibilityLabel={`Clear project filter ${getProjectLabel(filterProjectId)}`}
+          >
+            <ProjectSquare color={projectMap.get(filterProjectId)?.color ?? null} fallbackKey={filterProjectId} size="header" />
+            <Text style={[type.meta, lx.shrink, { color: k.link }]} numberOfLines={1}>{getProjectLabel(filterProjectId)}</Text>
+            <X size={size.icon.caret} color={k.link} strokeWidth={metrics.iconStrokeActive} />
+          </Pressable>
+        ) : null}
+        {!networkOnline ? (
+          <View style={lx.offline}>
+            <CloudOff size={size.icon.meta} color={k.status.pendingText} strokeWidth={metrics.iconStroke} />
+            <Text style={[type.caption, { color: k.status.pendingText }]}>
+              {`Offline${pendingCount > 0 ? ` · ${pendingCount} pending` : ''}`}
+            </Text>
+          </View>
+        ) : null}
       </View>
-
-      {filterProjectId && (
-        <View style={[styles.activeFilter, { backgroundColor: theme.primaryLight }]}>
-          <Text style={[styles.activeFilterText, { color: colors.accent }]} numberOfLines={1}>
-            {getProjectLabel(filterProjectId)}
-          </Text>
-          <TouchableOpacity onPress={() => setFilterProjectId(null)}>
-            <Ionicons name="close-circle" size={18} color={colors.accent} />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {!networkOnline && (
-        <View style={[styles.offlineBanner, { backgroundColor: theme.statusWarningBg }]}>
-          <Ionicons name="cloud-offline" size={14} color={theme.statusWarning} />
-          <Text style={[styles.offlineBannerText, { color: theme.statusWarning }]}>
-            Offline{pendingCount > 0 ? ` \u00B7 ${pendingCount} pending` : ''}
-          </Text>
-        </View>
-      )}
 
       {/* Diary photos sitting in the offline queue (every project, or the
           filtered one), with Send now / Retry. */}
@@ -1655,94 +1648,26 @@ const colors = {
       {viewMode === 'feed' ? (
         feedLoading ? (
           <View style={styles.center}>
-            <ActivityIndicator size="large" color={colors.accent} />
+            <ActivityIndicator size="large" color={k.accent} />
           </View>
         ) : (
           <FlatList
             style={styles.scrollView}
-            contentContainerStyle={[styles.scrollContent, filteredFeedItems.length === 0 && { flex: 1 }]}
-            data={filteredFeedItems}
-            // Re-render rows when the entry open in the right pane changes (outline).
+            contentContainerStyle={[lx.list, { paddingBottom: space.screenBottom + FAB_CLEARANCE }, feedDays.length === 0 && { flex: 1 }]}
+            data={feedDays}
+            // Re-render rows when the entry open in the right pane changes (tint).
             extraData={showDetailModal ? selectedEntry?.id : null}
-            keyExtractor={(item, idx) =>
-              item.type === 'header' ? `hdr-${item.dateKey}` : `entry-${(item as any).entry.id}-${idx}`
-            }
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Ionicons name="book-outline" size={56} color={colors.muted} />
-                <Text style={[styles.emptyTitle, { color: colors.secondary }]}>
-                  {searchQuery || filterProjectId ? 'No matching entries' : 'No diary entries yet'}
-                </Text>
-                <Text style={[styles.emptyDesc, { color: colors.muted }]}>
-                  {searchQuery || filterProjectId
-                    ? 'Try adjusting your search or filter.'
-                    : 'Create your first site diary entry by tapping the + button.'}
-                </Text>
-              </View>
-            }
+            keyExtractor={item => item.dateKey}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
+            ListEmptyComponent={emptyState(false)}
             renderItem={({ item }) => {
-              if (item.type === 'header') {
-                const d = new Date(item.dateKey + 'T12:00:00');
-                return (
-                  <View style={[styles.feedDateHeader, { borderBottomColor: colors.border }]}>
-                    <Text style={[styles.feedDateHeaderText, { color: colors.accent }]}>
-                      {formatDayHeader(d)}
-                    </Text>
-                  </View>
-                );
-              }
-              const entry = item.entry;
+              const d = new Date(item.dateKey + 'T12:00:00');
+              const label = d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '');
               return (
-                <TouchableOpacity
-                  style={[styles.entryCard, { backgroundColor: colors.card, borderColor: entry._isOffline ? theme.statusWarning : isOpenInPane(entry) ? colors.accent : colors.border, marginHorizontal: 16 }]}
-                  activeOpacity={0.7}
-                  onPress={() => openDetailModal(entry)}
-                >
-                  <View style={styles.entryRow}>
-                    <View style={styles.entryContent}>
-                      <View style={styles.entryTop}>
-                        <Text style={[styles.entryTitle, { color: colors.text }]} numberOfLines={1}>
-                          {entry.title}
-                        </Text>
-                        {entry._isOffline && (
-                          <Ionicons name="cloud-offline" size={14} color={theme.statusWarning} style={{ marginRight: 4 }} />
-                        )}
-                        <Text style={[styles.entryTime, { color: colors.secondary }]}>
-                          {formatTime(entry.entryDateTime)}
-                        </Text>
-                      </View>
-                      <View style={styles.entryMeta}>
-                        {entry.projectId && (
-                          <Text style={[styles.creatorName, { color: colors.secondary }]} numberOfLines={1}>
-                            {getProjectLabel(entry.projectId)}
-                          </Text>
-                        )}
-                        {entry.createdByName && (
-                          <Text style={[styles.creatorName, { color: colors.muted }]} numberOfLines={1}>
-                            {entry.createdByName}
-                          </Text>
-                        )}
-                        {entry.weather?.condition && (
-                          <View style={styles.metaItem}>
-                            <Ionicons name={getWeatherIcon(entry.weather.condition) as any} size={13} color={colors.secondary} />
-                            <Text style={[styles.metaText, { color: colors.secondary }]}>
-                              {entry.weather.condition}{entry.weather.temp != null ? ` ${entry.weather.temp}\u00B0C` : ''}
-                            </Text>
-                          </View>
-                        )}
-                        {countPhotos(entry) > 0 && (
-                          <View style={styles.metaItem}>
-                            <Ionicons name="camera-outline" size={13} color={colors.secondary} />
-                            <Text style={[styles.metaText, { color: colors.secondary }]}>{countPhotos(entry)}</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
+                <View style={lx.day}>
+                  <Text style={[type.meta, { color: k.muted }]}>{isToday(d) ? `Today · ${label}` : label}</Text>
+                  <Card variant="list">{item.entries.map(e => renderEntryRow(e, true))}</Card>
+                </View>
               );
             }}
           />
@@ -1754,111 +1679,31 @@ const colors = {
       >
         {loading ? (
           <View style={styles.center}>
-            <ActivityIndicator size="large" color={colors.accent} />
+            <ActivityIndicator size="large" color={k.accent} />
           </View>
         ) : (
           <>
-          {dayLoading && (
-            <View style={{ paddingVertical: 6, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color={colors.accent} />
-            </View>
-          )}
+          {dayLoading ? <ActivityIndicator size="small" color={k.accent} style={lx.dayLoading} /> : null}
           <ScrollView
             style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
-            }
+            contentContainerStyle={[lx.list, { paddingBottom: space.screenBottom + FAB_CLEARANCE }]}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
           >
-            {filteredEntries.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="book-outline" size={56} color={colors.muted} />
-                <Text style={[styles.emptyTitle, { color: colors.secondary }]}>
-                  {searchQuery || filterProjectId ? 'No matching entries' : 'No diary entries'}
-                </Text>
-                <Text style={[styles.emptyDesc, { color: colors.muted }]}>
-                  {searchQuery || filterProjectId
-                    ? 'Try adjusting your search or filter.'
-                    : 'No site diary entries were recorded on this day.'}
-                </Text>
-              </View>
-            ) : (
+            {filteredEntries.length === 0 ? emptyState(true) : (
               <>
-                <View style={styles.summaryBar}>
-                  <Text style={[styles.summaryText, { color: colors.secondary }]}>
-                    {filteredEntries.length} {filteredEntries.length === 1 ? 'entry' : 'entries'} across {sortedProjectIds.length} {sortedProjectIds.length === 1 ? 'project' : 'projects'}
-                  </Text>
-                </View>
-
+                <Text style={[type.meta, tabular, { color: k.muted }]}>
+                  {`${filteredEntries.length} ${filteredEntries.length === 1 ? 'entry' : 'entries'} across ${sortedProjectIds.length} ${sortedProjectIds.length === 1 ? 'project' : 'projects'}`}
+                </Text>
                 {sortedProjectIds.map(projectId => {
                   const projectEntries = groupedByProject.get(projectId) || [];
                   return (
-                    <View key={projectId} style={styles.projectGroup}>
-                      <View style={[styles.projectHeader, { backgroundColor: theme.nav }]}>
-                        <Ionicons name="briefcase-outline" size={16} color={colors.accent} />
-                        <Text style={[styles.projectName, { color: colors.text }]} numberOfLines={1}>
-                          {getProjectLabel(projectId)}
-                        </Text>
-                        <View style={[styles.countBadge, { backgroundColor: colors.accent }]}>
-                          <Text style={styles.countBadgeText}>{projectEntries.length}</Text>
-                        </View>
+                    <View key={projectId} style={lx.day}>
+                      <View style={lx.projectHead}>
+                        <ProjectSquare color={projectMap.get(projectId)?.color ?? null} fallbackKey={projectId} />
+                        <Text style={[type.rowTitle, lx.shrink, { color: k.text }]} numberOfLines={1}>{getProjectLabel(projectId)}</Text>
+                        <Text style={[type.meta, tabular, { color: k.muted }]}>{projectEntries.length}</Text>
                       </View>
-
-                      {projectEntries.map(entry => (
-                        <TouchableOpacity
-                          key={entry.id}
-                          style={[styles.entryCard, { backgroundColor: colors.card, borderColor: entry._isOffline ? theme.statusWarning : isOpenInPane(entry) ? colors.accent : colors.border }]}
-                          activeOpacity={0.7}
-                          onPress={() => openDetailModal(entry)}
-                        >
-                          <View style={styles.entryRow}>
-                            <View style={styles.entryContent}>
-                              <View style={styles.entryTop}>
-                                <Text style={[styles.entryTitle, { color: colors.text }]} numberOfLines={1}>
-                                  {entry.title}
-                                </Text>
-                                {entry._isOffline && (
-                                  <Ionicons name="cloud-offline" size={14} color={theme.statusWarning} style={{ marginRight: 4 }} />
-                                )}
-                                <Text style={[styles.entryTime, { color: colors.secondary }]}>
-                                  {formatTime(entry.entryDateTime)}
-                                </Text>
-                              </View>
-
-                              <View style={styles.entryMeta}>
-                                {entry.createdByName && (
-                                  <Text style={[styles.creatorName, { color: colors.secondary }]} numberOfLines={1}>
-                                    {entry.createdByName}
-                                  </Text>
-                                )}
-
-                                {entry.weather?.condition && (
-                                  <View style={styles.metaItem}>
-                                    <Ionicons
-                                      name={getWeatherIcon(entry.weather.condition) as any}
-                                      size={13}
-                                      color={colors.secondary}
-                                    />
-                                    <Text style={[styles.metaText, { color: colors.secondary }]}>
-                                      {entry.weather.condition}
-                                      {entry.weather.temp != null ? ` ${entry.weather.temp}\u00B0C` : ''}
-                                    </Text>
-                                  </View>
-                                )}
-
-                                {countPhotos(entry) > 0 && (
-                                  <View style={styles.metaItem}>
-                                    <Ionicons name="camera-outline" size={13} color={colors.secondary} />
-                                    <Text style={[styles.metaText, { color: colors.secondary }]}>
-                                      {countPhotos(entry)}
-                                    </Text>
-                                  </View>
-                                )}
-                              </View>
-                            </View>
-                          </View>
-                        </TouchableOpacity>
-                      ))}
+                      <Card variant="list">{projectEntries.map(e => renderEntryRow(e, false))}</Card>
                     </View>
                   );
                 })}
@@ -1869,6 +1714,7 @@ const colors = {
         )}
       </Animated.View>
       )}
+      <FAB onPress={() => openCreateModal()} label="New diary entry" />
       </>
         }
       />
@@ -1878,40 +1724,21 @@ const colors = {
           style={[styles.modalContainer, { backgroundColor: colors.bg }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={cancelEntryModal}>
-              <Text style={[styles.modalHeaderBtn, { color: colors.secondary }]}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>
-              {isEditMode ? 'Edit Entry' : 'New Entry'}
-            </Text>
-            <TouchableOpacity onPress={handleSaveEntry} disabled={submitting}>
-              {submitting ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <Text style={[styles.modalHeaderBtn, { color: colors.accent, fontWeight: '600' }]}>Save</Text>
-              )}
-            </TouchableOpacity>
+          <View style={[lx.formHeader, { paddingTop: insets.top }]}>
+            <SheetHeader
+              title={isEditMode ? 'Edit entry' : 'New entry'}
+              onCancel={cancelEntryModal}
+              doneLabel="Save"
+              onDone={handleSaveEntry}
+              doneLoading={submitting}
+            />
           </View>
-
-          {allTemplates.length > 1 && (
-            <TouchableOpacity
-              style={[styles.templateBar, { backgroundColor: theme.nav, borderBottomColor: colors.border }]}
-              onPress={() => setShowTemplatePicker(true)}
-            >
-              <Ionicons name="document-text-outline" size={16} color={colors.accent} />
-              <Text style={[styles.templateBarText, { color: colors.text }]} numberOfLines={1}>
-                {activeTemplate?.name || 'Default Template'}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-            </TouchableOpacity>
-          )}
 
           {/* readableFrame keeps the full-screen form to a sensible column on
               the Duo unfolded; a phone is narrower than its cap. */}
           <ScrollView {...entryKb.scrollProps} contentContainerStyle={[styles.formContent, readableFrame]}>
             <View style={styles.fieldContainer}>
-              <Text style={[styles.fieldLabel, { color: colors.text }]}>Title *</Text>
+              <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Title *</Text>
               <TextInput
                 ref={focusChain.ref('title')}
                 onFocus={entryKb.onInputFocus}
@@ -1919,7 +1746,7 @@ const colors = {
                 value={formTitle}
                 onChangeText={setFormTitle}
                 placeholder="Entry title"
-                placeholderTextColor={colors.secondary}
+                placeholderTextColor={k.faint}
                 autoCapitalize="sentences"
                 autoCorrect
                 returnKeyType={focusChain.isLast('title') ? 'done' : 'next'}
@@ -1928,34 +1755,33 @@ const colors = {
               />
             </View>
 
-            {/* Project + Date / Time side by side when wide. The wrapper is
-                always here (unstyled on a phone) so the tree doesn't change. */}
-            <View style={isWide ? styles.fieldGrid : undefined}>
-            <View style={[styles.fieldContainer, halfField]}>
-              <Text style={[styles.fieldLabel, { color: colors.text }]}>Project *</Text>
-              <TouchableOpacity
-                style={[styles.pickerTrigger, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                onPress={() => setShowProjectPicker(true)}
-              >
-                <Text style={[styles.pickerTriggerText, { color: formProjectId ? colors.text : colors.muted }]} numberOfLines={1}>
-                  {formProjectId ? getProjectLabel(formProjectId) : 'Select project...'}
-                </Text>
-                <Ionicons name="chevron-down" size={18} color={colors.secondary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={[styles.fieldContainer, halfField]}>
-              <Text style={[styles.fieldLabel, { color: colors.text }]}>Date / Time</Text>
-              <View style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, justifyContent: 'center' }]}>
-                <Text style={{ color: colors.text }}>{formatDateTime(formDateTime)}</Text>
-              </View>
-            </View>
+            <View style={styles.fieldContainer}>
+              <Card variant="list">
+                <PropertyRow
+                  key="project"
+                  form
+                  label="Project"
+                  value={formProjectId ? getProjectLabel(formProjectId) : undefined}
+                  placeholder="Choose"
+                  onPress={() => setShowProjectPicker(true)}
+                />
+                {allTemplates.length > 1 ? (
+                  <PropertyRow
+                    key="template"
+                    form
+                    label="Type"
+                    value={activeTemplate?.name || 'Default template'}
+                    onPress={() => setShowTemplatePicker(true)}
+                  />
+                ) : null}
+                <PropertyRow key="when" label="Date / time" value={formatDateTime(formDateTime)} />
+              </Card>
             </View>
 
             {activeTemplate && activeTemplate.fields.length > 0 && (
               <>
                 <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                  <Text style={[styles.sectionTitle, { color: colors.secondary }]}>
                     {activeTemplate.name || 'Template Fields'}
                   </Text>
                 </View>
@@ -1968,17 +1794,17 @@ const colors = {
             )}
 
             <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Overall Photos</Text>
+              <Text style={[styles.sectionTitle, { color: colors.secondary }]}>Overall Photos</Text>
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
               {formOverallPhotos.map((uri, idx) => renderFormPhoto(null, uri, idx))}
               <TouchableOpacity
-                style={[styles.addPhotoBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                style={[styles.addPhotoBtn, { backgroundColor: k.surface, borderColor: k.dashedBorder }]}
                 onPress={() => pickPhoto()}
                 disabled={submitting}
               >
-                <Ionicons name="camera-outline" size={28} color={colors.accent} />
+                <Camera size={metrics.diary.addPhotoIcon} color={k.accent} strokeWidth={metrics.iconStroke} />
                 <Text style={[styles.addPhotoText, { color: colors.secondary }]}>Add</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -1998,109 +1824,62 @@ const colors = {
           {/* Inside the form's modal: iOS can't present a root modal over it. */}
           {diaryPhotos.markupElement}
 
-          <Modal visible={showProjectPicker} transparent animationType="slide">
-            <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-              <View style={[styles.pickerSheet, sheetFrame, { backgroundColor: colors.card }]}>
-                <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-                  <Text style={[styles.pickerHeaderTitle, { color: colors.text }]}>
-                    Select Project
-                  </Text>
-                  <TouchableOpacity onPress={() => setShowProjectPicker(false)}>
-                    <Ionicons name="close" size={24} color={colors.secondary} />
-                  </TouchableOpacity>
-                </View>
-                <FlatList
-                  data={getSortedProjectItems(projects)}
-                  keyExtractor={item => item.id}
-                  contentContainerStyle={{ paddingBottom: 40 }}
-                  renderItem={({ item }) => {
-                    if (item.isHeader) {
-                      return (
-                        <View style={[styles.phaseSectionHeader, { backgroundColor: theme.nav }]}>
-                          <Text style={[styles.phaseSectionText, { color: colors.secondary }]}>{item.label}</Text>
-                        </View>
-                      );
+          <ModalSheet visible={showProjectPicker} onRequestClose={() => setShowProjectPicker(false)} title="Project" doneLabel="Done" onDone={() => setShowProjectPicker(false)} fill>
+            <FlatList
+              data={getSortedProjectItems(projects)}
+              keyExtractor={item => item.id}
+              style={lx.pickList}
+              contentContainerStyle={lx.pickContent}
+              renderItem={({ item }) => item.isHeader ? (
+                <Text style={[type.meta, lx.pickHeader, { color: k.muted }]}>{item.label}</Text>
+              ) : (
+                <Pressable
+                  style={({ pressed }) => [lx.pickRow, { borderBottomColor: k.border, backgroundColor: formProjectId === item.id ? k.tint : k.surface, opacity: pressed ? metrics.pressedOpacity : 1 }]}
+                  onPress={() => {
+                    setFormProjectId(item.id);
+                    if (!isEditMode) {
+                      setFormTitle(buildDefaultTitle(activeTemplate, item.id));
+                      // New entry: that site's forecast into the weather fields.
+                      weatherPrefill.prefill(item.id, activeTemplate?.fields);
                     }
-                    return (
-                      <TouchableOpacity
-                        style={[styles.projectPickerRow, { borderBottomColor: colors.border }]}
-                        onPress={() => {
-                          setFormProjectId(item.id);
-                          if (!isEditMode) {
-                            setFormTitle(buildDefaultTitle(activeTemplate, item.id));
-                            // New entry: that site's forecast into the weather fields.
-                            weatherPrefill.prefill(item.id, activeTemplate?.fields);
-                          }
-                          setShowProjectPicker(false);
-                        }}
-                      >
-                        <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
-                        <Text style={[styles.projectPickerName, { color: colors.text }]} numberOfLines={1}>
-                          {item.label}
-                        </Text>
-                        {formProjectId === item.id && (
-                          <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                        )}
-                      </TouchableOpacity>
-                    );
+                    setShowProjectPicker(false);
                   }}
-                />
-              </View>
-            </View>
-          </Modal>
+                  accessibilityRole="button"
+                >
+                  <ProjectSquare color={projectMap.get(item.id)?.color ?? null} fallbackKey={item.id} />
+                  <Text style={[type.rowTitle, lx.flex, { color: k.text }]} numberOfLines={1}>{item.label}</Text>
+                  {formProjectId === item.id ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : null}
+                </Pressable>
+              )}
+            />
+          </ModalSheet>
 
-          <Modal visible={showTemplatePicker} transparent animationType="slide">
-            <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
-              <View style={[styles.tpSheet, sheetFrame, { backgroundColor: colors.card }]}>
-                <View style={[styles.tpHeader, { borderBottomColor: colors.border }]}>
-                  <Text style={[styles.tpHeaderTitle, { color: colors.text }]}>
-                    Select Template
-                  </Text>
-                  <TouchableOpacity onPress={() => setShowTemplatePicker(false)}>
-                    <Ionicons name="close" size={24} color={colors.secondary} />
-                  </TouchableOpacity>
-                </View>
-                <FlatList
-                  data={[...allTemplates].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))}
-                  keyExtractor={item => item.id}
-                  contentContainerStyle={{ paddingBottom: 40 }}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={[styles.tpRow, { borderBottomColor: colors.border }]}
+          <ModalSheet visible={showTemplatePicker} onRequestClose={() => setShowTemplatePicker(false)} title="Entry type" doneLabel="Done" onDone={() => setShowTemplatePicker(false)}>
+            <ScrollView contentContainerStyle={lx.pickContent} style={lx.pickList}>
+              <Card variant="list">
+                {[...allTemplates].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(item => {
+                  const active = activeTemplate?.id === item.id;
+                  return (
+                    <ListRow
+                      key={item.id}
+                      title={item.name}
+                      titleLines={1}
+                      subtitle={item.isDefault ? 'Default' : undefined}
+                      selected={active}
+                      trailing={active ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
                       onPress={() => switchTemplate(item)}
-                    >
-                      <Ionicons name="document-text-outline" size={18} color={colors.accent} />
-                      <View style={styles.tpRowContent}>
-                        <Text style={[styles.tpRowName, { color: colors.text }]} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        {item.isDefault && (
-                          <Text style={[styles.tpRowBadge, { color: colors.accent }]}>Default</Text>
-                        )}
-                      </View>
-                      {activeTemplate?.id === item.id && (
-                        <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                      )}
-                    </TouchableOpacity>
-                  )}
-                />
-              </View>
-            </View>
-          </Modal>
+                    />
+                  );
+                })}
+              </Card>
+            </ScrollView>
+          </ModalSheet>
         </KeyboardAvoidingView>
       </Modal>
 
       {/* Hidden while wide: the right pane shows the entry instead. */}
-      <Modal visible={showDetailModal && !isWide} animationType="slide" presentationStyle="fullScreen">
-        <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
-          <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={closeDetail}>
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Entry Details</Text>
-            {renderDetailActions()}
-          </View>
-
+      <Modal visible={showDetailModal && !isWide} animationType="slide" presentationStyle="fullScreen" onRequestClose={closeDetail}>
+        <View style={[styles.modalContainer, { backgroundColor: k.bg, paddingTop: insets.top }]}>
           {renderDetailBody()}
           {/* Phone-side copy of the viewer: iOS can't present a root-level
               modal over this one, so it lives inside. Wide uses the root copy. */}
@@ -2110,154 +1889,90 @@ const colors = {
 
       {renderViewer(isWide)}
 
-      <Modal visible={showFilterPicker} transparent animationType="slide">
-        <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.pickerSheet, sheetFrame, { backgroundColor: colors.card }]}>
-            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.pickerHeaderTitle, { color: colors.text }]}>
-                Filter by Project
-              </Text>
-              <TouchableOpacity onPress={() => setShowFilterPicker(false)}>
-                <Ionicons name="close" size={24} color={colors.secondary} />
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity
-              style={[styles.projectPickerRow, { borderBottomColor: colors.border }]}
-              onPress={() => { setFilterProjectId(null); setShowFilterPicker(false); }}
-            >
-              <Ionicons name="apps-outline" size={18} color={colors.secondary} />
-              <Text style={[styles.projectPickerName, { color: colors.text }]}>
-                All Projects
-              </Text>
-              {!filterProjectId && <Ionicons name="checkmark-circle" size={20} color={colors.accent} />}
-            </TouchableOpacity>
-            <FlatList
-              data={getSortedProjectItems(projects)}
-              keyExtractor={item => item.id}
-              contentContainerStyle={{ paddingBottom: 40 }}
-              renderItem={({ item }) => {
-                if (item.isHeader) {
-                  return (
-                    <View style={[styles.phaseSectionHeader, { backgroundColor: theme.nav }]}>
-                      <Text style={[styles.phaseSectionText, { color: colors.secondary }]}>{item.label}</Text>
-                    </View>
-                  );
-                }
-                return (
-                  <TouchableOpacity
-                    style={[styles.projectPickerRow, { borderBottomColor: colors.border }]}
-                    onPress={() => {
-                      setFilterProjectId(item.id);
-                      setShowFilterPicker(false);
-                    }}
-                  >
-                    <Ionicons name="briefcase-outline" size={18} color={colors.accent} />
-                    <Text style={[styles.projectPickerName, { color: colors.text }]} numberOfLines={1}>
-                      {item.label}
-                    </Text>
-                    {filterProjectId === item.id && (
-                      <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                    )}
-                  </TouchableOpacity>
-                );
-              }}
-            />
+      <ModalSheet visible={showFilterPicker} onRequestClose={() => setShowFilterPicker(false)} title="Project" doneLabel="Done" onDone={() => setShowFilterPicker(false)} fill>
+        <FlatList
+          data={[{ id: '__all', label: 'All projects', isHeader: false } as any, ...getSortedProjectItems(projects)]}
+          keyExtractor={item => item.id}
+          style={lx.pickList}
+          contentContainerStyle={lx.pickContent}
+          renderItem={({ item }) => {
+            if (item.isHeader) return <Text style={[type.meta, lx.pickHeader, { color: k.muted }]}>{item.label}</Text>;
+            const all = item.id === '__all';
+            const active = all ? !filterProjectId : filterProjectId === item.id;
+            return (
+              <Pressable
+                style={({ pressed }) => [lx.pickRow, { borderBottomColor: k.border, backgroundColor: active ? k.tint : k.surface, opacity: pressed ? metrics.pressedOpacity : 1 }]}
+                onPress={() => { setFilterProjectId(all ? null : item.id); setShowFilterPicker(false); }}
+                accessibilityRole="button"
+              >
+                {all ? null : <ProjectSquare color={projectMap.get(item.id)?.color ?? null} fallbackKey={item.id} />}
+                <Text style={[type.rowTitle, lx.flex, { color: k.text }]} numberOfLines={1}>{item.label}</Text>
+                {active ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : null}
+              </Pressable>
+            );
+          }}
+        />
+      </ModalSheet>
+
+      <ModalSheet visible={showCalendar} onRequestClose={() => setShowCalendar(false)} title="Pick a day" doneLabel="Today" onDone={calendarGoToToday} onCancel={() => setShowCalendar(false)}>
+        <View style={lx.cal}>
+          <View style={lx.calNav}>
+            <Pressable onPress={calendarPrevMonth} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Previous month">
+              <ChevronLeft size={metrics.calendar.arrow} color={k.muted} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+            <Text style={[type.sectionTitle, { color: k.text }]}>
+              {new Date(calendarYear, calendarMonth).toLocaleString('en-AU', { month: 'long', year: 'numeric' })}
+            </Text>
+            <Pressable onPress={calendarNextMonth} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Next month">
+              <ChevronRight size={metrics.calendar.arrow} color={k.muted} strokeWidth={metrics.iconStroke} />
+            </Pressable>
           </View>
-        </View>
-      </Modal>
-
-      <Modal visible={showCalendar} transparent animationType="slide">
-        <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.calendarSheet, sheetFrame, { backgroundColor: colors.card }]}>
-            <View style={[styles.calendarHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.pickerHeaderTitle, { color: colors.text }]}>
-                Select Date
-              </Text>
-              <TouchableOpacity onPress={() => setShowCalendar(false)}>
-                <Ionicons name="close" size={24} color={colors.secondary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.calendarMonthNav}>
-              <TouchableOpacity onPress={calendarPrevMonth} style={styles.calendarMonthArrow}>
-                <Ionicons name="chevron-back" size={22} color={colors.accent} />
-              </TouchableOpacity>
-              <Text style={[styles.calendarMonthLabel, { color: colors.text }]}>
-                {new Date(calendarYear, calendarMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}
-              </Text>
-              <TouchableOpacity onPress={calendarNextMonth} style={styles.calendarMonthArrow}>
-                <Ionicons name="chevron-forward" size={22} color={colors.accent} />
-              </TouchableOpacity>
-            </View>
-
-            {(() => {
-              const { orderedDayNames, rows } = getCalendarGrid();
-              const todayStr = toLocalDateStr(new Date());
-              const selectedStr = toLocalDateStr(currentDate);
-              return (
-                <View style={styles.calendarGrid}>
-                  <View style={styles.calendarDayHeaderRow}>
-                    {orderedDayNames.map(dn => (
-                      <View key={dn} style={styles.calendarDayHeaderCell}>
-                        <Text style={[styles.calendarDayHeaderText, { color: colors.secondary }]}>{dn}</Text>
-                      </View>
-                    ))}
-                  </View>
-                  {rows.map((row, ri) => (
-                    <View key={ri} style={styles.calendarWeekRow}>
-                      {row.map((cell, ci) => {
-                        const cellDateStr = `${cell.year}-${(cell.month + 1).toString().padStart(2, '0')}-${cell.day.toString().padStart(2, '0')}`;
-                        const isSelected = cellDateStr === selectedStr;
-                        const isTodayCell = cellDateStr === todayStr;
-                        const count = entryCounts[cellDateStr] || 0;
-                        const dotCount = Math.min(count, 3);
-                        return (
-                          <TouchableOpacity
-                            key={ci}
-                            style={styles.calendarDayCell}
-                            activeOpacity={0.6}
-                            onPress={() => selectCalendarDate(cell.day, cell.month, cell.year)}
-                          >
-                            <View
-                              style={[
-                                styles.calendarDayCircle,
-                                isSelected && { backgroundColor: colors.accent },
-                                !isSelected && isTodayCell && { borderWidth: 2, borderColor: colors.accent },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.calendarDayText,
-                                  { color: isSelected ? '#ffffff' : cell.isCurrentMonth ? colors.text : colors.muted },
-                                ]}
-                              >
-                                {cell.day}
-                              </Text>
-                            </View>
-                            <View style={styles.calendarDotRow}>
-                              {Array.from({ length: dotCount }).map((_, di) => (
-                                <View key={di} style={styles.calendarDot} />
-                              ))}
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })}
+          {(() => {
+            const { orderedDayNames, rows } = getCalendarGrid();
+            const todayStr = toLocalDateStr(new Date());
+            const selectedStr = toLocalDateStr(currentDate);
+            return (
+              <View>
+                <View style={lx.calRow}>
+                  {orderedDayNames.map(dn => (
+                    <View key={dn} style={lx.calCell}>
+                      <Text style={[type.micro, { color: k.muted }]}>{dn.toUpperCase()}</Text>
                     </View>
                   ))}
                 </View>
-              );
-            })()}
-
-            <TouchableOpacity
-              style={[styles.calendarTodayBtn, { backgroundColor: colors.accent }]}
-              onPress={calendarGoToToday}
-            >
-              <Ionicons name="today-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
-              <Text style={styles.calendarTodayBtnText}>Today</Text>
-            </TouchableOpacity>
-          </View>
+                {rows.map((row, ri) => (
+                  <View key={ri} style={lx.calRow}>
+                    {row.map((cell, ci) => {
+                      const cellDateStr = `${cell.year}-${(cell.month + 1).toString().padStart(2, '0')}-${cell.day.toString().padStart(2, '0')}`;
+                      const isSelected = cellDateStr === selectedStr;
+                      const isTodayCell = cellDateStr === todayStr;
+                      const count = entryCounts[cellDateStr] || 0;
+                      return (
+                        <Pressable
+                          key={ci}
+                          style={lx.calCell}
+                          onPress={() => selectCalendarDate(cell.day, cell.month, cell.year)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${cellDateStr}, ${count} entries`}
+                        >
+                          <View style={[lx.calDay, isSelected && { backgroundColor: k.accent }, !isSelected && isTodayCell && { borderWidth: size.border, borderColor: k.accent }]}>
+                            <Text style={[type.meta, tabular, { color: isSelected ? k.onAccent : cell.isCurrentMonth ? k.text : k.faint }]}>{cell.day}</Text>
+                          </View>
+                          <View style={lx.calDots}>
+                            {Array.from({ length: Math.min(count, 3) }).map((_, di) => (
+                              <View key={di} style={[lx.calDot, { backgroundColor: k.accent }]} />
+                            ))}
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+            );
+          })()}
         </View>
-      </Modal>
+      </ModalSheet>
 
     </View>
   );
@@ -2266,107 +1981,6 @@ const colors = {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 56,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-  },
-  backBtn: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  addBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  navArrow: {
-    padding: 8,
-  },
-  dayInfo: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  dayLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  dayDate: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-    borderBottomWidth: 1,
-  },
-  searchBox: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    height: 36,
-    gap: 6,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    paddingVertical: 0,
-  },
-  filterBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activeFilter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    gap: 8,
-  },
-  activeFilterText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  offlineBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    gap: 6,
-  },
-  offlineBannerText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#92400e',
   },
   content: {
     flex: 1,
@@ -2379,144 +1993,11 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  scrollContent: {
-    paddingBottom: 32,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 32,
-  },
-  emptyTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    marginTop: 16,
-  },
-  emptyDesc: {
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 18,
-  },
-  summaryBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  summaryText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  projectGroup: {
-    marginBottom: 4,
-  },
-  projectHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  projectName: {
-    fontSize: 14,
-    fontWeight: '600',
-    flex: 1,
-  },
-  countBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    minWidth: 22,
-    alignItems: 'center',
-  },
-  countBadgeText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  entryCard: {
-    marginHorizontal: 16,
-    marginVertical: 4,
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-  },
-  entryRow: {
-    flexDirection: 'row',
-  },
-  entryContent: {
-    flex: 1,
-  },
-  entryTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  entryTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    flex: 1,
-  },
-  entryTime: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  creatorName: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  entryMeta: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 4,
-    gap: 10,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  metaText: {
-    fontSize: 12,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
   modalContainer: {
     flex: 1,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 56 : 16,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  modalHeaderBtn: {
-    fontSize: 16,
-  },
-  // The right-pane copy of the detail header sits under the app header, not
-  // the status bar, so it doesn't need the modal's top inset.
-  paneHeader: {
-    paddingTop: 12,
-  },
-  modalHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'center',
-    marginHorizontal: 8,
-  },
-  formContent: {
-    padding: 16,
-  },
-  fieldContainer: {
-    marginBottom: 16,
-  },
+  formContent: { padding: space.screenX },
+  fieldContainer: { marginBottom: metrics.sheet.gap },
   // Duo unfolded only: short fields two per row. A short field followed by a
   // long one grows to the full row, so nothing is left half-empty.
   fieldGrid: {
@@ -2531,88 +2012,24 @@ const styles = StyleSheet.create({
   fullField: {
     width: '100%',
   },
-  fieldLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-    gap: 8,
-  },
   // Field label with the dictation mic on the right (#56).
   voiceLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 6,
-  },
-  input: {
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-  },
-  textArea: {
-    minHeight: 100,
-    paddingTop: 10,
-  },
-  pickerTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  pickerTriggerText: {
-    fontSize: 14,
-    flex: 1,
-  },
-  sectionDivider: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingBottom: 8,
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  fieldLabel: { ...type.meta, marginBottom: metrics.form.labelGap },
+  input: { ...type.rowTitle, borderRadius: radii.lg, borderWidth: size.border, paddingHorizontal: metrics.form.inputPadX, paddingVertical: metrics.form.inputPadY, minHeight: metrics.form.inputHeight },
+  textArea: { minHeight: metrics.form.multilineHeight, paddingTop: metrics.form.inputPadY },
+  sectionDivider: { paddingTop: space.inline, paddingBottom: metrics.form.labelGap },
+  sectionTitle: { ...type.meta },
   chipScroll: {
     flexDirection: 'row',
   },
-  chip: {
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1,
-    marginRight: 8,
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  chip: { borderRadius: radii.pill, paddingHorizontal: metrics.filterChip.padX, paddingVertical: metrics.filterChip.padY, borderWidth: size.border, marginRight: space.inline },
+  chipText: { ...type.meta },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   photoScroll: {
     marginTop: 4,
-  },
-  photoThumbContainer: {
-    marginRight: 10,
-    position: 'relative',
-  },
-  photoThumb: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-  },
-  photoRemoveBtn: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
   },
   pendingBanner: { marginHorizontal: 16, marginTop: 8, marginBottom: 4 },
   addPhotoBtn: {
@@ -2627,339 +2044,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 10,
   },
-  addPhotoText: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  detailActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  detailActionBtn: {
-    padding: 4,
-  },
-  detailEditBtn: {
+  addPhotoText: { ...type.caption, marginTop: metrics.listRow.bodyGap },
+});
+
+const lx = StyleSheet.create({
+  flex: { flex: 1 },
+  shrink: { flexShrink: 1 },
+  top: { paddingHorizontal: space.screenX, gap: metrics.sheet.gap - 2, paddingBottom: space.inline },
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.inline },
+  dayNav: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  search: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
+    gap: space.inline,
+    minHeight: metrics.projects.searchHeight,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+    paddingHorizontal: metrics.projects.cardPad,
   },
-  detailEditBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  detailContent: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  detailTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  detailDate: {
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  detailMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 16,
-  },
-  detailMetaText: {
-    fontSize: 14,
-  },
-  offlineDetailTag: {
+  searchInput: { flex: 1, paddingVertical: 0 },
+  filterPill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    marginBottom: 12,
+    gap: space.inline,
+    maxWidth: '100%',
+    paddingHorizontal: metrics.filterChip.padX,
+    paddingVertical: metrics.filterChip.padY,
+    borderRadius: radii.pill,
   },
-  weatherCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 14,
-    gap: 12,
-    marginBottom: 16,
-  },
-  weatherCardInfo: {},
-  weatherCardText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  weatherCardTemp: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  detailSection: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 16,
-    marginTop: 8,
-  },
-  detailSectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  detailField: {
-    marginBottom: 14,
-  },
-  detailFieldLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  detailFieldValue: {
-    fontSize: 15,
-  },
-  checkboxDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  detailPhoto: {
-    width: 100,
-    height: 100,
-    borderRadius: 8,
-    marginRight: 10,
-  },
-  weatherRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  weatherField: {
-    flex: 2,
-  },
-  tempField: {
-    flex: 1,
-  },
-  pickerSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '60%',
-    minHeight: 200,
-  },
-  pickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-  },
-  pickerHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  projectPickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    gap: 12,
-  },
-  projectPickerName: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  phaseSectionHeader: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-  },
-  phaseSectionText: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  dayInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  calendarSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 32,
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-  },
-  calendarMonthNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  calendarMonthArrow: {
-    padding: 8,
-  },
-  calendarMonthLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  calendarGrid: {
-    paddingHorizontal: 8,
-  },
-  calendarDayHeaderRow: {
-    flexDirection: 'row',
-  },
-  calendarDayHeaderCell: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  calendarDayHeaderText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  calendarWeekRow: {
-    flexDirection: 'row',
-  },
-  calendarDayCell: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  calendarDayCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  calendarDayText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  calendarDotRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 3,
-    height: 8,
-    marginTop: 2,
-  },
-  calendarDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: '#87749A',
-  },
-  calendarTodayBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 20,
-    marginTop: 12,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  calendarTodayBtnText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  templateBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-    borderBottomWidth: 1,
-  },
-  templateBarText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  tpOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  tpSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '60%',
-    minHeight: 200,
-  },
-  tpHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-  },
-  tpHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  tpRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    gap: 12,
-  },
-  tpRowContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  tpRowName: {
-    fontSize: 15,
-    fontWeight: '500',
-    flexShrink: 1,
-  },
-  tpRowBadge: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  viewToggle: {
-    flexDirection: 'row',
-    borderRadius: 8,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  viewToggleBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 7,
-  },
-  viewToggleBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  feedDateHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    marginBottom: 4,
-  },
-  feedDateHeaderText: {
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
+  offline: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  list: { paddingHorizontal: space.screenX, paddingTop: space.inline, gap: metrics.sheet.gap },
+  day: { gap: space.groupHeaderToCard },
+  dayLoading: { paddingVertical: space.inline },
+  projectHead: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  empty: { flex: 1, justifyContent: 'center', paddingTop: space.screenBottom },
+  row: { paddingVertical: metrics.listRow.padY, gap: metrics.listRow.bodyGap + 2 },
+  rowTop: { flexDirection: 'row', alignItems: 'flex-start', gap: space.inline },
+  rowMeta: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.rowGap },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm, flexShrink: 1 },
+  detail: { paddingHorizontal: space.screenX, paddingTop: space.inline, gap: metrics.scope.gap },
+  pending: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  titleBlock: { gap: metrics.form.labelGap },
+  subLine: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  blocks: { gap: metrics.sheet.gap },
+  block: { gap: metrics.form.labelGap },
+  photo: { width: metrics.thumb.diary, height: metrics.thumb.diary, borderRadius: radii.lg },
+  formHeader: { paddingHorizontal: space.screenX },
+  pickList: { marginHorizontal: space.screenX },
+  pickContent: { paddingBottom: space.screenBottom },
+  pickHeader: { paddingTop: space.section, paddingBottom: space.inline, paddingHorizontal: space.inlineSm },
+  pickRow: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, minHeight: metrics.minHit + space.inline, paddingHorizontal: space.cardX, borderBottomWidth: size.border },
+  cal: { paddingHorizontal: space.screenX, paddingBottom: space.screenBottom, gap: space.rowGap },
+  calNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  calRow: { flexDirection: 'row' },
+  calCell: { flex: 1, alignItems: 'center', paddingVertical: space.inlineSm },
+  calDay: { width: metrics.calendar.dateCircle, height: metrics.calendar.dateCircle, borderRadius: metrics.calendar.dateCircle / 2, alignItems: 'center', justifyContent: 'center' },
+  calDots: { flexDirection: 'row', gap: 2, height: space.inlineSm, marginTop: 2 },
+  calDot: { width: space.inlineSm, height: space.inlineSm, borderRadius: space.inlineSm / 2 },
 });

@@ -1,26 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   RefreshControl,
-  ScrollView,
   SectionList,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Camera, CheckCheck, CloudOff, Search, SlidersHorizontal, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, getAuthedImageSource } from '../services/api';
+import { apiFetch } from '../services/api';
 import { addSyncListener } from '../services/offlineQueue';
-import { useTheme, fontSize, fontWeight, radius } from '../theme';
+import { metrics, radii, size, space, tabular, type, useColors } from '../theme';
+import { Sheet, type SheetRef } from '../components/ui/Sheet';
+import {
+  Card, Checkbox, CollapsedGroupList, EmptyState, FAB, FAB_CLEARANCE, FilterChips, GroupHeader, ListRow, PageHeader, PropertyRow, SmartImage,
+  StatusDot, type DotStatus,
+} from '../components/kit';
+import type { CollapsedGroup } from '../components/kit';
 import { haptic } from '../lib/haptics';
 import { usePermission } from '../lib/usePermission';
 import { usePersistedState } from '../lib/usePersistedState';
@@ -29,7 +33,6 @@ import { fromLocalDateStr, dateStrOf } from '../lib/dates';
 import { TwoPane } from '../components/ui/TwoPane';
 import { SkeletonList } from '../components/ui/Skeleton';
 import { PendingUploadsBanner } from '../components/photo';
-import { StageChip } from '../components/defects/StageChip';
 import { PickerSheet } from '../components/defects/PickerSheet';
 import DefectDetailScreen from './DefectDetailScreen';
 import {
@@ -40,7 +43,6 @@ import {
   STAGE_ORDER,
   defectRef,
   filterQuery,
-  groupByStage,
   loadDefectRefs,
   photosByKind,
   readDefectRefs,
@@ -49,9 +51,7 @@ import {
   type DefectListResponse,
   type DefectStage,
   type JobStage,
-  type StageCounts,
-} from '../lib/defects';
-import { PageHeader } from '../components/ui/PageHeader';
+  type StageCounts, DEFECT_DOT } from '../lib/defects';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -69,19 +69,28 @@ const SEARCH_DELAY_MS = 300;
  * on the right (TwoPane — the list stays mounted across fold/unfold).
  */
 export default function DefectsListScreen({ navigation, route }: Props) {
-  const { projectId, projectName, mine: mineMode } = (route.params ?? {}) as {
+  const { projectId, projectName, projectColor, mine: mineMode } = (route.params ?? {}) as {
     projectId?: string;
     projectName?: string;
+    projectColor?: string | null;
     mine?: boolean;
   };
   const isMine = !!mineMode || !projectId;
-  const theme = useTheme();
+  const c = useColors();
+  const filtersRef = useRef<SheetRef>(null);
+  const [searchVisible, setSearchVisible] = useState(false);
+  // Folded locations, remembered per project.
+  const [collapsedGroups, setCollapsedGroups] = usePersistedState<string[]>(
+    isMine ? 'defects:collapsed:mine' : `defects:collapsed:${projectId}`,
+    [],
+  );
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const canAdd = usePermission('projects.defects', 'add');
 
   const [filters, setFilters] = usePersistedState<DefectFilters>(
-    isMine ? 'defects:filters:mine' : 'defects:filters',
+    // v2: the single-select chips; old multi-select saves could leave "All" lit while filtered.
+    isMine ? 'defects:filters:mine:v2' : 'defects:filters:v2',
     EMPTY_FILTERS,
   );
   const [query, setQuery] = useState('');
@@ -188,20 +197,12 @@ export default function DefectsListScreen({ navigation, route }: Props) {
     paramsFor: (id) => ({ defectId: id, projectId, listRoute }),
   });
 
-  const sections = useMemo(
-    () => groupByStage(items).map((g) => ({ stage: g.stage, data: g.data })),
-    [items],
-  );
 
   const totalCount = useMemo(
     () => STAGE_ORDER.reduce((sum, s) => sum + (counts[s] ?? 0), 0),
     [counts],
   );
 
-  const toggleStage = (s: DefectStage) => {
-    haptic.select();
-    setFilters((f) => ({ ...f, stages: f.stages.includes(s) ? f.stages.filter((x) => x !== s) : [...f.stages, s] }));
-  };
 
   const activeFilterCount =
     filters.stages.length + (filters.jobStage ? 1 : 0) + (filters.mine && !isMine ? 1 : 0) + (filters.overdue ? 1 : 0);
@@ -226,203 +227,246 @@ export default function DefectsListScreen({ navigation, route }: Props) {
     [close],
   );
 
-  const chip = (key: string, label: string, active: boolean, onPress: () => void, count?: number) => (
-    <Pressable
-      key={key}
-      onPress={onPress}
-      style={[
-        styles.chip,
-        { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border },
+  // Location groups (the question on a walk: "what's wrong in this room?").
+  const groups = useMemo(() => {
+    const map = new Map<string, Defect[]>();
+    for (const d of items) {
+      const key = d.location?.trim() || NO_LOCATION;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(d);
+    }
+    return Array.from(map.entries())
+      .sort(([x], [y]) => (x === NO_LOCATION ? 1 : y === NO_LOCATION ? -1 : x.localeCompare(y)))
+      .map(([title, data]) => ({ title, data }));
+  }, [items]);
+
+  // Single-select status chips: All, then each status that has defects.
+  const activeStage: 'all' | DefectStage = filters.stages.length === 1 ? filters.stages[0] : 'all';
+  const chips = [
+    { key: 'all' as const, label: 'All', count: totalCount },
+    ...STAGE_ORDER.filter((s) => (counts[s] ?? 0) > 0 || filters.stages.includes(s)).map((s) => ({
+      key: s,
+      label: STAGE_LABEL[s],
+      count: counts[s] ?? 0,
+    })),
+  ];
+  const pickStage = (key: 'all' | DefectStage) => {
+    haptic.select();
+    setFilters((f) => ({ ...f, stages: key === 'all' ? [] : [key] }));
+  };
+  // Filters behind the sliders: job stage, mine, overdue.
+  const extraFilterCount = (filters.jobStage ? 1 : 0) + (filters.mine && !isMine ? 1 : 0) + (filters.overdue ? 1 : 0);
+  const nothingAtAll = !loading && totalCount === 0 && activeFilterCount === 0 && !debounced && !error;
+
+  const toggleGroup = (title: string) => {
+    haptic.select();
+    setCollapsedGroups(collapsedGroups.includes(title) ? collapsedGroups.filter((t) => t !== title) : [...collapsedGroups, title]);
+  };
+
+  const pageHeader = (
+    <PageHeader
+      title={isMine ? 'My defects' : 'Defects'}
+      project={projectName && !isMine ? { name: projectName, color: projectColor ?? null, id: projectId } : null}
+      onBack={() => navigation.goBack()}
+      actions={nothingAtAll ? undefined : [
+        searchVisible
+          ? { icon: X, label: 'Close search', onPress: () => { setQuery(''); setSearchVisible(false); } }
+          : { icon: Search, label: 'Search defects', onPress: () => setSearchVisible(true) },
+        { icon: SlidersHorizontal, label: 'More filters', onPress: () => filtersRef.current?.present(), active: extraFilterCount > 0 },
       ]}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-    >
-      <Text style={[styles.chipText, { color: active ? '#fff' : theme.textSecondary }]}>
-        {label}
-        {count != null ? ` ${count}` : ''}
-      </Text>
-    </Pressable>
+    />
   );
 
   const header = (
-    <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border, paddingTop: isWide ? 8 : insets.top + 8 }]}>
-      {/* Phone: back + title here. Unfolded: in the full-width PageHeader. */}
-      {!isWide && (
-      <View style={styles.headerTop}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
-        </Pressable>
-        <View style={styles.headerText}>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>{isMine ? 'My defects' : 'Defects'}</Text>
-          <Text style={[styles.subtitle, { color: theme.textMuted }]} numberOfLines={1}>
-            {projectName && !isMine ? `${projectName} · ` : ''}
-            {totalCount} {totalCount === 1 ? 'defect' : 'defects'}
-            {activeFilterCount ? ` · ${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'}` : ''}
-          </Text>
+    <View style={[dl.header, { paddingTop: isWide ? 0 : insets.top + metrics.schedule.top }]}>
+      {/* Phone: back + title here. Unfolded: in the full-width header. */}
+      {!isWide && pageHeader}
+
+      {searchVisible && (
+        <View style={[dl.search, { backgroundColor: c.surface, borderColor: c.border }]}>
+          <Search size={metrics.projects.searchIcon} color={c.muted} strokeWidth={metrics.iconStroke} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Title, location, trade or D-number"
+            placeholderTextColor={c.faint}
+            style={[type.body, dl.searchInput, { color: c.text }]}
+            autoCorrect={false}
+            autoFocus
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
         </View>
-        {activeFilterCount > 0 && (
-          <Pressable
-            onPress={() => {
-              haptic.select();
-              setFilters(EMPTY_FILTERS);
-            }}
-            style={styles.clearBtn}
-            accessibilityRole="button"
-          >
-            <Text style={[styles.clearText, { color: theme.primary }]}>Clear</Text>
-          </Pressable>
-        )}
-      </View>
       )}
 
-      <View style={[styles.search, { backgroundColor: theme.subtle }]}>
-        <Ionicons name="search" size={15} color={theme.textMuted} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Title, location, trade or D-number"
-          placeholderTextColor={theme.textMuted}
-          style={[styles.searchInput, { color: theme.textPrimary }]}
-          autoCorrect={false}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-        />
-      </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-        {STAGE_ORDER.map((s) => chip(s, STAGE_LABEL[s], filters.stages.includes(s), () => toggleStage(s), counts[s] ?? 0))}
-      </ScrollView>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-        {chip('jobStage', filters.jobStage ? JOB_STAGE_LABEL[filters.jobStage] : 'Any job stage', !!filters.jobStage, () => {
-          haptic.light();
-          setJobStagePicker(true);
-        })}
-        {!isMine && chip('mine', 'Mine', filters.mine, () => {
-          haptic.select();
-          setFilters((f) => ({ ...f, mine: !f.mine }));
-        })}
-        {chip('overdue', 'Overdue', filters.overdue, () => {
-          haptic.select();
-          setFilters((f) => ({ ...f, overdue: !f.overdue }));
-        })}
-      </ScrollView>
+      {!nothingAtAll && <FilterChips chips={chips} value={activeStage} onChange={pickStage} />}
 
       <PendingUploadsBanner projectId={isMine ? undefined : projectId} types={['create-defect']} noun="defect" />
       {error && items.length > 0 ? (
-        <Text style={[styles.errorLine, { color: theme.statusWarning }]}>{error}</Text>
+        <Text style={[type.caption, { color: c.status.pendingText }]}>{error}</Text>
       ) : null}
     </View>
   );
 
-  const renderRow = ({ item }: { item: Defect }) => {
+  const renderRow = (item: Defect) => {
     const selected = isWide && item.id === selectedId;
     const thumb = photosByKind(item.attachments).before[0] ?? photosByKind(item.attachments).after[0];
     const due = dateStrOf(item.dueDate ?? null);
-    const overdue = !!item.overdue && item.stage !== 'closed';
+    const closed = item.stage === 'closed';
+    const overdue = !!item.overdue && !closed;
+    const dot = DEFECT_DOT[item.stage] ?? DEFECT_DOT.open;
+    const trade = item.assignedContactName || (item.trade ? tradeNames[item.trade] ?? item.trade : null);
+    const closedKey = closed && item.closedAt ? dateStrOf(item.closedAt) : '';
+    const when = closedKey
+      ? `Closed ${shortDate(closedKey)}`
+      : !closed && due
+        ? `${overdue ? 'Overdue' : 'Due'} ${shortDate(due)}`
+        : null;
+    const sep = <Text style={{ color: c.faint }}>{' · '}</Text>;
     return (
       <Pressable
+        key={item.id}
         onPress={() => {
           haptic.select();
           open(item.id);
         }}
-        style={[
-          styles.row,
-          { backgroundColor: theme.card, borderColor: selected ? theme.primary : theme.border },
-          selected && { borderWidth: 2 },
-        ]}
+        style={({ pressed }) => [dl.row, selected && { backgroundColor: c.tint }, pressed && { opacity: metrics.pressedOpacity }]}
         accessibilityRole="button"
         accessibilityLabel={`${defectRef(item)} ${item.title}`}
       >
-        <View style={[styles.thumb, { backgroundColor: theme.subtle }]}>
-          {thumb ? (
-            <Image source={getAuthedImageSource(thumb.url)} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : (
-            <Ionicons name="image-outline" size={20} color={theme.textMuted} />
-          )}
-        </View>
-        <View style={styles.rowText}>
-          <Text style={[styles.rowRef, { color: theme.textMuted }]} numberOfLines={1}>
-            {defectRef(item)}
-            {isMine && item.projectName ? ` · ${item.projectName}` : ''}
-          </Text>
-          <Text style={[styles.rowTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+        <SmartImage uri={thumb?.url ?? null} width={size.thumb} height={size.thumb} radius={radii.md} fallbackIcon={Camera} />
+        <View style={dl.rowText}>
+          <Text style={[type.rowTitle, { color: closed ? c.muted : c.text }]} numberOfLines={2}>
+            <Text style={[type.body, tabular, { color: c.muted }]}>{`${defectRef(item)}  `}</Text>
             {item.title}
           </Text>
-          <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-            {[item.location, item.assignedContactName || (item.trade ? tradeNames[item.trade] ?? item.trade : null), item.ownerName].filter(Boolean).join(' · ') || JOB_STAGE_LABEL[item.jobStage]}
-          </Text>
-          <View style={styles.rowFoot}>
-            <StageChip stage={item.stage} small />
-            {due ? (
-              <Text style={[styles.rowDue, { color: overdue ? theme.statusDanger : theme.textMuted }]}>
-                {overdue ? 'Overdue · ' : 'Due '}
-                {fromLocalDateStr(due).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-              </Text>
-            ) : null}
+          <View style={dl.meta}>
+            <StatusDot status={dot} />
+            <Text style={[type.caption, { color: dot === 'rejected' ? c.danger : dot === 'pending' ? c.status.pendingText : c.muted, flexShrink: 1 }]} numberOfLines={1}>
+              {STAGE_LABEL[item.stage] ?? item.stage}
+              {isMine && item.projectName ? <>{sep}{item.projectName}</> : null}
+              {/* The date matters most, so it comes before trade and survives truncation. */}
+              {when ? <>{sep}<Text style={{ color: overdue ? c.danger : c.muted }}>{when}</Text></> : null}
+              {trade ? <>{sep}<Text style={{ color: c.muted }}>{trade}</Text></> : null}
+            </Text>
           </View>
         </View>
       </Pressable>
     );
   };
 
+  // Open groups as sections; collapsed ones move to the foot as plain divider
+  // rows (spec §8).
+  const sections = groups
+    .filter((g) => !collapsedGroups.includes(g.title))
+    .map((g) => ({ title: g.title, count: g.data.length, data: [g.data] }));
+  const foldedGroups: CollapsedGroup[] = groups
+    .filter((g) => collapsedGroups.includes(g.title))
+    .map((g) => ({ key: g.title, title: g.title, meta: String(g.data.length), onPress: () => toggleGroup(g.title) }));
+
   const list = (
-    <View style={[styles.screen, { backgroundColor: theme.background }]}>
-      {header}
+    <View style={[dl.screen, { backgroundColor: c.bg }]}>
       {loading && items.length === 0 ? (
-        <SkeletonList count={7} style={styles.skeleton} />
+        <>
+          {header}
+          <SkeletonList count={7} />
+        </>
       ) : (
         <SectionList
           sections={sections}
-          keyExtractor={(d) => d.id}
-          renderItem={renderRow}
-          extraData={isWide ? selectedId : null}
-          stickySectionHeadersEnabled={false}
-          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + (canAdd && !isMine ? 96 : 32) }]}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          keyExtractor={(_rows, i) => String(i)}
+          ListHeaderComponent={header}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item: rows }) => <Card variant="list">{rows.map(renderRow)}</Card>}
           renderSectionHeader={({ section }) => (
-            <View style={styles.groupHeader}>
-              <Text style={[styles.groupTitle, { color: theme.textPrimary }]}>{STAGE_LABEL[section.stage]}</Text>
-              <View style={[styles.groupRule, { backgroundColor: theme.border }]} />
-              <Text style={[styles.groupCount, { color: theme.textMuted }]}>{counts[section.stage] ?? section.data.length}</Text>
+            <View style={dl.groupHeader}>
+              <GroupHeader
+                title={section.title}
+                meta={section.count}
+                open
+                onToggle={() => toggleGroup(section.title)}
+              />
             </View>
           )}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
+          SectionSeparatorComponent={() => <View style={dl.sectionGap} />}
+          extraData={[isWide ? selectedId : null, collapsedGroups, tradeNames]}
+          stickySectionHeadersEnabled={false}
+          contentContainerStyle={[dl.listContent, { paddingBottom: (canAdd && !isMine ? FAB_CLEARANCE : 0) + space.screenBottom + insets.bottom }]}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
           onEndReached={onEndReached}
           onEndReachedThreshold={0.4}
-          ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.more} color={theme.primary} /> : undefined}
+          ListFooterComponent={
+            foldedGroups.length || loadingMore ? (
+              <>
+                {foldedGroups.length ? <View style={sections.length ? dl.foldedTop : undefined}><CollapsedGroupList groups={foldedGroups} /></View> : null}
+                {loadingMore ? <ActivityIndicator style={dl.more} color={c.accent} /> : null}
+              </>
+            ) : undefined
+          }
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Ionicons name={error ? 'cloud-offline-outline' : 'checkmark-done-circle-outline'} size={36} color={theme.textMuted} />
-              <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
-                {error ? "Couldn't load defects" : query || activeFilterCount ? 'Nothing matches' : 'No defects'}
-              </Text>
-              <Text style={[styles.emptyBody, { color: theme.textSecondary }]}>
-                {error
-                  ? error
-                  : query || activeFilterCount
-                    ? 'Try another search or clear the filters.'
-                    : isMine
-                      ? "Defects you own, raise or watch show here."
-                      : 'Walk the job and photograph anything that needs fixing.'}
-              </Text>
+            foldedGroups.length ? undefined : (
+            <View style={dl.empty}>
+              <EmptyState
+                icon={error ? CloudOff : CheckCheck}
+                title={error ? "Couldn't load defects" : debounced || activeFilterCount ? 'Nothing matches' : 'No defects'}
+                helper={
+                  error
+                    ? error
+                    : debounced || activeFilterCount
+                      ? 'Try another search or clear the filters.'
+                      : isMine
+                        ? 'Defects you own, raise or watch show here.'
+                        : 'Walk the job and photograph anything that needs fixing. Each one goes straight to the list.'
+                }
+              />
             </View>
+            )
           }
         />
       )}
 
-      {canAdd && !isMine && (
-        <View style={[styles.fabWrap, { bottom: insets.bottom + 16 }]} pointerEvents="box-none">
-          <Pressable
-            onPress={startWalkthrough}
-            style={[styles.fab, { backgroundColor: theme.primary }]}
-            accessibilityRole="button"
-            accessibilityLabel="Add defects"
-          >
-            <Ionicons name="camera" size={20} color="#fff" />
-            <Text style={styles.fabText}>Add defects</Text>
-          </Pressable>
+      {canAdd && !isMine && <FAB icon={Camera} onPress={startWalkthrough} label="Add defects" />}
+
+      <Sheet ref={filtersRef} title="Filters">
+        <View style={dl.sheetBody}>
+          <Card variant="list">
+            <PropertyRow
+              form
+              label="Job stage"
+              value={filters.jobStage ? JOB_STAGE_LABEL[filters.jobStage] : undefined}
+              placeholder="Any"
+              onPress={() => {
+                haptic.light();
+                filtersRef.current?.dismiss();
+                setTimeout(() => setJobStagePicker(true), 250);
+              }}
+            />
+            {!isMine ? (
+              <ListRow
+                title="Mine only"
+                titleLines={1}
+                trailing={<Checkbox checked={filters.mine} />}
+                onPress={() => { haptic.select(); setFilters((f) => ({ ...f, mine: !f.mine })); }}
+              />
+            ) : null}
+            <ListRow
+              title="Overdue only"
+              titleLines={1}
+              trailing={<Checkbox checked={filters.overdue} />}
+              onPress={() => { haptic.select(); setFilters((f) => ({ ...f, overdue: !f.overdue })); }}
+            />
+          </Card>
+          {activeFilterCount > 0 ? (
+            <Pressable
+              onPress={() => { haptic.select(); setFilters(EMPTY_FILTERS); filtersRef.current?.dismiss(); }}
+              accessibilityRole="button"
+              style={dl.clear}
+            >
+              <Text style={[type.body, { color: c.accent }]}>Clear all filters</Text>
+            </Pressable>
+          ) : null}
         </View>
-      )}
+      </Sheet>
 
       <PickerSheet
         visible={jobStagePicker}
@@ -467,86 +511,49 @@ export default function DefectsListScreen({ navigation, route }: Props) {
   return (
     <View style={styles.screen}>
       {isWide && (
-        <PageHeader
-          key="header"
-          navigation={navigation}
-          title={isMine ? 'My defects' : 'Defects'}
-          projectName={`${projectName && !isMine ? `${projectName} · ` : ''}${totalCount} ${totalCount === 1 ? 'defect' : 'defects'}${activeFilterCount ? ` · ${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'}` : ''}`}
-          right={
-            activeFilterCount > 0 ? (
-              <Pressable onPress={() => { haptic.select(); setFilters(EMPTY_FILTERS); }} style={styles.clearBtn} accessibilityRole="button">
-                <Text style={[styles.clearText, { color: theme.primary }]}>Clear</Text>
-              </Pressable>
-            ) : undefined
-          }
-        />
+        <View key="header" style={[dl.wideHeader, { paddingTop: insets.top + metrics.schedule.top, backgroundColor: c.bg }]}>
+          {pageHeader}
+        </View>
       )}
       {pane}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const NO_LOCATION = 'No location';
+
+
+function shortDate(dateStr: string): string {
+  return fromLocalDateStr(dateStr).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+}
+
+const dl = StyleSheet.create({
   screen: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
-  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  backBtn: { width: 44, height: 44, marginLeft: -12, alignItems: 'center', justifyContent: 'center' },
-  headerText: { flex: 1, minWidth: 0 },
-  title: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, letterSpacing: -0.2 },
-  subtitle: { fontSize: fontSize.xs, marginTop: 1 },
-  clearBtn: { minHeight: 44, minWidth: 44, alignItems: 'flex-end', justifyContent: 'center' },
-  clearText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  search: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: radius.lg, paddingHorizontal: 10, minHeight: 40 },
-  searchInput: { flex: 1, fontSize: fontSize.sm, paddingVertical: 8 },
-  chips: { gap: 6, paddingRight: 8 },
-  chip: {
-    minHeight: 36,
-    paddingHorizontal: 12,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    justifyContent: 'center',
-  },
-  chipText: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold },
-  errorLine: { fontSize: fontSize.xs },
-  skeleton: { padding: 16, gap: 16 },
-  listContent: { padding: 14 },
-  separator: { height: 8 },
-  groupHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 14, paddingBottom: 8 },
-  groupTitle: { fontSize: fontSize.xs, fontWeight: fontWeight.bold, letterSpacing: 0.7, textTransform: 'uppercase' },
-  groupRule: { flex: 1, height: StyleSheet.hairlineWidth },
-  groupCount: { fontSize: fontSize.xs, fontVariant: ['tabular-nums'] },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: 10,
-    borderRadius: radius.xl,
-    borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 88,
-  },
-  thumb: { width: 68, height: 68, borderRadius: radius.lg, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  rowText: { flex: 1, minWidth: 0, gap: 2 },
-  rowRef: { fontSize: fontSize.table, fontWeight: fontWeight.semibold, fontVariant: ['tabular-nums'] },
-  rowTitle: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.semibold },
-  rowMeta: { fontSize: fontSize.xs },
-  rowFoot: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  rowDue: { fontSize: fontSize.table, fontWeight: fontWeight.medium },
-  more: { marginVertical: 16 },
-  empty: { alignItems: 'center', paddingTop: 60, gap: 8, paddingHorizontal: 40 },
-  emptyTitle: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
-  emptyBody: { fontSize: fontSize.bodySm, textAlign: 'center', lineHeight: 19 },
-  fabWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-  fab: {
+  wideHeader: { paddingHorizontal: space.screenX, paddingBottom: metrics.scope.gap },
+  header: { gap: metrics.scope.gap, paddingBottom: metrics.scope.gap },
+  search: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    minHeight: 52,
-    paddingHorizontal: 22,
-    borderRadius: 26,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    gap: space.inline,
+    minHeight: metrics.projects.searchHeight,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+    paddingHorizontal: metrics.projects.cardPad,
   },
-  fabText: { color: '#fff', fontSize: fontSize.base, fontWeight: fontWeight.semibold },
+  searchInput: { flex: 1, paddingVertical: 0 },
+  listContent: { paddingHorizontal: space.screenX },
+  groupHeader: {},
+  sectionGap: { height: metrics.defects.groupGap / 2 },
+  foldedTop: { paddingTop: metrics.defects.groupGap },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, paddingVertical: metrics.defects.rowPadY },
+  rowText: { flex: 1, minWidth: 0, gap: metrics.defects.rowGap },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  more: { paddingVertical: space.section },
+  empty: { minHeight: metrics.emptyState.circle * 7 },
+  sheetBody: { paddingHorizontal: space.screenX, paddingTop: space.inline, gap: space.rowGap },
+  clear: { alignSelf: 'center', paddingVertical: space.inline },
+});
+
+const styles = StyleSheet.create({
+  screen: { flex: 1 },
 });

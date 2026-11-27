@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
   useColorScheme,
@@ -14,9 +13,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
-  Switch,
+  Pressable,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
@@ -24,9 +22,18 @@ import { fromLocalDateStr, toLocalDateStr } from '../lib/dates';
 import { ScheduleActivityFeedButton } from '../components/ScheduleActivityFeedButton';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, currentTheme, typeColors as themeTypeColors, MAX_FONT_SCALE } from '../theme';
+import { useTheme, useColors, currentTheme, typeColors as themeTypeColors, metrics, radii, size, space, tabular, type } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Calendar as CalendarIcon, Check, CheckCheck, ChevronDown, ChevronRight, Ellipsis, FolderOpen, Plus, SendHorizontal, SquareCheck, Trash2 } from 'lucide-react-native';
+import {
+  ButtonRow, CalendarBlock, Card, Checkbox, EmptyState, FAB, FAB_CLEARANCE, FieldLabel, GanttBar, ListRow, ModalSheet, NowLine,
+  PageHeader, PrimaryButton, ProgressLine, PropertyRow, SecondaryButton, Segmented, SheetHeader, StatusDot, TextField, TodayMarker, ToggleRow,
+  UnderlineTabs, type DotStatus,
+} from '../components/kit';
+import { SkeletonList } from '../components/ui/Skeleton';
 import { useLayout } from '../lib/useLayout';
-import { sheetFrame } from '../components/ui/Sheet';
+import { scheduleDot } from '../lib/scheduleStatus';
+import { haptic } from '../lib/haptics';
 import type { ScrollViewInstance } from 'react-native';
 import type { JSX } from 'react';
 import { goBackOrHome } from '../navigation/back';
@@ -90,15 +97,16 @@ interface Project {
   name: string;
   jobNumber?: string | null;
   currentSystemPhase?: string | null;
+  color?: string | null;
 }
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
-  route?: { params?: { projectId?: string } };
+  route?: { params?: { projectId?: string; projectName?: string; projectColor?: string | null } };
 };
 
 type ViewMode = 'list' | 'gantt' | 'calendar';
-type CalendarMode = 'month' | 'week';
+type CalendarMode = 'week' | 'month';
 
 const PHASE_ORDER: Record<string, number> = {
   construction: 0,
@@ -179,26 +187,29 @@ const TYPE_LABELS: Record<string, string> = {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const DAY_NAMES_MON = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+/** Gantt: how often a live scroll may re-render the off-range markers. */
+const GANTT_MARKER_THROTTLE_MS = 150;
+
+/** Same rule as the bars: the first 10 characters are the calendar day, read as local midnight. */
+const localDay = (d: string) => new Date(String(d).substring(0, 10) + 'T00:00:00');
 
 function formatDateRange(start: string, end: string): string {
-  const s = new Date(start);
-  const e = new Date(end);
+  const s = localDay(start);
+  const e = localDay(end);
   const sd = s.getDate();
   const sm = MONTHS[s.getMonth()];
   const ed = e.getDate();
   const em = MONTHS[e.getMonth()];
   if (s.getFullYear() !== e.getFullYear()) {
-    return `${sd} ${sm} ${s.getFullYear()} - ${ed} ${em} ${e.getFullYear()}`;
+    return `${sd} ${sm} ${s.getFullYear()} – ${ed} ${em} ${e.getFullYear()}`;
   }
   if (s.getMonth() === e.getMonth() && sd === ed) {
     return `${sd} ${sm}`;
   }
   if (s.getMonth() === e.getMonth()) {
-    return `${sd} - ${ed} ${sm}`;
+    return `${sd} – ${ed} ${sm}`;
   }
-  return `${sd} ${sm} - ${ed} ${em}`;
+  return `${sd} ${sm} – ${ed} ${em}`;
 }
 
 function formatNoteDate(dateStr: string): string {
@@ -230,15 +241,6 @@ function getMondayOfWeek(date: Date): Date {
   return d;
 }
 
-const DAY_COL_WIDTH = 40;
-const NAME_COL_WIDTH = 140;
-// Wide screen (Duo unfolded): a roomier pinned name column. Day columns keep
-// their 40pt width, so the extra width shows more days rather than stretching
-// bars — and the bars' x positions don't change across a fold, so the
-// horizontal scroll stays on the same dates.
-const NAME_COL_WIDTH_WIDE = 220;
-const GANTT_ROW_HEIGHT = 36;
-const HOUR_HEIGHT = 60;
 
 export default function ScheduleScreen({ navigation, route }: Props) {
   const { user } = useAuth();
@@ -251,21 +253,10 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   // (project page, More menu, home, a notification). The native one only
   // appears when there's a screen underneath in the same stack (Jed, 11-21:
   // "Schedule screen doesn't have a back button").
+  // Revamp v1: the screen draws its own one-row header (‹ Schedule ■ Project),
+  // so the stack header is off wherever Schedule is opened from.
   useLayoutEffect(() => {
-    navigation.setOptions({
-      headerShown: true,
-      headerLeft: ({ tintColor }: { tintColor?: string }) => (
-        <TouchableOpacity
-          onPress={() => goBackOrHome(navigation as any)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={{ width: 44, height: 44, marginLeft: -10, alignItems: 'center', justifyContent: 'center' }}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <Ionicons name="chevron-back" size={26} color={tintColor} />
-        </TouchableOpacity>
-      ),
-    });
+    navigation.setOptions({ headerShown: false });
   }, [navigation]);
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -294,11 +285,11 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [newNoteText, setNewNoteText] = useState('');
   const [addingNote, setAddingNote] = useState(false);
 
-  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
-  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [calendarMode, setCalendarMode] = useState<CalendarMode>('week');
   const [weekStartDate, setWeekStartDate] = useState<Date>(getMondayOfWeek(new Date()));
+  // Calendar tab: Week (time grid) or Month (grid + the picked day's items).
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>('week');
+  const [monthDate, setMonthDate] = useState<Date>(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [selectedDate, setSelectedDate] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
 
   const [checklistSteps, setChecklistSteps] = useState<ScheduleItemStep[]>([]);
   const [loadingSteps, setLoadingSteps] = useState(false);
@@ -339,6 +330,21 @@ export default function ScheduleScreen({ navigation, route }: Props) {
   const [showNamesCol, setShowNamesCol] = useState(true);
   const [showBarStatus, setShowBarStatus] = useState(false);
   const [showGanttMenu, setShowGanttMenu] = useState(false);
+  // List: done items from before this week fold into one line.
+  const [showEarlierDone, setShowEarlierDone] = useState(false);
+  // Gantt: month shown in the corner, and where the timeline is scrolled to.
+  const [ganttMonth, setGanttMonth] = useState(MONTHS[new Date().getMonth()]);
+  // Left edge of the visible Gantt window (set when a scroll settles), for
+  // the "25 ›" markers on work that starts past the right edge.
+  const [ganttViewX, setGanttViewX] = useState(0);
+  const ganttXRef = useRef(0);
+  // Last time onScroll committed ganttViewX (throttles the marker re-render).
+  const ganttMarkerAtRef = useRef(0);
+  // Calendar: the week's days scroll sideways; the time grid fills the rest.
+  const calScrollRef = useRef<ScrollViewInstance>(null);
+  const [calBodyHeight, setCalBodyHeight] = useState(0);
+  const insets = useSafeAreaInsets();
+  const k = useColors();
 
   const theme = useTheme();
 const colors = {
@@ -691,38 +697,6 @@ const colors = {
     return p.jobNumber ? `${p.jobNumber} - ${p.name}` : p.name;
   };
 
-  const getCalendarGrid = useCallback(() => {
-    const firstDay = new Date(calendarYear, calendarMonth, 1);
-    const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    let startOffset = firstDay.getDay();
-
-    const prevMonthLastDay = new Date(calendarYear, calendarMonth, 0).getDate();
-    const cells: { day: number; month: number; year: number; isCurrentMonth: boolean }[] = [];
-
-    const prevMonth = calendarMonth === 0 ? 11 : calendarMonth - 1;
-    const prevYear = calendarMonth === 0 ? calendarYear - 1 : calendarYear;
-    for (let i = startOffset - 1; i >= 0; i--) {
-      cells.push({ day: prevMonthLastDay - i, month: prevMonth, year: prevYear, isCurrentMonth: false });
-    }
-    for (let d = 1; d <= daysInMonth; d++) {
-      cells.push({ day: d, month: calendarMonth, year: calendarYear, isCurrentMonth: true });
-    }
-    const nextMonth = calendarMonth === 11 ? 0 : calendarMonth + 1;
-    const nextYear = calendarMonth === 11 ? calendarYear + 1 : calendarYear;
-    const remaining = 7 - (cells.length % 7);
-    if (remaining < 7) {
-      for (let d = 1; d <= remaining; d++) {
-        cells.push({ day: d, month: nextMonth, year: nextYear, isCurrentMonth: false });
-      }
-    }
-
-    const rows: typeof cells[] = [];
-    for (let i = 0; i < cells.length; i += 7) {
-      rows.push(cells.slice(i, i + 7));
-    }
-    return rows;
-  }, [calendarYear, calendarMonth]);
 
   const getItemsForDate = useCallback((date: Date): ScheduleItem[] => {
     return items.filter(item => {
@@ -736,19 +710,6 @@ const colors = {
     });
   }, [items]);
 
-  const getDotsForDate = useCallback((date: Date): string[] => {
-    const dayItems = getItemsForDate(date);
-    const dotColors: string[] = [];
-    const seen = new Set<string>();
-    dayItems.forEach(item => {
-      const c = statusColorFor(item.status) || theme.statusInfo;
-      if (!seen.has(c) && dotColors.length < 3) {
-        seen.add(c);
-        dotColors.push(c);
-      }
-    });
-    return dotColors;
-  }, [getItemsForDate]);
 
   const parseLocalMidnight = (d: string | null | undefined): Date => {
     if (!d) return new Date();
@@ -779,7 +740,7 @@ const colors = {
     minDate.setHours(0, 0, 0, 0);
     maxDate.setHours(0, 0, 0, 0);
 
-    const days = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const days = Math.round((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     const sortedItems = [...items].sort((a, b) => {
       const sa = plm(a.startDate).getTime();
       const sb = plm(b.startDate).getTime();
@@ -811,87 +772,146 @@ const colors = {
     ? statusOptions
     : Object.entries(STATUS_LABELS).map(([key, label]) => ({ key, name: label, color: statusColorFor(key) || theme.textMuted }));
 
-  const renderItemCard = (item: ScheduleItem) => {
-    const status = getStatusOption(item.status);
+  // ── Status → dot ──────────────────────────────────────────────────────────
+  const dotFor = scheduleDot;
 
-    return (
-      <TouchableOpacity
-        key={item.id}
-        style={[styles.itemCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-        onPress={() => openDetail(item)}
-        activeOpacity={0.75}
-      >
-        <View style={styles.itemContent}>
-          <View style={styles.itemTopRow}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>{item.name}</Text>
-            <View style={[styles.itemStatusPill, { borderColor: status.color }]}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemStatusPillText, { color: status.color }]}>{status.name}</Text>
-            </View>
-          </View>
-          <View style={styles.itemMetaLine}>
-            <Ionicons name="calendar-outline" size={12} color={colors.secondary} />
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemMetaText, { color: colors.secondary }]}>
-              {formatDateRange(item.startDate, item.endDate)}
-            </Text>
-          </View>
-          {item.assignedToName && (
-            <View style={styles.itemMetaLine}>
-              <Ionicons name="person-outline" size={12} color={colors.secondary} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.itemMetaText, { color: colors.secondary }]}>{item.assignedToName}</Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  const itemMeta = (item: ScheduleItem) =>
+    [formatDateRange(item.startDate, item.endDate), item.assignedToName].filter(Boolean).join(' · ');
 
+  const sc = metrics.schedule;
+
+  // ── List: one card per start day; older done items folded away ─────────────
   const renderListView = () => {
     const sorted = [...items].sort((a, b) =>
-      new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+      parseLocalMidnight(a.startDate).getTime() - parseLocalMidnight(b.startDate).getTime()
     );
     if (sorted.length === 0) {
       return (
-        <View style={styles.emptyState}>
-          <Ionicons name="calendar-outline" size={48} color={colors.secondary} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>No schedule items found</Text>
+        <View style={styles.flex1}>
+          <EmptyState icon={CalendarIcon} title="Nothing scheduled yet" helper="Tap + to add the first schedule item." />
         </View>
       );
     }
 
-    const rows: JSX.Element[] = [];
-    let lastDateKey = '';
-    sorted.forEach(item => {
-      const d = new Date(item.startDate);
-      const dateKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      if (dateKey !== lastDateKey) {
-        lastDateKey = dateKey;
-        const label = `${DAY_NAMES[d.getDay()]} - ${MONTHS[d.getMonth()]} ${d.getDate()}`;
-        rows.push(
-          <View key={`div-${dateKey}`} style={styles.dateDivider}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dateDividerText, { color: colors.secondary }]}>{label}</Text>
-            <View style={[styles.dateDividerLine, { borderColor: colors.border }]} />
-          </View>
-        );
-      }
-      rows.push(renderItemCard(item));
+    const todayMs = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+    // "Earlier": done items that finished before this week started.
+    const weekStartMs = getMondayOfWeek(new Date()).getTime();
+    const isEarlierDone = (it: ScheduleItem) =>
+      it.status === 'completed' && parseLocalMidnight(it.endDate).getTime() < weekStartMs;
+    const earlierCount = sorted.filter(isEarlierDone).length;
+    const visible = showEarlierDone ? sorted : sorted.filter(it => !isEarlierDone(it));
+
+    const days: { key: string; date: Date; items: ScheduleItem[] }[] = [];
+    visible.forEach(item => {
+      const d = parseLocalMidnight(item.startDate);
+      const key = toLocalDateStr(d);
+      const last = days[days.length - 1];
+      if (last && last.key === key) last.items.push(item);
+      else days.push({ key, date: d, items: [item] });
     });
+    const todayIdx = days.findIndex(d => d.date.getTime() >= todayMs);
+    const now = new Date();
+    const todayLabel = `Today · ${DAY_NAMES[now.getDay()]} ${now.getDate()}`;
 
     return (
       <ScrollView
         style={styles.flex1}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        contentContainerStyle={[ss.list, { paddingBottom: FAB_CLEARANCE + space.screenBottom }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
       >
-        {rows}
+        {earlierCount > 0 ? (
+          <Pressable
+            onPress={() => setShowEarlierDone(v => !v)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showEarlierDone }}
+            style={ss.earlier}
+          >
+            <Text style={[type.meta, tabular, { color: k.muted }]}>
+              {showEarlierDone ? 'Hide earlier done items' : `${earlierCount} earlier ${earlierCount === 1 ? 'item' : 'items'} done`}
+            </Text>
+            {showEarlierDone
+              ? <ChevronDown size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />
+              : <ChevronRight size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />}
+          </Pressable>
+        ) : null}
+        {days.map((day, i) => (
+          <View key={day.key} style={ss.dayGroup}>
+            {i === todayIdx ? <View style={ss.todayMarker}><TodayMarker label={todayLabel} /></View> : null}
+            <Text style={[type.meta, { color: k.muted, marginBottom: sc.dayLabelGap }]}>
+              {`${DAY_NAMES[day.date.getDay()]} ${day.date.getDate()} ${MONTHS[day.date.getMonth()]}`}
+            </Text>
+            <Card variant="list">
+              {day.items.map(item => {
+                const status = getStatusOption(item.status);
+                const done = item.status === 'completed';
+                return (
+                  <ListRow
+                    key={item.id}
+                    onPress={() => openDetail(item)}
+                    title={item.name}
+                    done={done}
+                    subtitle={itemMeta(item)}
+                    trailing={<StatusDot status={dotFor(item.status)} label={status.name} />}
+                  />
+                );
+              })}
+            </Card>
+          </View>
+        ))}
+        {todayIdx < 0 ? <View style={ss.todayMarker}><TodayMarker label={todayLabel} /></View> : null}
       </ScrollView>
     );
   };
 
+  // ── Gantt ──────────────────────────────────────────────────────────────────
+  const g = isWide
+    ? { ...sc.gantt, rowHeight: sc.gantt.rowHeightWide, headerHeight: sc.gantt.headerHeightWide }
+    : sc.gantt;
+  const nameColWidth = showNamesCol ? (isWide ? g.nameColWide : g.nameCol) : 0;
+  const visibleDays = isWide ? g.visibleDaysWide : g.visibleDays;
+  // Day columns size so a week (two on a big screen) fills the width.
+  // Duo (D04): main padding 24 each side.
+  const padX = isWide ? S.duoPadX : space.screenX;
+  const dayW = Math.max(
+    (screenWidth - 2 * padX - nameColWidth) / visibleDays,
+    metrics.minHit * 0.6,
+  );
+
   const syncGanttHeader = (x: number) => {
+    ganttXRef.current = x;
     if (isSyncingRef.current) return;
     isSyncingRef.current = true;
     ganttHeaderScrollRef.current?.scrollTo({ x, animated: false });
     setTimeout(() => { isSyncingRef.current = false; }, 30);
+  };
+
+  const scrollGanttTo = (x: number, animated = true) => {
+    // Clamp to the real scroll range so ganttXRef / ganttViewX match where the
+    // ScrollView actually lands (it stops at the end without telling us).
+    const visibleW = screenWidth - 2 * padX - nameColWidth;
+    const maxX = Math.max(0, ganttData().days * dayW - visibleW);
+    const nx = Math.min(Math.max(0, x), maxX);
+    ganttXRef.current = nx;
+    ganttScrollRef.current?.scrollTo({ x: nx, animated });
+    ganttHeaderScrollRef.current?.scrollTo({ x: nx, animated });
+    updateGanttMonth(nx);
+  };
+
+  const updateGanttMonth = (x: number) => {
+    const { minDate } = ganttData();
+    const d = new Date(minDate);
+    d.setDate(d.getDate() + Math.round(x / dayW));
+    const label = MONTHS[d.getMonth()];
+    setGanttMonth(prev => (prev === label ? prev : label));
+    setGanttViewX(prev => (prev === x ? prev : x));
+  };
+
+  const ganttTodayX = () => {
+    const { minDate } = ganttData();
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    // Week containing today, starting Monday.
+    const monday = getMondayOfWeek(today);
+    return Math.round((monday.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) * dayW;
   };
 
   const renderGanttView = () => {
@@ -899,83 +919,60 @@ const colors = {
 
     if (sortedItems.length === 0) {
       return (
-        <View style={styles.emptyState}>
-          <Ionicons name="bar-chart-outline" size={48} color={colors.secondary} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyText, { color: colors.secondary }]}>No schedule items to display</Text>
+        <View style={styles.flex1}>
+          <EmptyState icon={CalendarIcon} title="Nothing scheduled yet" helper="Tap + to add the first schedule item." />
         </View>
       );
     }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayDayIndex = Math.floor((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
-    const todayX = todayDayIndex * DAY_COL_WIDTH + DAY_COL_WIDTH / 2 - 1;
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    // Day gaps between local midnights use Math.round: across a daylight-saving
+    // change the gap is N days ± 1 hour, and floor would give N-1.
+    const todayDayIndex = Math.round((today.getTime() - minDate.getTime()) / MS_PER_DAY);
+    const todayX = todayDayIndex * dayW + dayW / 2 - g.todayLine / 2;
 
-    const dateHeaders: { date: Date; label: string; isWeekend: boolean }[] = [];
+    const dateHeaders: { date: Date; isWeekend: boolean }[] = [];
     for (let i = 0; i < days; i++) {
       const d = new Date(minDate);
       d.setDate(d.getDate() + i);
       const dow = d.getDay();
-      dateHeaders.push({ date: d, label: `${d.getDate()}`, isWeekend: dow === 0 || dow === 6 });
+      dateHeaders.push({ date: d, isWeekend: dow === 0 || dow === 6 });
     }
 
-    const showMonthHeaders = days > 14;
-    const monthBreaks: { month: string; startIdx: number; count: number }[] = [];
-    if (showMonthHeaders) {
-      let curMonth = '';
-      dateHeaders.forEach((dh, idx) => {
-        const m = `${MONTHS[dh.date.getMonth()]} ${dh.date.getFullYear()}`;
-        if (m !== curMonth) {
-          curMonth = m;
-          monthBreaks.push({ month: m, startIdx: idx, count: 1 });
-        } else {
-          monthBreaks[monthBreaks.length - 1].count++;
-        }
-      });
-    }
-
-    const totalWidth = days * DAY_COL_WIDTH;
-    const headerHeight = showMonthHeaders ? 52 : 32;
-    const weekendBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
-    const barAreaHeight = sortedItems.length * GANTT_ROW_HEIGHT;
-    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    const totalWidth = days * dayW;
+    const barAreaHeight = sortedItems.length * g.rowHeight;
 
     const headerDateRow = (
-      <View style={{ width: totalWidth }}>
-        {showMonthHeaders && (
-          <View style={[styles.ganttMonthRow, { borderBottomColor: colors.border }]}>
-            {monthBreaks.map((mb, i) => (
-              <View key={i} style={[styles.ganttMonthCell, { width: mb.count * DAY_COL_WIDTH, backgroundColor: colors.card, borderRightColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttMonthText, { color: colors.text }]}>{mb.month}</Text>
+      <View style={{ width: totalWidth, height: g.headerHeight, flexDirection: 'row' }}>
+        {dateHeaders.map((dh, i) => {
+          const isTodayCol = isToday(dh.date);
+          return (
+            <View key={i} style={[ss.ganttDateCell, { width: dayW }, dh.isWeekend && { backgroundColor: k.greyFill }]}>
+              <Text style={[type.tiny, { color: isTodayCol ? k.accent : k.muted }]}>
+                {DAY_NAMES[dh.date.getDay()].charAt(0)}
+              </Text>
+              <View style={[ss.ganttDateNum, isTodayCol && { backgroundColor: k.accent }]}>
+                <Text style={[type.caption, tabular, { color: isTodayCol ? k.onAccent : k.text }]}>{dh.date.getDate()}</Text>
               </View>
-            ))}
-          </View>
-        )}
-        <View style={[styles.ganttDateRow, { borderBottomColor: colors.border }]}>
-          {dateHeaders.map((dh, i) => {
-            const todayHighlight = isToday(dh.date);
-            const bg = todayHighlight
-              ? theme.primaryLight
-              : dh.isWeekend ? weekendBg : colors.card;
-            return (
-              <View key={i} style={[styles.ganttDateCell, { backgroundColor: bg, borderRightColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttDateText, { color: todayHighlight ? colors.accent : colors.secondary, fontWeight: dh.isWeekend ? '400' : '500' }]}>
-                  {dh.label}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
+            </View>
+          );
+        })}
       </View>
     );
 
     return (
       <View style={styles.flex1}>
-        {/* Sticky date header */}
-        <View style={[styles.ganttStickyHeader, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+        {/* Date header: month in the corner, weekday + date per column. With
+            no names column there is no corner, so the month sits above. */}
+        {!showNamesCol && (
+          <Text style={[type.meta, ss.ganttMonthAbove, { color: k.text, marginHorizontal: padX }]}>{ganttMonth}</Text>
+        )}
+        <View style={[ss.ganttHeader, { borderBottomColor: k.border, marginHorizontal: padX }]}>
           {showNamesCol && (
-            <View style={[styles.ganttNamesCol, isWide && { width: NAME_COL_WIDTH_WIDE }, { height: headerHeight, justifyContent: 'center', borderRightColor: colors.border, borderRightWidth: 1 }]}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttHeaderText, { color: colors.secondary, paddingHorizontal: 8 }]}>Item</Text>
+            <View style={[ss.ganttCorner, { width: nameColWidth }]}>
+              <Text style={[type.meta, { color: k.text }]}>{ganttMonth}</Text>
             </View>
           )}
           <ScrollView
@@ -989,44 +986,54 @@ const colors = {
           </ScrollView>
         </View>
 
-        {/* Scrollable body */}
-        <ScrollView ref={ganttBodyRef} style={styles.flex1} showsVerticalScrollIndicator>
-          <View style={styles.ganttContainer}>
+        {/* Body */}
+        <ScrollView
+          ref={ganttBodyRef}
+          style={styles.flex1}
+          contentContainerStyle={{ paddingBottom: FAB_CLEARANCE + space.screenBottom }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
+        >
+          <View style={[ss.ganttContainer, { marginHorizontal: padX }]}>
             {showNamesCol && (
-              <View style={[styles.ganttNamesCol, isWide && { width: NAME_COL_WIDTH_WIDE }, { borderRightColor: colors.border, borderRightWidth: 1 }]}>
-                {sortedItems.map((item, idx) => (
-                  <TouchableOpacity
+              <View style={{ width: nameColWidth }}>
+                {sortedItems.map(item => (
+                  <Pressable
                     key={item.id}
-                    style={[styles.ganttNameRow, { backgroundColor: idx % 2 === 0 ? colors.bg : colors.card, borderBottomColor: colors.border }]}
+                    style={[ss.ganttNameRow, { height: g.rowHeight, borderBottomColor: k.hairline }]}
                     onPress={() => openDetail(item)}
+                    accessibilityRole="button"
                   >
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttNameText, isWide && styles.ganttNameTextWide, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                  </TouchableOpacity>
+                    <Text style={[type.ganttName, { color: k.text }]} numberOfLines={1}>{item.name}</Text>
+                  </Pressable>
                 ))}
               </View>
             )}
             <ScrollView
               horizontal
-              showsHorizontalScrollIndicator
+              showsHorizontalScrollIndicator={false}
               ref={ganttScrollRef}
               scrollEventThrottle={16}
               onScroll={(e) => {
-                syncGanttHeader(e.nativeEvent.contentOffset.x);
+                const x = e.nativeEvent.contentOffset.x;
+                syncGanttHeader(x);
                 if (showGanttMenu) setShowGanttMenu(false);
+                // Keep the "25 ›" markers and corner month current mid-scroll,
+                // but re-render at most every GANTT_MARKER_THROTTLE_MS, not per frame.
+                const now = Date.now();
+                if (now - ganttMarkerAtRef.current >= GANTT_MARKER_THROTTLE_MS) {
+                  ganttMarkerAtRef.current = now;
+                  updateGanttMonth(x);
+                }
               }}
+              onMomentumScrollEnd={(e) => updateGanttMonth(e.nativeEvent.contentOffset.x)}
+              onScrollEndDrag={(e) => updateGanttMonth(e.nativeEvent.contentOffset.x)}
               onLayout={() => {
                 if (ganttScrolledRef.current) return;
                 ganttScrolledRef.current = true;
-                const todayOffset = Math.floor((today.getTime() - minDate.getTime()) / MS_PER_DAY) * DAY_COL_WIDTH;
-                const scrollX = Math.max(0, todayOffset - screenWidth / 3);
-                ganttScrollRef.current?.scrollTo({ x: scrollX, animated: false });
-                ganttHeaderScrollRef.current?.scrollTo({ x: scrollX, animated: false });
-                // And down to today's work: the first row running today, else
-                // the next one to start, else the last row. A couple of rows
-                // of context stay above it.
-                const todayMidnight = new Date(today);
-                todayMidnight.setHours(0, 0, 0, 0);
-                const todayMs = todayMidnight.getTime();
+                // Open on this week (Monday first), scrolled down to today's work:
+                // the first row running today, else the next to start, else the last.
+                scrollGanttTo(ganttTodayX(), false);
+                const todayMs = today.getTime();
                 let row = sortedItems.findIndex(it => {
                   const s0 = parseLocalMidnight(it.startDate).getTime();
                   const e0 = parseLocalMidnight(it.endDate).getTime();
@@ -1034,69 +1041,87 @@ const colors = {
                 });
                 if (row < 0) row = sortedItems.findIndex(it => parseLocalMidnight(it.startDate).getTime() >= todayMs);
                 if (row < 0) row = sortedItems.length - 1;
-                const scrollY = Math.max(0, (row - 2) * GANTT_ROW_HEIGHT);
+                const scrollY = Math.max(0, (row - 2) * g.rowHeight);
                 ganttBodyRef.current?.scrollTo({ y: scrollY, animated: false });
               }}
             >
               <View style={{ width: totalWidth, height: barAreaHeight, position: 'relative' }}>
-                {/* Weekend column shading */}
+                {/* Weekend columns */}
                 {dateHeaders.map((dh, ci) =>
                   dh.isWeekend ? (
-                    <View key={`wk-${ci}`} style={{ position: 'absolute', left: ci * DAY_COL_WIDTH, top: 0, width: DAY_COL_WIDTH, height: barAreaHeight, backgroundColor: weekendBg }} />
+                    <View key={`wk-${ci}`} style={{ position: 'absolute', left: ci * dayW, top: 0, width: dayW, height: barAreaHeight, backgroundColor: k.greyFill }} />
                   ) : null
                 )}
 
-                {/* Day gridlines — drawn once as full-height columns, not per row */}
+                {/* Day gridlines */}
                 {dateHeaders.map((_, ci) => (
-                  <View key={`gl-${ci}`} style={[styles.ganttGridLine, { left: ci * DAY_COL_WIDTH, height: barAreaHeight, borderRightColor: colors.border }]} />
+                  <View key={`gl-${ci}`} style={[ss.ganttGridLine, { left: ci * dayW, height: barAreaHeight, backgroundColor: k.hairline }]} />
                 ))}
 
                 {/* Bar rows */}
                 {sortedItems.map((item, idx) => {
                   const itemStart = parseLocalMidnight(item.startDate);
                   const itemEnd = parseLocalMidnight(item.endDate);
-                  const startDay = Math.max(0, Math.floor((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
+                  const startDay = Math.max(0, Math.round((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
                   const durationDays = Math.max(1, Math.round((itemEnd.getTime() - itemStart.getTime()) / MS_PER_DAY) + 1);
-                  const barLeft = startDay * DAY_COL_WIDTH;
-                  const barWidth = Math.max(durationDays * DAY_COL_WIDTH - 4, DAY_COL_WIDTH - 4);
-                  const barColor = getItemColor(item);
+                  const barLeft = startDay * dayW + g.barInset;
+                  const barWidth = Math.max(durationDays * dayW - 2 * g.barInset, dayW - 2 * g.barInset);
                   const status = getStatusOption(item.status);
-                  const nameFits = (item.name.length * 7 + 16) <= barWidth;
-
+                  const range = (() => {
+                    const sd = itemStart.getDate();
+                    const ed = itemEnd.getDate();
+                    return durationDays > 1 ? `${sd} – ${ed}` : `${sd}`;
+                  })();
+                  // Starts past the right edge of what's on screen: "25 ›" there
+                  // ("3 Dec ›" when it's in another month).
+                  const viewRight = ganttViewX + visibleDays * dayW;
+                  const offRight = barLeft >= viewRight;
+                  const edgeDate = new Date(minDate);
+                  edgeDate.setDate(edgeDate.getDate() + Math.floor(viewRight / dayW) - 1);
+                  const offLabel = itemStart.getMonth() === edgeDate.getMonth()
+                    ? `${itemStart.getDate()} ›`
+                    : `${itemStart.getDate()} ${MONTHS[itemStart.getMonth()]} ›`;
                   return (
                     <View
                       key={item.id}
-                      style={[styles.ganttBarRow, { position: 'absolute', left: 0, right: 0, top: idx * GANTT_ROW_HEIGHT, backgroundColor: idx % 2 === 0 ? 'transparent' : (isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'), borderBottomColor: colors.border }]}
+                      style={[ss.ganttBarRow, { top: idx * g.rowHeight, height: g.rowHeight, borderBottomColor: k.hairline }]}
                     >
-                      {showBarStatus && (
-                        <View
-                          style={[styles.ganttStatusChip, {
-                            left: Math.max(2, barLeft - 68),
-                            backgroundColor: status.color + '22',
-                            borderColor: status.color + '77',
-                            maxWidth: Math.min(64, barLeft - 6),
-                          }]}
+                      {offRight ? (
+                        <Pressable
+                          onPress={() => scrollGanttTo(barLeft - g.barInset - dayW)}
+                          hitSlop={metrics.hitSlop}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${item.name} starts ${formatDateRange(item.startDate, item.endDate)}. Scroll to it`}
+                          style={[ss.ganttStatus, { right: totalWidth - viewRight + sc.gantt.offRangeGap }]}
                         >
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttStatusChipText, { color: status.color }]} numberOfLines={1}>{status.name}</Text>
+                          <Text style={[type.tiny, tabular, { color: k.muted }]}>{offLabel}</Text>
+                        </Pressable>
+                      ) : null}
+                      {showBarStatus && barLeft > dayW ? (
+                        <View style={[ss.ganttStatus, { right: totalWidth - barLeft + space.inline }]}>
+                          <StatusDot status={dotFor(item.status)} label={status.name} small />
                         </View>
-                      )}
-                      <TouchableOpacity
-                        style={[styles.ganttBar, { left: barLeft + 2, width: barWidth, backgroundColor: barColor }]}
+                      ) : null}
+                      <Pressable
+                        style={{ position: 'absolute', left: barLeft }}
                         onPress={() => openDetail(item)}
-                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${item.name}, ${formatDateRange(item.startDate, item.endDate)}`}
                       >
-                        {nameFits ? (
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.ganttBarText} numberOfLines={1}>{item.name}</Text>
-                        ) : null}
-                      </TouchableOpacity>
-                      {!nameFits && (
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-                          style={[styles.ganttBarOuterText, { left: barLeft + barWidth + 8, color: colors.text }]}
-                          numberOfLines={1}
-                        >
-                          {item.name}
-                        </Text>
-                      )}
+                        {/* Names column on: the bar carries its dates. Off: nothing else
+                            names the row, so the bar carries the item name (inside when
+                            it fits, else just after the bar). */}
+                        {showNamesCol ? (
+                          <GanttBar color={item.color || item.assignedToColor} width={barWidth} label={range} />
+                        ) : (
+                          <GanttBar
+                            color={item.color || item.assignedToColor}
+                            width={barWidth}
+                            label={item.name}
+                            labelFits={item.name.length * metrics.ganttBar.nameCharWidth + metrics.ganttBar.strip + 2 * metrics.ganttBar.labelPadX <= barWidth}
+                          />
+                        )}
+                      </Pressable>
                     </View>
                   );
                 })}
@@ -1106,9 +1131,9 @@ const colors = {
                   const deps = item.dependencies || [];
                   if (deps.length === 0) return null;
                   const itemStart = parseLocalMidnight(item.startDate);
-                  const depStartDay = Math.max(0, Math.floor((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
-                  const depBarLeft = depStartDay * DAY_COL_WIDTH + 2;
-                  const depRowTop = idx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
+                  const depStartDay = Math.max(0, Math.round((itemStart.getTime() - minDate.getTime()) / MS_PER_DAY));
+                  const depBarLeft = depStartDay * dayW + g.barInset;
+                  const depRowTop = idx * g.rowHeight + g.rowHeight / 2;
 
                   return deps.map(dep => {
                     const predIdx = sortedItems.findIndex(si => String(si.id) === String(dep.id));
@@ -1116,9 +1141,9 @@ const colors = {
                     const pred = sortedItems[predIdx];
                     const predEnd = parseLocalMidnight(pred.endDate);
                     const predEndDay = Math.max(1, Math.round((predEnd.getTime() - minDate.getTime()) / MS_PER_DAY) + 1);
-                    const predBarRight = predEndDay * DAY_COL_WIDTH - 2;
-                    const predRowMid = predIdx * GANTT_ROW_HEIGHT + GANTT_ROW_HEIGHT / 2;
-                    const lineColor = colors.accent;
+                    const predBarRight = predEndDay * dayW - g.barInset;
+                    const predRowMid = predIdx * g.rowHeight + g.rowHeight / 2;
+                    const lineColor = k.accentLine;
                     const cornerX = Math.min(predBarRight + 8, depBarLeft);
                     const hLineWidth = Math.abs(cornerX - predBarRight);
                     const vTop = Math.min(predRowMid, depRowTop);
@@ -1130,17 +1155,17 @@ const colors = {
                         <View style={[styles.depLineH, { left: predBarRight, top: predRowMid - 1, width: hLineWidth, backgroundColor: lineColor }]} />
                         {vHeight > 0 && <View style={[styles.depLineV, { left: cornerX - 1, top: vTop, height: vHeight, backgroundColor: lineColor }]} />}
                         {hLineToDepWidth > 0 && <View style={[styles.depLineH, { left: cornerX, top: depRowTop - 1, width: hLineToDepWidth, backgroundColor: lineColor }]} />}
-                        <View style={[styles.depArrow, { left: depBarLeft - 4, top: depRowTop - 3, borderLeftColor: lineColor }]} />
+                        <View style={[styles.depArrow, { left: depBarLeft - g.depArrow, top: depRowTop - 3, borderLeftColor: lineColor }]} />
                       </View>
                     );
                   });
                 })}
 
-                {/* Today vertical line */}
+                {/* Today line */}
                 {todayDayIndex >= 0 && todayDayIndex < days && (
                   <View
                     pointerEvents="none"
-                    style={{ position: 'absolute', left: todayX, top: 0, width: 2, height: barAreaHeight, backgroundColor: colors.accent, opacity: 0.6, zIndex: 10 }}
+                    style={{ position: 'absolute', left: todayX, top: 0, width: g.todayLine, height: barAreaHeight, backgroundColor: k.ganttToday }}
                   />
                 )}
               </View>
@@ -1151,244 +1176,294 @@ const colors = {
     );
   };
 
-  const renderCalendarModeToggle = () => (
-    <View style={[styles.calModeToggle, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-      {(['month', 'week'] as CalendarMode[]).map(mode => (
-        <TouchableOpacity hitSlop={{ top: 8, bottom: 8 }}
-          key={mode}
-          style={[styles.calModeBtn, calendarMode === mode && { backgroundColor: colors.accent }]}
-          onPress={() => {
-            setCalendarMode(mode);
-            if (mode === 'week') setWeekStartDate(getMondayOfWeek(selectedDate));
-          }}
-        >
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calModeText, { color: calendarMode === mode ? '#fff' : colors.secondary }]}>
-            {mode.charAt(0).toUpperCase() + mode.slice(1)}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-
-  const renderMonthView = () => {
-    const rows = getCalendarGrid();
-    const selectedDayItems = getItemsForDate(selectedDate);
-
-    return (
-      <>
-        <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.calendarNav}>
-            <TouchableOpacity hitSlop={12} onPress={() => {
-              if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); }
-              else setCalendarMonth(m => m - 1);
-            }}>
-              <Ionicons name="chevron-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity hitSlop={{ top: 10, bottom: 10 }} onPress={() => { setCalendarMonth(new Date().getMonth()); setCalendarYear(new Date().getFullYear()); setSelectedDate(new Date()); }}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calendarTitle, { color: colors.text }]}>
-                {MONTHS_FULL[calendarMonth]} {calendarYear}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity hitSlop={12} onPress={() => {
-              if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); }
-              else setCalendarMonth(m => m + 1);
-            }}>
-              <Ionicons name="chevron-forward" size={24} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.calendarDayNames}>
-            {DAY_NAMES.map(d => (
-              <View key={d} style={styles.calendarDayNameCell}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calendarDayNameText, { color: colors.secondary }]}>{d}</Text>
-              </View>
-            ))}
-          </View>
-
-          {rows.map((row, ri) => (
-            <View key={ri} style={styles.calendarRow}>
-              {row.map((cell, ci) => {
-                const cellDate = new Date(cell.year, cell.month, cell.day);
-                const today = isToday(cellDate);
-                const selected = isSameDay(cellDate, selectedDate);
-                const dots = cell.isCurrentMonth ? getDotsForDate(cellDate) : [];
-
-                return (
-                  <TouchableOpacity
-                    key={ci}
-                    style={[
-                      styles.calendarCell,
-                      today && !selected && { backgroundColor: theme.primaryLight },
-                      selected && { backgroundColor: colors.accent },
-                    ]}
-                    onPress={() => setSelectedDate(cellDate)}
-                  >
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[
-                      styles.calendarDayText,
-                      { color: cell.isCurrentMonth ? colors.text : colors.secondary },
-                      !cell.isCurrentMonth && { opacity: 0.4 },
-                      selected && { color: '#fff' },
-                      today && !selected && { color: colors.accent, fontWeight: '700' },
-                    ]}>
-                      {cell.day}
-                    </Text>
-                    {dots.length > 0 && (
-                      <View style={styles.dotsRow}>
-                        {dots.map((color, di) => (
-                          <View key={di} style={[styles.dot, { backgroundColor: selected ? '#fff' : color }]} />
-                        ))}
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.selectedDaySection}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.selectedDayTitle, { color: colors.text }]}>
-            {selectedDate.getDate()} {MONTHS_FULL[selectedDate.getMonth()]} {selectedDate.getFullYear()}
-          </Text>
-          {selectedDayItems.length === 0 ? (
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noDayItems, { color: colors.secondary }]}>No items scheduled for this day</Text>
-          ) : (
-            selectedDayItems.map(renderItemCard)
-          )}
-        </View>
-      </>
-    );
+  // ── Calendar: week time grid, days scroll sideways ────────────────────────
+  const cal = sc.calendar;
+  const timeOf = (t?: string | null): number | null => {
+    if (!t) return null;
+    const [h, m] = t.split(':').map(Number);
+    return Number.isFinite(h) ? h + (Number.isFinite(m) ? m / 60 : 0) : null;
+  };
+  const hourLabel = (h: number) => (h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`);
+  const shortTime = (t?: string | null) => {
+    const v = timeOf(t);
+    if (v == null) return '';
+    const h = Math.floor(v);
+    const m = Math.round((v - h) * 60);
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${String(m).padStart(2, '0')}`;
   };
 
   const renderWeekView = () => {
     const weekDays = getWeekDays();
-    const weekEnd = new Date(weekStartDate);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-    const startMonth = weekStartDate.getMonth();
-    const titleText = startMonth === weekEnd.getMonth()
-      ? `${MONTHS_FULL[startMonth]} ${weekStartDate.getFullYear()}`
-      : `${MONTHS[startMonth]} – ${MONTHS[weekEnd.getMonth()]} ${weekEnd.getFullYear()}`;
-
-    const CAL_DAY_WIDTH = 115;
+    const timed = items.filter(it => timeOf(it.startTime) != null);
+    let startHour: number = cal.startHour;
+    let endHour: number = cal.endHour;
+    timed.forEach(it => {
+      const s0 = timeOf(it.startTime) ?? cal.startHour;
+      const e0 = timeOf(it.endTime) ?? s0 + 1;
+      startHour = Math.min(startHour, Math.floor(s0));
+      endHour = Math.max(endHour, Math.ceil(e0));
+    });
+    const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i);
+    const gridHeight = (endHour - startHour) * cal.hourHeight;
+    const now = new Date();
+    const nowH = now.getHours() + now.getMinutes() / 60;
+    const nowY = (nowH - startHour) * cal.hourHeight;
+    const showNow = nowH >= startHour && nowH <= endHour;
+    const nowLabel = shortTime(`${now.getHours()}:${now.getMinutes()}`);
+    const allDayRows = weekDays.map(day => getItemsForDate(day).filter(it => timeOf(it.startTime) == null));
+    const hasAllDay = allDayRows.some(r => r.length > 0);
 
     return (
-      <View style={styles.flex1}>
-        {/* Nav bar */}
-        <View style={[styles.calWeekNav, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <TouchableOpacity hitSlop={4}
-            style={styles.calNavArrow}
-            onPress={() => { const d = new Date(weekStartDate); d.setDate(d.getDate() - 7); setWeekStartDate(d); }}
-          >
-            <Ionicons name="chevron-back" size={22} color={colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity hitSlop={{ top: 10, bottom: 10 }} onPress={() => setWeekStartDate(getMondayOfWeek(new Date()))}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calWeekNavTitle, { color: colors.accent }]}>{titleText}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity hitSlop={4}
-            style={styles.calNavArrow}
-            onPress={() => { const d = new Date(weekStartDate); d.setDate(d.getDate() + 7); setWeekStartDate(d); }}
-          >
-            <Ionicons name="chevron-forward" size={22} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Scrollable week grid */}
+      <View style={styles.flex1} onLayout={(e) => setCalBodyHeight(e.nativeEvent.layout.height)}>
         <ScrollView
-          style={styles.flex1}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          horizontal
+          ref={calScrollRef}
+          showsHorizontalScrollIndicator={false}
+          onLayout={() => {
+            // Show today (or the week's start) in view.
+            const idx = weekDays.findIndex(d => isToday(d));
+            calScrollRef.current?.scrollTo({ x: Math.max(0, (idx - 2) * cal.dayWidth), animated: false });
+          }}
         >
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View>
-              {/* Day header chips */}
-              <View style={[styles.calWeekHeaderRow, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-                {weekDays.map((day, i) => {
-                  const today = isToday(day);
-                  return (
-                    <View
-                      key={i}
-                      style={[styles.calDayHeaderCol, { width: CAL_DAY_WIDTH, borderRightColor: colors.border },
-                        today && { backgroundColor: colors.accent + '14' }]}
-                    >
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calDayName, { color: today ? colors.accent : colors.secondary }]}>
-                        {DAY_NAMES_MON[i]}
-                      </Text>
-                      <View style={today ? [styles.calTodayCircle, { backgroundColor: colors.accent }] : styles.calDayNumWrap}>
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calDayNum, { color: today ? '#fff' : colors.text }]}>
-                          {day.getDate()}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
+          {/* A fixed-height column: header on top, the time grid scrolls below it. */}
+          <View style={calBodyHeight ? { height: calBodyHeight } : styles.flex1}>
+            {/* Day header */}
+            <View style={[ss.calHeader, { borderBottomColor: k.border }]}>
+              <View style={[ss.calGutter, { justifyContent: 'flex-end' }]}>
+                <Text style={[type.meta, { color: k.text }]}>{MONTHS[weekDays[0].getMonth()]}</Text>
               </View>
-
-              {/* Day content columns */}
-              <View style={{ flexDirection: 'row' }}>
-                {weekDays.map((day, i) => {
-                  const dayItems = getItemsForDate(day);
-                  const today = isToday(day);
-                  return (
-                    <View
-                      key={i}
-                      style={[styles.calDayCol, { width: CAL_DAY_WIDTH, borderRightColor: colors.border },
-                        today && { backgroundColor: colors.accent + '06' }]}
-                    >
-                      {dayItems.length === 0 ? (
-                        <View style={styles.calDayEmpty} />
-                      ) : (
-                        dayItems.map(item => {
-                          const itemColor = getItemColor(item);
-                          return (
-                            <TouchableOpacity
-                              key={item.id}
-                              style={[styles.calItemCard, { backgroundColor: itemColor + '22', borderColor: itemColor + '66' }]}
-                              onPress={() => openDetail(item)}
-                              activeOpacity={0.75}
-                            >
-                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calItemName, { color: colors.text }]} numberOfLines={3}>{item.name}</Text>
-                              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.calItemSub, { color: colors.secondary }]} numberOfLines={1}>
-                                {TYPE_LABELS[item.type] || item.type}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })
-                      )}
+              {weekDays.map((day, i) => {
+                const isTodayCol = isToday(day);
+                const weekend = day.getDay() === 0 || day.getDay() === 6;
+                return (
+                  <View key={i} style={[ss.calDayHead, { width: cal.dayWidth }, weekend && { backgroundColor: k.greyFill }]}>
+                    <Text style={[type.tiny, { color: isTodayCol ? k.accent : k.muted }]}>{DAY_NAMES[day.getDay()].toUpperCase()}</Text>
+                    <View style={[ss.calDateCircle, isTodayCol && { backgroundColor: k.accent }]}>
+                      <Text style={[type.body, tabular, { color: isTodayCol ? k.onAccent : k.text }]}>{day.getDate()}</Text>
                     </View>
-                  );
-                })}
-              </View>
+                  </View>
+                );
+              })}
             </View>
-          </ScrollView>
-          <View style={{ height: 40 }} />
+
+            {/* All-day items (schedule items without a time). Capped in height and
+                scrolls on its own, so a busy week never pushes items out of reach. */}
+            {hasAllDay ? (
+              <ScrollView
+                style={[ss.calAllDayScroll, { borderBottomColor: k.border }]}
+                contentContainerStyle={ss.calAllDay}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={ss.calGutter} />
+                {allDayRows.map((row, i) => (
+                  <View key={i} style={[ss.calAllDayCol, { width: cal.dayWidth }]}>
+                    {row.map(it => (
+                      <Pressable key={it.id} onPress={() => openDetail(it)} accessibilityRole="button" accessibilityLabel={it.name}>
+                        <CalendarBlock variant="allDay" title={it.name} color={getItemColor(it)} />
+                      </Pressable>
+                    ))}
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
+
+            {/* Time grid */}
+            <ScrollView
+              style={styles.flex1}
+              contentContainerStyle={{ paddingBottom: FAB_CLEARANCE }}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
+            >
+              <View style={{ flexDirection: 'row', height: gridHeight + cal.hourHeight / 2 }}>
+                <View style={ss.calGutter}>
+                  {hours.map(h => (
+                    <Text key={h} style={[type.micro, tabular, ss.calHour, { top: (h - startHour) * cal.hourHeight, color: k.muted }]}>{hourLabel(h)}</Text>
+                  ))}
+                  {showNow ? (
+                    <Text style={[type.micro, tabular, ss.calHour, { top: nowY, color: k.accent, backgroundColor: k.bg }]}>{nowLabel}</Text>
+                  ) : null}
+                </View>
+                {weekDays.map((day, i) => {
+                  const weekend = day.getDay() === 0 || day.getDay() === 6;
+                  const dayTimed = getItemsForDate(day).filter(it => timeOf(it.startTime) != null);
+                  const isTodayCol = isToday(day);
+                  return (
+                    <View key={i} style={[ss.calDayCol, { width: cal.dayWidth, borderLeftColor: k.hairline }, weekend && { backgroundColor: k.greyFill }]}>
+                      {hours.map(h => (
+                        <View key={h} style={[ss.calHourLine, { top: (h - startHour) * cal.hourHeight, backgroundColor: k.hairline }]} />
+                      ))}
+                      {dayTimed.map(it => {
+                        const s0 = timeOf(it.startTime) ?? startHour;
+                        const e0 = Math.max(timeOf(it.endTime) ?? s0 + 1, s0 + 0.5);
+                        const top = (s0 - startHour) * cal.hourHeight;
+                        const height = (e0 - s0) * cal.hourHeight - cal.blockInset;
+                        return (
+                          <Pressable
+                            key={it.id}
+                            onPress={() => openDetail(it)}
+                            accessibilityRole="button"
+                            accessibilityLabel={it.name}
+                            style={{ position: 'absolute', top, left: cal.blockInset, right: cal.blockInset }}
+                          >
+                            <CalendarBlock
+                              title={it.name}
+                              time={[shortTime(it.startTime), shortTime(it.endTime)].filter(Boolean).join(' – ')}
+                              color={getItemColor(it)}
+                              height={height}
+                            />
+                          </Pressable>
+                        );
+                      })}
+                      {showNow ? (
+                        <View pointerEvents="none" style={{ position: 'absolute', top: nowY - metrics.divider.nowDot / 2, left: 0, right: 0 }}>
+                          <NowLine faint={!isTodayCol} />
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
         </ScrollView>
       </View>
     );
   };
 
-  const renderCalendarView = () => {
-    if (calendarMode === 'week') {
-      return (
-        <View style={styles.flex1}>
-          <View style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            {renderCalendarModeToggle()}
-          </View>
-          {renderWeekView()}
-        </View>
-      );
+  // ── Calendar: month grid (Monday first) + the picked day's items ──────────
+  const renderMonthView = () => {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const gridStart = getMondayOfWeek(new Date(year, month, 1));
+    const lastOfMonth = new Date(year, month + 1, 0);
+    const weeks: Date[][] = [];
+    for (let d = new Date(gridStart); d <= lastOfMonth || weeks[weeks.length - 1]?.length !== 7;) {
+      if (!weeks.length || weeks[weeks.length - 1].length === 7) weeks.push([]);
+      weeks[weeks.length - 1].push(new Date(d));
+      d.setDate(d.getDate() + 1);
     }
+    const dayItems = getItemsForDate(selectedDate);
+    const dayNamesMonFirst = [...DAY_NAMES.slice(1), DAY_NAMES[0]];
+
     return (
       <ScrollView
         style={styles.flex1}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        contentContainerStyle={{ paddingHorizontal: padX, paddingBottom: FAB_CLEARANCE + space.screenBottom }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
       >
-        <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
-          {renderCalendarModeToggle()}
+        <View style={[ss.monthWeekRow, { borderBottomWidth: size.border, borderBottomColor: k.border }]}>
+          {dayNamesMonFirst.map(n => (
+            <View key={n} style={ss.monthDayName}>
+              <Text style={[type.tiny, { color: k.muted }]}>{n.toUpperCase()}</Text>
+            </View>
+          ))}
         </View>
-        {renderMonthView()}
-        <View style={{ height: 40 }} />
+        {weeks.map((week, wi) => (
+          <View key={wi} style={ss.monthWeekRow}>
+            {week.map((day, di) => {
+              const inMonth = day.getMonth() === month;
+              const todayCell = isToday(day);
+              const selected = isSameDay(day, selectedDate);
+              const weekend = day.getDay() === 0 || day.getDay() === 6;
+              const dots = inMonth ? getItemsForDate(day).slice(0, cal.monthDots) : [];
+              return (
+                <Pressable
+                  key={di}
+                  onPress={() => setSelectedDate(day)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${DAY_NAMES[day.getDay()]} ${day.getDate()} ${MONTHS[day.getMonth()]}`}
+                  style={[ss.monthCell, weekend && { backgroundColor: k.greyFill }]}
+                >
+                  <View style={[ss.calDateCircle, selected && { backgroundColor: k.tint }, todayCell && { backgroundColor: k.accent }]}>
+                    <Text style={[type.body, tabular, { color: todayCell ? k.onAccent : selected ? k.accent : inMonth ? k.text : k.faint }]}>
+                      {day.getDate()}
+                    </Text>
+                  </View>
+                  <View style={ss.monthDots}>
+                    {dots.map(it => <View key={it.id} style={[ss.monthDot, { backgroundColor: getItemColor(it) }]} />)}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+
+        <View style={ss.monthAgenda}>
+          <Text style={[type.meta, { color: k.muted, marginBottom: sc.dayLabelGap }]}>
+            {`${DAY_NAMES[selectedDate.getDay()]} ${selectedDate.getDate()} ${MONTHS[selectedDate.getMonth()]}`}
+          </Text>
+          {dayItems.length === 0 ? (
+            <Text style={[type.meta, { color: k.muted }]}>Nothing scheduled this day</Text>
+          ) : (
+            <Card variant="list">
+              {dayItems.map(item => {
+                const status = getStatusOption(item.status);
+                return (
+                  <ListRow
+                    key={item.id}
+                    onPress={() => openDetail(item)}
+                    title={item.name}
+                    done={item.status === 'completed'}
+                    subtitle={itemMeta(item)}
+                    trailing={<StatusDot status={dotFor(item.status)} label={status.name} />}
+                  />
+                );
+              })}
+            </Card>
+          )}
+        </View>
       </ScrollView>
     );
+  };
+
+  const setCalMode = (mode: CalendarMode) => {
+    setCalendarMode(mode);
+    if (mode === 'week') setWeekStartDate(getMondayOfWeek(selectedDate));
+    else {
+      // Open on the month of the week being looked at; keep the picked day if it's in it.
+      const anchor = isSameDay(getMondayOfWeek(selectedDate), weekStartDate) ? selectedDate : weekStartDate;
+      setMonthDate(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
+      setSelectedDate(new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate()));
+    }
+  };
+
+  const renderCalendarView = () => (
+    <View style={styles.flex1}>
+      <View style={[ss.calModeRow, { paddingHorizontal: padX }]}>
+        <Segmented
+          options={[{ key: 'week', label: 'Week' }, { key: 'month', label: 'Month' }]}
+          value={calendarMode}
+          onChange={setCalMode}
+        />
+        {calendarMode === 'month' ? (
+          <Text style={[type.metaMedium, { color: k.text }]}>{`${MONTHS_FULL[monthDate.getMonth()]} ${monthDate.getFullYear()}`}</Text>
+        ) : null}
+      </View>
+      {calendarMode === 'month' ? renderMonthView() : renderWeekView()}
+    </View>
+  );
+
+  // ‹ Today › in the tab row: a week at a time (a month at a time in Month).
+  const shiftMonth = (by: number) => setMonthDate(d => new Date(d.getFullYear(), d.getMonth() + by, 1));
+  const navPrev = () => {
+    if (viewMode === 'gantt') scrollGanttTo(ganttXRef.current - visibleDays * dayW);
+    else if (calendarMode === 'month') shiftMonth(-1);
+    else { const d = new Date(weekStartDate); d.setDate(d.getDate() - 7); setWeekStartDate(d); }
+  };
+  const navNext = () => {
+    if (viewMode === 'gantt') scrollGanttTo(ganttXRef.current + visibleDays * dayW);
+    else if (calendarMode === 'month') shiftMonth(1);
+    else { const d = new Date(weekStartDate); d.setDate(d.getDate() + 7); setWeekStartDate(d); }
+  };
+  const navToday = () => {
+    if (viewMode === 'gantt') scrollGanttTo(ganttTodayX());
+    else if (calendarMode === 'month') {
+      const t = new Date(); t.setHours(0, 0, 0, 0);
+      setMonthDate(new Date(t.getFullYear(), t.getMonth(), 1));
+      setSelectedDate(t);
+    } else setWeekStartDate(getMondayOfWeek(new Date()));
   };
 
   const closeDetail = () => {
@@ -1397,631 +1472,370 @@ const colors = {
     setSelectedItem(null);
   };
 
+  // ── Pop-up form pieces (Schedule item details / new item) ──────────────
+  const fdot = (color?: string | null) => <View style={[fs.dot, { backgroundColor: color || k.status.upcoming }]} />;
+  const ftick = <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} />;
+  /** Inline options under a form row, inside its card. */
+  const choiceRows = (prefix: string, options: { key: string; label: string; color?: string | null }[], value: string, onPick: (key: string) => void) =>
+    options.map(o => (
+      <ListRow
+        key={`${prefix}:${o.key}`}
+        lead={fdot(o.color)}
+        title={o.label}
+        titleLines={1}
+        selected={o.key === value}
+        trailing={o.key === value ? ftick : undefined}
+        onPress={() => { haptic.select(); onPick(o.key); }}
+      />
+    ));
+  /** A form row whose value is typed in place (dates as YYYY-MM-DD). */
+  const inputRow = (key: string, label: string, value: string, onChange: (v: string) => void, placeholder: string) => (
+    <View key={key} style={fs.inputRow}>
+      <Text style={[type.rowTitle, fs.flex, { color: k.text }]}>{label}</Text>
+      <TextInput
+        style={[type.rowTitle, tabular, fs.inlineInput, { color: k.text }]}
+        value={value}
+        returnKeyType="done"
+        autoCorrect={false}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={k.faint}
+        keyboardType="numbers-and-punctuation"
+        accessibilityLabel={label}
+      />
+    </View>
+  );
+  /** Full-screen form frame: Cancel · title · Save, then a scroll body. */
+  const formPage = (title: string, onCancel: () => void, onSave: () => void, saveBusy: boolean, body: JSX.Element) => (
+    <View style={[fs.page, { backgroundColor: k.bg, paddingTop: insets.top }]}>
+      <View style={fs.pageHeader}>
+        <SheetHeader title={title} onCancel={onCancel} doneLabel="Save" onDone={onSave} doneDisabled={saveBusy} doneLoading={saveBusy} />
+      </View>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
+        <ScrollView
+          style={styles.flex1}
+          contentContainerStyle={[fs.pageBody, { paddingBottom: space.screenBottom + insets.bottom }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {body}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+  const typeChoices = Object.entries(TYPE_LABELS).map(([key, label]) => ({ key, label, color: TYPE_COLORS[key] }));
+  const priorityChoices = Object.entries(PRIORITY_LABELS).map(([key, label]) => ({ key, label, color: PRIORITY_COLORS[key] }));
+  const statusChoices = pickerStatusOptions.map(o => ({ key: o.key, label: o.name, color: o.color }));
+
   const renderDetailSheet = () => {
     if (!selectedItem) return null;
     const detailStatusOpt = getStatusOption(detailStatus);
     const statusColor = detailStatusOpt.color;
 
     return (
-      <Modal visible={showDetailSheet} animationType="slide" presentationStyle="fullScreen">
-        <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
-          <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity hitSlop={10} onPress={closeDetail}>
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Schedule Item</Text>
-            <View style={{ width: 24 }} />
-          </View>
+      <Modal visible={showDetailSheet} animationType="slide" presentationStyle="fullScreen" onRequestClose={closeDetail}>
+        {formPage('Schedule item', closeDetail, handleSave, saving, (
+          <>
+            <TextField
+              value={detailName}
+              autoCapitalize="sentences"
+              returnKeyType="done"
+              onChangeText={setDetailName}
+              placeholder="Item name"
+              accessibilityLabel="Name"
+            />
 
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
-            <ScrollView style={styles.flex1} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Name</Text>
-              <TextInput
-                style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44, fontSize: 16, fontWeight: '600' }]}
-                value={detailName}
+            {(selectedItem.assignedToName || selectedItem.groupName) ? (
+              <Card variant="list">
+                {selectedItem.assignedToName ? <PropertyRow key="assigned" label="Assigned" value={selectedItem.assignedToName} /> : null}
+                {selectedItem.groupName ? <PropertyRow key="group" label="Group" value={selectedItem.groupName} /> : null}
+              </Card>
+            ) : null}
+
+            <View style={fs.group}>
+              <FieldLabel>Details</FieldLabel>
+              <Card variant="list">
+                <PropertyRow key="type" form label="Type" onPress={() => { setShowDetailTypePicker(!showDetailTypePicker); setShowDetailPriorityPicker(false); setShowStatusPicker(false); }}>
+                  <View style={fs.value}>{fdot(TYPE_COLORS[detailType])}<Text style={[type.rowTitle, { color: k.text }]}>{TYPE_LABELS[detailType] || detailType}</Text></View>
+                </PropertyRow>
+                {showDetailTypePicker ? choiceRows('type', typeChoices, detailType, key => { setDetailType(key); setShowDetailTypePicker(false); }) : null}
+                {inputRow('start', 'Start date', detailStartDate, setDetailStartDate, 'YYYY-MM-DD')}
+                {inputRow('end', 'End date', detailEndDate, setDetailEndDate, 'YYYY-MM-DD')}
+                <PropertyRow key="priority" form label="Priority" onPress={() => { setShowDetailPriorityPicker(!showDetailPriorityPicker); setShowDetailTypePicker(false); setShowStatusPicker(false); }}>
+                  <View style={fs.value}>{fdot(PRIORITY_COLORS[detailPriority])}<Text style={[type.rowTitle, { color: k.text }]}>{PRIORITY_LABELS[detailPriority] || detailPriority}</Text></View>
+                </PropertyRow>
+                {showDetailPriorityPicker ? choiceRows('prio', priorityChoices, detailPriority, key => { setDetailPriority(key); setShowDetailPriorityPicker(false); }) : null}
+              </Card>
+              <TextField
+                multilineBox
+                value={detailDescription}
                 autoCapitalize="sentences"
-                returnKeyType="done"
-                onChangeText={setDetailName}
-                placeholder="Item name"
-                placeholderTextColor={colors.secondary}
+                onChangeText={setDetailDescription}
+                placeholder="Description (optional)"
+                accessibilityLabel="Description"
               />
+            </View>
 
-              {selectedItem.assignedToName && (
-                <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
-                  <View style={styles.detailInfoRow}>
-                    <Ionicons name="person-outline" size={16} color={colors.secondary} />
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoLabel, { color: colors.secondary }]}>Assigned</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.assignedToName}</Text>
-                  </View>
-                </View>
-              )}
-              {selectedItem.groupName && (
-                <View style={[styles.detailInfoSection, { borderColor: colors.border }]}>
-                  <View style={styles.detailInfoRow}>
-                    <Ionicons name="layers-outline" size={16} color={colors.secondary} />
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoLabel, { color: colors.secondary }]}>Group</Text>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailInfoValue, { color: colors.text }]}>{selectedItem.groupName}</Text>
-                  </View>
-                </View>
-              )}
-
-              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Details</Text>
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
-                <TouchableOpacity
-                  style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                  onPress={() => { setShowDetailTypePicker(!showDetailTypePicker); setShowDetailPriorityPicker(false); setShowStatusPicker(false); }}
-                >
-                  <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[detailType] || colors.accent }]} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[detailType] || detailType}</Text>
-                  <Ionicons name={showDetailTypePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-                </TouchableOpacity>
-                {showDetailTypePicker && (
-                  <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                    {Object.entries(TYPE_LABELS).map(([key, label]) => {
-                      const tc = TYPE_COLORS[key] || colors.accent;
-                      const isSelected = detailType === key;
-                      return (
-                        <TouchableOpacity
-                          key={key}
-                          style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: tc + '15' }]}
-                          onPress={() => { setDetailType(key); setShowDetailTypePicker(false); }}
-                        >
-                          <View style={[styles.statusDot, { backgroundColor: tc }]} />
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
-                          {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                )}
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Start Date</Text>
-                <TextInput
-                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
-                  value={detailStartDate}
-                  returnKeyType="done"
-                  autoCorrect={false}
-                  onChangeText={setDetailStartDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.secondary}
-                  keyboardType="numbers-and-punctuation"
-                />
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>End Date</Text>
-                <TextInput
-                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
-                  value={detailEndDate}
-                  returnKeyType="done"
-                  autoCorrect={false}
-                  onChangeText={setDetailEndDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.secondary}
-                  keyboardType="numbers-and-punctuation"
-                />
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
-                <TouchableOpacity
-                  style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                  onPress={() => { setShowDetailPriorityPicker(!showDetailPriorityPicker); setShowDetailTypePicker(false); setShowStatusPicker(false); }}
-                >
-                  <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[detailPriority] || colors.accent }]} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[detailPriority] || detailPriority}</Text>
-                  <Ionicons name={showDetailPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-                </TouchableOpacity>
-                {showDetailPriorityPicker && (
-                  <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                    {Object.entries(PRIORITY_LABELS).map(([key, label]) => {
-                      const pc = PRIORITY_COLORS[key] || colors.accent;
-                      const isSelected = detailPriority === key;
-                      return (
-                        <TouchableOpacity
-                          key={key}
-                          style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: pc + '15' }]}
-                          onPress={() => { setDetailPriority(key); setShowDetailPriorityPicker(false); }}
-                        >
-                          <View style={[styles.statusDot, { backgroundColor: pc }]} />
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
-                          {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                )}
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Description</Text>
-                <TextInput
-                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={detailDescription}
-                  autoCapitalize="sentences"
-                  onChangeText={setDetailDescription}
-                  multiline
-                  numberOfLines={2}
-                  placeholder="Optional description..."
-                  placeholderTextColor={colors.secondary}
-                />
-              </View>
-
-              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Update</Text>
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
-                <TouchableOpacity
-                  style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-                  onPress={() => setShowStatusPicker(!showStatusPicker)}
-                >
-                  <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{detailStatusOpt.name}</Text>
-                  <Ionicons name={showStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-                </TouchableOpacity>
-
-                {showStatusPicker && (
-                  <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                    {pickerStatusOptions.map(opt => {
-                      const sc = opt.color;
-                      const isSelected = detailStatus === opt.key;
-                      return (
-                        <TouchableOpacity
-                          key={opt.key}
-                          style={[
-                            styles.inlineStatusOption,
-                            { borderBottomColor: colors.border },
-                            isSelected && { backgroundColor: sc + '15' },
-                          ]}
-                          onPress={() => {
-                            setDetailStatus(opt.key);
-                            setShowStatusPicker(false);
-                          }}
-                        >
-                          <View style={[styles.statusDot, { backgroundColor: sc }]} />
-                          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{opt.name}</Text>
-                          {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                )}
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Progress ({detailProgress}%)</Text>
-                <View style={styles.progressInputRow}>
-                  <View style={[styles.progressTrackLarge, { backgroundColor: colors.border }]}>
-                    <View style={[styles.progressFillLarge, { width: `${Math.min(parseInt(detailProgress) || 0, 100)}%`, backgroundColor: statusColor }]} />
+            <View style={fs.group}>
+              <FieldLabel>Update</FieldLabel>
+              <Card variant="list">
+                <PropertyRow key="status" form label="Status" onPress={() => setShowStatusPicker(!showStatusPicker)}>
+                  <View style={fs.value}>{fdot(statusColor)}<Text style={[type.rowTitle, { color: k.text }]}>{detailStatusOpt.name}</Text></View>
+                </PropertyRow>
+                {showStatusPicker ? choiceRows('status', statusChoices, detailStatus, key => { setDetailStatus(key); setShowStatusPicker(false); }) : null}
+                <View key="progress" style={fs.inputRow}>
+                  <Text style={[type.rowTitle, { color: k.text }]}>Progress</Text>
+                  <View style={fs.flex}>
+                    <ProgressLine value={Math.min(parseInt(detailProgress) || 0, 100) / 100} />
                   </View>
                   <TextInput
-                    style={[styles.progressInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                    style={[type.rowTitle, tabular, fs.pctInput, { color: k.text, borderColor: k.border, backgroundColor: k.surface }]}
                     value={detailProgress}
                     returnKeyType="done"
                     onChangeText={t => { const n = t.replace(/[^0-9]/g, ''); setDetailProgress(n ? String(Math.min(parseInt(n), 100)) : '0'); }}
                     keyboardType="number-pad"
                     maxLength={3}
+                    accessibilityLabel="Progress percent"
                   />
+                  <Text style={[type.meta, { color: k.muted }]}>%</Text>
                 </View>
-
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
-                <TextInput
-                  style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={detailNotes}
-                  autoCapitalize="sentences"
-                  onChangeText={setDetailNotes}
-                  multiline
-                  numberOfLines={3}
-                  placeholder="Add notes..."
-                  placeholderTextColor={colors.secondary}
+                <ToggleRow
+                  key="weekends"
+                  label="Allow on weekends"
+                  value={detailWeekendOverride}
+                  onValueChange={setDetailWeekendOverride}
                 />
-              </View>
+              </Card>
+              <TextField
+                multilineBox
+                value={detailNotes}
+                autoCapitalize="sentences"
+                onChangeText={setDetailNotes}
+                placeholder="Notes"
+                accessibilityLabel="Notes"
+              />
+            </View>
 
-              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <View style={styles.switchRow}>
-                  <View style={styles.switchLabelRow}>
-                    <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.switchLabel, { color: colors.text }]}>Allow on weekends</Text>
-                  </View>
-                  <Switch
-                    value={detailWeekendOverride}
-                    onValueChange={setDetailWeekendOverride}
-                    trackColor={{ false: colors.border, true: colors.accent + '80' }}
-                    thumbColor={detailWeekendOverride ? colors.accent : '#f4f3f4'}
-                  />
-                </View>
-              </View>
-
-              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Checklist Steps</Text>
-                {loadingSteps ? (
-                  <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 12 }} />
-                ) : (
-                  checklistSteps.map(step => (
-                    <View key={step.id} style={[styles.stepRow, { borderBottomColor: colors.border }]}>
-                      <TouchableOpacity hitSlop={10} onPress={() => handleToggleStep(step)} style={styles.stepCheckbox}>
-                        <Ionicons
-                          name={step.isCompleted ? 'checkbox' : 'square-outline'}
-                          size={20}
-                          color={step.isCompleted ? colors.accent : colors.secondary}
-                        />
-                      </TouchableOpacity>
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.stepName, { color: colors.text }, step.isCompleted && styles.stepCompleted]}>{step.name}</Text>
-                      <TouchableOpacity hitSlop={12} onPress={() => handleDeleteStep(step.id)} style={styles.stepDeleteBtn}>
-                        <Ionicons name="trash-outline" size={16} color={theme.statusDanger} />
-                      </TouchableOpacity>
+            <View style={fs.group}>
+              <FieldLabel>Checklist steps</FieldLabel>
+              {loadingSteps ? (
+                <ActivityIndicator size="small" color={k.accent} />
+              ) : checklistSteps.length > 0 ? (
+                <Card variant="list">
+                  {checklistSteps.map(step => (
+                    <View key={step.id} style={fs.stepRow}>
+                      <Checkbox checked={!!step.isCompleted} onPress={() => handleToggleStep(step)} accessibilityLabel={step.name} />
+                      <Text style={[type.rowTitle, fs.flex, { color: step.isCompleted ? k.muted : k.text }, step.isCompleted && fs.strike]}>{step.name}</Text>
+                      <Pressable hitSlop={metrics.hitSlop} onPress={() => handleDeleteStep(step.id)} accessibilityRole="button" accessibilityLabel={`Delete ${step.name}`}>
+                        <Trash2 size={size.icon.row} color={k.muted} strokeWidth={metrics.iconStroke} />
+                      </Pressable>
                     </View>
-                  ))
-                )}
-                {checklistSteps.length === 0 && !loadingSteps && (
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noNotesText, { color: colors.secondary }]}>No checklist steps yet</Text>
-                )}
-                <View style={styles.addNoteRow}>
-                  <TextInput
-                    style={[styles.addNoteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+                  ))}
+                </Card>
+              ) : (
+                <Text style={[type.meta, { color: k.muted }]}>No checklist steps yet</Text>
+              )}
+              <View style={fs.addRow}>
+                <View style={fs.flex}>
+                  <TextField
                     value={newStepName}
                     autoCapitalize="sentences"
                     returnKeyType="done"
                     submitBehavior="submit"
                     onSubmitEditing={() => { if (newStepName.trim() && !addingStep) handleAddStep(); }}
                     onChangeText={setNewStepName}
-                    placeholder="Add a step..."
-                    placeholderTextColor={colors.secondary}
+                    placeholder="Add a step"
+                    accessibilityLabel="New step"
                   />
-                  <TouchableOpacity hitSlop={4}
-                    style={[styles.addNoteBtn, { backgroundColor: colors.accent, opacity: !newStepName.trim() || addingStep ? 0.5 : 1 }]}
-                    onPress={handleAddStep}
-                    disabled={!newStepName.trim() || addingStep}
-                  >
-                    {addingStep ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Ionicons name="add" size={18} color="#fff" />
-                    )}
-                  </TouchableOpacity>
                 </View>
+                <Pressable
+                  onPress={handleAddStep}
+                  disabled={!newStepName.trim() || addingStep}
+                  hitSlop={metrics.hitSlop}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add step"
+                  style={[fs.iconBtn, { opacity: !newStepName.trim() || addingStep ? metrics.disabledOpacity : 1 }]}
+                >
+                  {addingStep ? <ActivityIndicator size="small" color={k.accent} /> : <Plus size={size.icon.header} color={k.accent} strokeWidth={metrics.iconStroke} />}
+                </Pressable>
               </View>
+            </View>
 
-              {linkedChecklists.length > 0 && (
-                <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Linked Checklists</Text>
+            {linkedChecklists.length > 0 ? (
+              <View style={fs.group}>
+                <FieldLabel>Linked checklists</FieldLabel>
+                <Card variant="list">
                   {linkedChecklists.map(cl => (
-                    <View key={cl.id} style={[styles.linkedItemRow, { borderBottomColor: colors.border }]}>
-                      <Ionicons name="checkmark-circle-outline" size={16} color={colors.accent} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.linkedItemName, { color: colors.text }]}>{cl.name}</Text>
-                    </View>
+                    <ListRow key={cl.id} lead={<CheckCheck size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />} title={cl.name} />
                   ))}
-                </View>
-              )}
+                </Card>
+              </View>
+            ) : null}
 
-              {linkedTasks.length > 0 && (
-                <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Linked Tasks</Text>
+            {linkedTasks.length > 0 ? (
+              <View style={fs.group}>
+                <FieldLabel>Linked tasks</FieldLabel>
+                <Card variant="list">
                   {linkedTasks.map(t => (
-                    <View key={t.id} style={[styles.linkedItemRow, { borderBottomColor: colors.border }]}>
-                      <Ionicons name="checkbox-outline" size={16} color={colors.accent} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.linkedItemName, { color: colors.text }]}>{t.title}</Text>
+                    <ListRow key={t.id} lead={<SquareCheck size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />} title={t.title} />
+                  ))}
+                </Card>
+              </View>
+            ) : null}
+
+            <View style={fs.group}>
+              <FieldLabel>Activity</FieldLabel>
+              {loadingNotes ? (
+                <ActivityIndicator size="small" color={k.accent} />
+              ) : activityNotes.length > 0 ? (
+                <Card variant="list">
+                  {activityNotes.map(note => (
+                    <View key={note.id} style={fs.note}>
+                      <View style={fs.noteHead}>
+                        <Text style={[type.metaSemi, { color: k.text }]}>{note.userName || 'System'}</Text>
+                        <Text style={[type.caption, tabular, { color: k.muted }]}>{formatNoteDate(note.createdAt)}</Text>
+                      </View>
+                      <Text style={[type.bodyPreview, { color: note.type === 'system' ? k.muted : k.textBody }]}>{note.content}</Text>
                     </View>
                   ))}
-                </View>
+                </Card>
+              ) : (
+                <Text style={[type.meta, { color: k.muted }]}>No activity yet</Text>
               )}
-
-              <View style={[styles.detailEditSection, { borderColor: colors.border }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.detailSectionTitle, { color: colors.text }]}>Activity Notes</Text>
-                {loadingNotes ? (
-                  <ActivityIndicator size="small" color={colors.accent} style={{ marginVertical: 12 }} />
-                ) : (
-                  activityNotes.map(note => (
-                    <View key={note.id} style={[styles.activityNote, { borderColor: colors.border }]}>
-                      <View style={styles.noteHeader}>
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteUser, { color: colors.text }]}>{note.userName || 'System'}</Text>
-                        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteDate, { color: colors.secondary }]}>{formatNoteDate(note.createdAt)}</Text>
-                      </View>
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noteContent, { color: note.type === 'system' ? colors.secondary : colors.text }]}>{note.content}</Text>
-                    </View>
-                  ))
-                )}
-                {activityNotes.length === 0 && !loadingNotes && (
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noNotesText, { color: colors.secondary }]}>No activity notes yet</Text>
-                )}
-                <View style={styles.addNoteRow}>
-                  <TextInput
-                    style={[styles.addNoteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+              <View style={fs.addRow}>
+                <View style={fs.flex}>
+                  <TextField
                     value={newNoteText}
                     autoCapitalize="sentences"
                     returnKeyType="send"
                     onSubmitEditing={() => { if (newNoteText.trim() && !addingNote) handleAddNote(); }}
                     onChangeText={setNewNoteText}
-                    placeholder="Add a note..."
-                    placeholderTextColor={colors.secondary}
+                    placeholder="Add a note"
+                    accessibilityLabel="New note"
                   />
-                  <TouchableOpacity hitSlop={4}
-                    style={[styles.addNoteBtn, { backgroundColor: colors.accent, opacity: !newNoteText.trim() || addingNote ? 0.5 : 1 }]}
-                    onPress={handleAddNote}
-                    disabled={!newNoteText.trim() || addingNote}
-                  >
-                    {addingNote ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Ionicons name="send" size={16} color="#fff" />
-                    )}
-                  </TouchableOpacity>
                 </View>
+                <Pressable
+                  onPress={handleAddNote}
+                  disabled={!newNoteText.trim() || addingNote}
+                  hitSlop={metrics.hitSlop}
+                  accessibilityRole="button"
+                  accessibilityLabel="Post note"
+                  style={[fs.iconBtn, { opacity: !newNoteText.trim() || addingNote ? metrics.disabledOpacity : 1 }]}
+                >
+                  {addingNote ? <ActivityIndicator size="small" color={k.accent} /> : <SendHorizontal size={size.icon.header} color={k.accent} strokeWidth={metrics.iconStroke} />}
+                </Pressable>
               </View>
+            </View>
 
-              <View style={styles.detailActions}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: colors.border }]}
-                  onPress={closeDetail}
-                >
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.actionBtnText, { color: colors.text }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: colors.accent, opacity: saving ? 0.6 : 1 }]}
-                  onPress={handleSave}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.actionBtnText, { color: '#fff' }]}>Save Changes</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-              <View style={{ height: 40 }} />
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </View>
+            <ButtonRow>
+              <SecondaryButton label="Cancel" onPress={closeDetail} />
+              <PrimaryButton label="Save changes" onPress={handleSave} loading={saving} />
+            </ButtonRow>
+          </>
+        ))}
       </Modal>
     );
   };
 
   const renderAddModal = () => (
-    <Modal visible={showAddModal} animationType="slide" presentationStyle="fullScreen">
-      <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
-        <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <TouchableOpacity hitSlop={12} onPress={() => { setShowAddModal(false); resetAddForm(); }}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 15, fontWeight: '500' }}>Cancel</Text>
-          </TouchableOpacity>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.modalHeaderTitle, { color: colors.text }]}>New Schedule Item</Text>
-          <TouchableOpacity hitSlop={12} onPress={handleAddItem} disabled={addSaving} style={{ opacity: addSaving ? 0.5 : 1 }}>
-            {addSaving ? (
-              <ActivityIndicator size="small" color={colors.accent} />
-            ) : (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontSize: 15, fontWeight: '600' }}>Save</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex1}>
-          <ScrollView style={styles.flex1} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Name *</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
-              value={addName}
-              autoCapitalize="sentences"
-              returnKeyType="done"
-              onChangeText={setAddName}
-              placeholder="Schedule item name"
-              placeholderTextColor={colors.secondary}
-            />
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Type</Text>
-            <TouchableOpacity
-              style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-              onPress={() => { setShowAddTypePicker(!showAddTypePicker); setShowAddPriorityPicker(false); setShowAddStatusPicker(false); }}
-            >
-              <View style={[styles.statusDot, { backgroundColor: TYPE_COLORS[addType] || colors.accent }]} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{TYPE_LABELS[addType] || addType}</Text>
-              <Ionicons name={showAddTypePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-            </TouchableOpacity>
-            {showAddTypePicker && (
-              <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                {Object.entries(TYPE_LABELS).map(([key, label]) => {
-                  const tc = TYPE_COLORS[key] || colors.accent;
-                  const isSelected = addType === key;
-                  return (
-                    <TouchableOpacity
-                      key={key}
-                      style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: tc + '15' }]}
-                      onPress={() => { setAddType(key); setShowAddTypePicker(false); }}
-                    >
-                      <View style={[styles.statusDot, { backgroundColor: tc }]} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
-                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Start Date</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
-              value={addStartDate}
-              returnKeyType="done"
-              autoCorrect={false}
-              onChangeText={setAddStartDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.secondary}
-              keyboardType="numbers-and-punctuation"
-            />
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>End Date</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, minHeight: 44 }]}
-              value={addEndDate}
-              returnKeyType="done"
-              autoCorrect={false}
-              onChangeText={setAddEndDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.secondary}
-              keyboardType="numbers-and-punctuation"
-            />
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Priority</Text>
-            <TouchableOpacity
-              style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-              onPress={() => { setShowAddPriorityPicker(!showAddPriorityPicker); setShowAddTypePicker(false); setShowAddStatusPicker(false); }}
-            >
-              <View style={[styles.statusDot, { backgroundColor: PRIORITY_COLORS[addPriority] || colors.accent }]} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{PRIORITY_LABELS[addPriority] || addPriority}</Text>
-              <Ionicons name={showAddPriorityPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-            </TouchableOpacity>
-            {showAddPriorityPicker && (
-              <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                {Object.entries(PRIORITY_LABELS).map(([key, label]) => {
-                  const pc = PRIORITY_COLORS[key] || colors.accent;
-                  const isSelected = addPriority === key;
-                  return (
-                    <TouchableOpacity
-                      key={key}
-                      style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: pc + '15' }]}
-                      onPress={() => { setAddPriority(key); setShowAddPriorityPicker(false); }}
-                    >
-                      <View style={[styles.statusDot, { backgroundColor: pc }]} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{label}</Text>
-                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Status</Text>
-            <TouchableOpacity
-              style={[styles.fieldPicker, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
-              onPress={() => { setShowAddStatusPicker(!showAddStatusPicker); setShowAddTypePicker(false); setShowAddPriorityPicker(false); }}
-            >
-              <View style={[styles.statusDot, { backgroundColor: getStatusOption(addStatus).color }]} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldPickerText, { color: colors.text }]}>{getStatusOption(addStatus).name}</Text>
-              <Ionicons name={showAddStatusPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-            </TouchableOpacity>
-            {showAddStatusPicker && (
-              <View style={[styles.inlineStatusList, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-                {pickerStatusOptions.map(opt => {
-                  const sc = opt.color;
-                  const isSelected = addStatus === opt.key;
-                  return (
-                    <TouchableOpacity
-                      key={opt.key}
-                      style={[styles.inlineStatusOption, { borderBottomColor: colors.border }, isSelected && { backgroundColor: sc + '15' }]}
-                      onPress={() => { setAddStatus(opt.key); setShowAddStatusPicker(false); }}
-                    >
-                      <View style={[styles.statusDot, { backgroundColor: sc }]} />
-                      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.inlineStatusText, { color: colors.text }]}>{opt.name}</Text>
-                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accent} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Description</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={addDescription}
-              autoCapitalize="sentences"
-              onChangeText={setAddDescription}
-              multiline
-              numberOfLines={2}
-              placeholder="Optional description..."
-              placeholderTextColor={colors.secondary}
-            />
-
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.fieldLabel, { color: colors.secondary }]}>Notes</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={addNotes}
-              autoCapitalize="sentences"
-              onChangeText={setAddNotes}
-              multiline
-              numberOfLines={3}
-              placeholder="Optional notes..."
-              placeholderTextColor={colors.secondary}
-            />
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </View>
+    <Modal visible={showAddModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => { setShowAddModal(false); resetAddForm(); }}>
+      {formPage('New schedule item', () => { setShowAddModal(false); resetAddForm(); }, handleAddItem, addSaving, (
+        <>
+          <TextField
+            value={addName}
+            autoCapitalize="sentences"
+            returnKeyType="done"
+            onChangeText={setAddName}
+            placeholder="Schedule item name"
+            accessibilityLabel="Name"
+          />
+          <Card variant="list">
+            <PropertyRow key="type" form label="Type" onPress={() => { setShowAddTypePicker(!showAddTypePicker); setShowAddPriorityPicker(false); setShowAddStatusPicker(false); }}>
+              <View style={fs.value}>{fdot(TYPE_COLORS[addType])}<Text style={[type.rowTitle, { color: k.text }]}>{TYPE_LABELS[addType] || addType}</Text></View>
+            </PropertyRow>
+            {showAddTypePicker ? choiceRows('type', typeChoices, addType, key => { setAddType(key); setShowAddTypePicker(false); }) : null}
+            {inputRow('start', 'Start date', addStartDate, setAddStartDate, 'YYYY-MM-DD')}
+            {inputRow('end', 'End date', addEndDate, setAddEndDate, 'YYYY-MM-DD')}
+            <PropertyRow key="priority" form label="Priority" onPress={() => { setShowAddPriorityPicker(!showAddPriorityPicker); setShowAddTypePicker(false); setShowAddStatusPicker(false); }}>
+              <View style={fs.value}>{fdot(PRIORITY_COLORS[addPriority])}<Text style={[type.rowTitle, { color: k.text }]}>{PRIORITY_LABELS[addPriority] || addPriority}</Text></View>
+            </PropertyRow>
+            {showAddPriorityPicker ? choiceRows('prio', priorityChoices, addPriority, key => { setAddPriority(key); setShowAddPriorityPicker(false); }) : null}
+            <PropertyRow key="status" form label="Status" onPress={() => { setShowAddStatusPicker(!showAddStatusPicker); setShowAddTypePicker(false); setShowAddPriorityPicker(false); }}>
+              <View style={fs.value}>{fdot(getStatusOption(addStatus).color)}<Text style={[type.rowTitle, { color: k.text }]}>{getStatusOption(addStatus).name}</Text></View>
+            </PropertyRow>
+            {showAddStatusPicker ? choiceRows('status', statusChoices, addStatus, key => { setAddStatus(key); setShowAddStatusPicker(false); }) : null}
+          </Card>
+          <TextField
+            multilineBox
+            value={addDescription}
+            autoCapitalize="sentences"
+            onChangeText={setAddDescription}
+            placeholder="Description (optional)"
+            accessibilityLabel="Description"
+          />
+          <TextField
+            multilineBox
+            value={addNotes}
+            autoCapitalize="sentences"
+            onChangeText={setAddNotes}
+            placeholder="Notes (optional)"
+            accessibilityLabel="Notes"
+          />
+        </>
+      ))}
     </Modal>
   );
 
   const renderProjectPickerModal = () => (
-    <Modal visible={showProjectPicker} animationType="slide" transparent>
-      <View style={styles.pickerOverlay}>
-        <View style={[styles.pickerContainer, sheetFrame, { backgroundColor: colors.card }]}>
-          <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerTitle, { color: colors.text }]}>Select Project</Text>
-            <TouchableOpacity hitSlop={10} onPress={() => setShowProjectPicker(false)}>
-              <Ionicons name="close" size={24} color={colors.secondary} />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={getSortedProjectItems(projects)}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => {
-              if (item.isHeader) {
-                return (
-                  <View style={[styles.pickerSectionHeader, { backgroundColor: theme.nav }]}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerSectionText, { color: colors.secondary }]}>{item.label}</Text>
-                  </View>
-                );
-              }
-              return (
-                <TouchableOpacity
-                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
-                  onPress={() => { setSelectedProjectId(item.id); setShowProjectPicker(false); }}
-                >
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerItemText, { color: colors.text }]}>{item.label}</Text>
-                  {selectedProjectId === item.id && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-                </TouchableOpacity>
-              );
-            }}
-          />
-        </View>
-      </View>
-    </Modal>
+    <ModalSheet visible={showProjectPicker} onRequestClose={() => setShowProjectPicker(false)} title="Project" doneLabel="Done" onDone={() => setShowProjectPicker(false)} fill>
+      <FlatList
+        data={getSortedProjectItems(projects)}
+        keyExtractor={item => item.id}
+        style={fs.pickList}
+        contentContainerStyle={fs.pickContent}
+        renderItem={({ item }) => {
+          if (item.isHeader) {
+            return (
+              <View style={fs.pickHeader}>
+                <Text style={[type.meta, { color: k.muted }]}>{item.label}</Text>
+              </View>
+            );
+          }
+          const active = selectedProjectId === item.id;
+          return (
+            <Pressable
+              style={({ pressed }) => [fs.pickRow, { borderBottomColor: k.border, backgroundColor: active ? k.tint : k.surface, opacity: pressed ? metrics.pressedOpacity : 1 }]}
+              onPress={() => { haptic.select(); setSelectedProjectId(item.id); setShowProjectPicker(false); }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[type.rowTitle, fs.flex, { color: k.text }]} numberOfLines={1}>{item.label}</Text>
+              {active ? ftick : null}
+            </Pressable>
+          );
+        }}
+      />
+    </ModalSheet>
   );
 
-  if (loading && projects.length === 0) {
-    return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
-    );
-  }
+  const selectedProject = projects.find(p => p.id === selectedProjectId);
+  const headerProject = selectedProject
+    ? { name: selectedProject.name, color: selectedProject.color ?? null, id: selectedProject.id }
+    : route?.params?.projectName
+      ? { name: route.params.projectName, color: route.params.projectColor ?? null, id: route.params.projectId ?? null }
+      : !isProjectContext
+        ? { name: 'Choose project', color: null, id: null }
+        : null;
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <View style={[styles.viewToggle, { backgroundColor: colors.inputBg, borderColor: colors.border, flex: 1 }]}>
-          {(['list', 'gantt', 'calendar'] as ViewMode[]).map(mode => (
-            <TouchableOpacity hitSlop={{ top: 6, bottom: 6 }}
-              key={mode}
-              style={[styles.viewToggleBtn, viewMode === mode && { backgroundColor: colors.accent }]}
-              onPress={() => setViewMode(mode)}
-            >
-              <Ionicons
-                name={mode === 'list' ? 'list-outline' : mode === 'gantt' ? 'bar-chart-outline' : 'calendar-outline'}
-                size={16}
-                color={viewMode === mode ? '#fff' : colors.secondary}
-              />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewToggleText, { color: viewMode === mode ? '#fff' : colors.secondary }]}>
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {!isProjectContext && (
-          <TouchableOpacity hitSlop={{ top: 8, bottom: 8 }}
-            style={[styles.projectSelectorBtn, { borderColor: colors.border, backgroundColor: colors.inputBg }]}
-            onPress={() => setShowProjectPicker(true)}
-          >
-            <Ionicons name="folder-outline" size={15} color={colors.accent} />
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.projectSelectorText, { color: colors.text }]} numberOfLines={1}>
-              {getSelectedProjectLabel()}
-            </Text>
-            <Ionicons name="chevron-down" size={14} color={colors.secondary} />
-          </TouchableOpacity>
-        )}
-
-        {scheduleId && (
+  const header = (
+    <View style={[ss.top, { paddingTop: insets.top + sc.top, gap: viewMode === 'list' ? sc.gapList : sc.gapOther }, isWide && { paddingHorizontal: S.duoPadX }]}>
+      <PageHeader
+        title="Schedule"
+        project={headerProject}
+        onBack={() => goBackOrHome(navigation as any)}
+        onProjectPress={!isProjectContext ? () => setShowProjectPicker(true) : undefined}
+        actions={viewMode === 'gantt' ? [{ icon: Ellipsis, label: 'Gantt options', onPress: () => setShowGanttMenu(v => !v) }] : undefined}
+        right={scheduleId ? (
           <ScheduleActivityFeedButton
             scheduleId={scheduleId}
             userId={user?.id ?? null}
@@ -2030,73 +1844,74 @@ const colors = {
               if (target) openDetail(target);
             }}
           />
-        )}
+        ) : undefined}
+      />
+      <UnderlineTabs
+        tabs={[{ key: 'list', label: 'List' }, { key: 'gantt', label: 'Gantt' }, { key: 'calendar', label: 'Calendar' }]}
+        value={viewMode}
+        onChange={(m) => { setViewMode(m); if (m !== 'gantt') ganttScrolledRef.current = false; }}
+        nav={viewMode === 'list' ? undefined : { onPrev: navPrev, onToday: navToday, onNext: navNext }}
+      />
+      {showGanttMenu && viewMode === 'gantt' && (
+        <View style={ss.ganttMenu}>
+          <Card variant="list">
+            <ListRow
+              lead={<Checkbox checked={showNamesCol} />}
+              title="Show names column"
+              titleLines={1}
+              onPress={() => {
+                const next = !showNamesCol;
+                setShowNamesCol(next);
+                AsyncStorage.setItem('@buildpro/gantt_show_names', String(next));
+                setShowGanttMenu(false);
+              }}
+            />
+            <ListRow
+              lead={<Checkbox checked={showBarStatus} />}
+              title="Show status"
+              titleLines={1}
+              onPress={() => {
+                const next = !showBarStatus;
+                setShowBarStatus(next);
+                AsyncStorage.setItem('@buildpro/gantt_show_status', String(next));
+                setShowGanttMenu(false);
+              }}
+            />
+          </Card>
+        </View>
+      )}
+    </View>
+  );
 
-        {viewMode === 'gantt' && (
-          <View style={{ position: 'relative', zIndex: 200 }}>
-            <TouchableOpacity hitSlop={4}
-              style={[styles.headerMenuBtn, { borderColor: colors.border }]}
-              onPress={() => setShowGanttMenu(v => !v)}
-            >
-              <Ionicons name="ellipsis-vertical" size={18} color={colors.secondary} />
-            </TouchableOpacity>
-            {showGanttMenu && (
-              <View style={[styles.ganttMenuDropdown, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: '#000' }]}>
-                <TouchableOpacity
-                  style={styles.ganttMenuRow}
-                  onPress={() => {
-                    const next = !showNamesCol;
-                    setShowNamesCol(next);
-                    AsyncStorage.setItem('@buildpro/gantt_show_names', String(next));
-                    setShowGanttMenu(false);
-                  }}
-                >
-                  <Ionicons name={showNamesCol ? 'checkbox' : 'square-outline'} size={18} color={showNamesCol ? colors.accent : colors.secondary} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Table</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.ganttMenuRow}
-                  onPress={() => {
-                    const next = !showBarStatus;
-                    setShowBarStatus(next);
-                    AsyncStorage.setItem('@buildpro/gantt_show_status', String(next));
-                    setShowGanttMenu(false);
-                  }}
-                >
-                  <Ionicons name={showBarStatus ? 'checkbox' : 'square-outline'} size={18} color={showBarStatus ? colors.accent : colors.secondary} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.ganttMenuLabel, { color: colors.text }]}>Show Status</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
+  if (loading && projects.length === 0) {
+    return (
+      <View style={[styles.container, { backgroundColor: k.bg }]}>
+        {header}
+        <SkeletonList />
       </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { backgroundColor: k.bg }]}>
+      {header}
 
       {!selectedProjectId && !isProjectContext ? (
-        <View style={[styles.flex1, styles.center]}>
-          <Ionicons name="folder-open-outline" size={56} color={colors.secondary} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.promptText, { color: colors.secondary }]}>Tap a project in the Projects tab to view its schedule here</Text>
+        <View style={styles.flex1}>
+          <EmptyState icon={FolderOpen} title="Choose a project" helper="Tap the project name at the top to see its schedule." />
         </View>
       ) : loading ? (
-        <View style={[styles.flex1, styles.center]}>
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
+        <SkeletonList />
       ) : (
-        <>
+        <View style={styles.flex1}>
           {viewMode === 'list' && renderListView()}
           {viewMode === 'gantt' && renderGanttView()}
           {viewMode === 'calendar' && renderCalendarView()}
-        </>
+        </View>
       )}
 
       {selectedProjectId && !loading && (
-        <TouchableOpacity
-          style={[styles.fab, { backgroundColor: colors.accent }]}
-          onPress={() => setShowAddModal(true)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add" size={28} color="#fff" />
-        </TouchableOpacity>
+        <FAB onPress={() => setShowAddModal(true)} label="Add schedule item" />
       )}
 
       {renderProjectPickerModal()}
@@ -2109,186 +1924,83 @@ const colors = {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   flex1: { flex: 1 },
-  center: { justifyContent: 'center', alignItems: 'center' },
 
-  header: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerMenuBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: 8 },
-  projectSelectorBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderRadius: 8, maxWidth: 160 },
-  projectSelectorText: { flex: 1, fontSize: 13, fontWeight: '500' },
-
-  viewToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
-  viewToggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, gap: 4 },
-  viewToggleText: { fontSize: 12, fontWeight: '600' },
-
-  promptText: { fontSize: 15, marginTop: 12, textAlign: 'center', paddingHorizontal: 32 },
-
-  listContent: { padding: 16, paddingBottom: 40 },
-  groupSection: { marginBottom: 20 },
-  groupHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
-  groupDot: { width: 8, height: 8, borderRadius: 4 },
-  groupTitle: { fontSize: 15, fontWeight: '700' },
-  groupCount: { fontSize: 12, fontWeight: '500' },
-
-  itemCard: { borderWidth: 1, borderRadius: 12, marginBottom: 10 },
-  itemContent: { padding: 14 },
-  itemTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
-  itemStatusPill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
-  itemStatusPillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
-  itemTitle: { fontSize: 15, fontWeight: '700', flex: 1 },
-  itemMetaLine: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
-  itemMetaText: { fontSize: 12 },
-  progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 },
-  progressTrack: { flex: 1, height: 3, borderRadius: 2, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 2 },
-  progressText: { fontSize: 11, fontWeight: '500', width: 32, textAlign: 'right' },
-
-  dateDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6, marginBottom: 8 },
-  dateDividerText: { fontSize: 12, fontWeight: '600' },
-  dateDividerLine: { flex: 1, borderBottomWidth: 1 },
-
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
-  typeBadgeText: { fontSize: 11, fontWeight: '600' },
-
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
-  emptyText: { fontSize: 15, marginTop: 12 },
-
-  ganttContainer: { flexDirection: 'row' },
-  ganttStickyHeader: { flexDirection: 'row', borderBottomWidth: 1, alignItems: 'stretch' },
-  ganttMenuDropdown: { position: 'absolute', right: 0, top: 40, width: 170, borderWidth: 1, borderRadius: 8, paddingVertical: 4, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 8, zIndex: 1000 },
-  ganttMenuRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  ganttMenuLabel: { fontSize: 13, fontWeight: '500' },
-  ganttNamesCol: { width: NAME_COL_WIDTH, zIndex: 1 },
-  ganttHeaderCell: { justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: 1 },
-  ganttHeaderText: { fontSize: 11, fontWeight: '600' },
-  ganttNameRow: { height: GANTT_ROW_HEIGHT, justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth },
-  ganttNameText: { fontSize: 11, fontWeight: '500' },
-  ganttNameTextWide: { fontSize: 13 },
-  ganttMonthRow: { flexDirection: 'row', height: 20, borderBottomWidth: StyleSheet.hairlineWidth },
-  ganttMonthCell: { justifyContent: 'center', alignItems: 'center', borderRightWidth: StyleSheet.hairlineWidth },
-  ganttMonthText: { fontSize: 10, fontWeight: '600' },
-  ganttDateRow: { flexDirection: 'row', height: 32, borderBottomWidth: 1 },
-  ganttDateCell: { width: DAY_COL_WIDTH, justifyContent: 'center', alignItems: 'center', borderRightWidth: StyleSheet.hairlineWidth },
-  ganttDateText: { fontSize: 9, fontWeight: '500' },
-  ganttBarRow: { height: GANTT_ROW_HEIGHT, position: 'relative', borderBottomWidth: StyleSheet.hairlineWidth },
-  ganttGridLine: { position: 'absolute', top: 0, width: 0, borderRightWidth: StyleSheet.hairlineWidth },
-  ganttBar: { position: 'absolute', top: 6, height: GANTT_ROW_HEIGHT - 12, borderRadius: 4, justifyContent: 'center', paddingHorizontal: 4 },
-  ganttBarText: { color: '#fff', fontSize: 9, fontWeight: '600' },
-  ganttBarOuterText: { position: 'absolute', top: 0, height: GANTT_ROW_HEIGHT, lineHeight: GANTT_ROW_HEIGHT, fontSize: 10, fontWeight: '500', maxWidth: DAY_COL_WIDTH * 5 },
-  ganttStatusChip: { position: 'absolute', top: 8, borderWidth: 1, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 },
-  ganttStatusChipText: { fontSize: 9, fontWeight: '600' },
-
-  calModeToggle: { flexDirection: 'row', borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
-  calModeBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 7 },
-  calModeText: { fontSize: 12, fontWeight: '600' },
-
-  calWeekNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, paddingVertical: 10, borderBottomWidth: 1 },
-  calNavArrow: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  calWeekNavTitle: { fontSize: 18, fontWeight: '700' },
-  calWeekHeaderRow: { flexDirection: 'row', borderBottomWidth: 1 },
-  calDayHeaderCol: { alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4, borderRightWidth: StyleSheet.hairlineWidth },
-  calDayName: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase' },
-  calTodayCircle: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  calDayNumWrap: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
-  calDayNum: { fontSize: 17, fontWeight: '600' },
-  calDayCol: { paddingTop: 8, paddingHorizontal: 5, paddingBottom: 12, minHeight: 280, borderRightWidth: StyleSheet.hairlineWidth },
-  calDayEmpty: { height: 40 },
-  calItemCard: { borderWidth: 1, borderRadius: 6, padding: 8, marginBottom: 6 },
-  calItemName: { fontSize: 12, fontWeight: '700', lineHeight: 16 },
-  calItemSub: { fontSize: 10, marginTop: 3 },
-
-  calendarCard: { margin: 16, marginBottom: 8, borderWidth: 1, borderRadius: 12, padding: 12 },
-  calendarNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  calendarTitle: { fontSize: 16, fontWeight: '700' },
-  calendarDayNames: { flexDirection: 'row' },
-  calendarDayNameCell: { flex: 1, alignItems: 'center', paddingVertical: 4 },
-  calendarDayNameText: { fontSize: 11, fontWeight: '600' },
-  calendarRow: { flexDirection: 'row' },
-  calendarCell: { flex: 1, alignItems: 'center', paddingVertical: 6, borderRadius: 6, minHeight: 40, justifyContent: 'center' },
-  calendarDayText: { fontSize: 13, fontWeight: '500' },
-  dotsRow: { flexDirection: 'row', marginTop: 2, gap: 2 },
-  dot: { width: 5, height: 5, borderRadius: 3 },
-  selectedDaySection: { paddingHorizontal: 16, paddingBottom: 40 },
-  selectedDayTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
-  noDayItems: { fontSize: 14, textAlign: 'center', paddingVertical: 20 },
-
-  weekRow: { flexDirection: 'row', gap: 2 },
-  weekDayCol: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8, minHeight: 64, justifyContent: 'center' },
-  weekDayName: { fontSize: 10, fontWeight: '600', marginBottom: 2 },
-  weekDayNum: { fontSize: 16, fontWeight: '600' },
-
-  allDaySection: { marginHorizontal: 16, marginBottom: 8 },
-  allDayLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
-  allDayItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, borderLeftWidth: 3, borderRadius: 6, marginBottom: 4 },
-  allDayItemText: { fontSize: 13, fontWeight: '500', flex: 1, marginRight: 8 },
-
-  timelineContainer: { marginHorizontal: 16, borderWidth: 1, borderRadius: 12, padding: 0, position: 'relative', overflow: 'hidden' },
-  hourRow: { height: HOUR_HEIGHT, flexDirection: 'row', alignItems: 'flex-start', borderBottomWidth: StyleSheet.hairlineWidth },
-  hourLabel: { width: 52, fontSize: 10, fontWeight: '500', paddingTop: 4, paddingLeft: 8 },
-  hourLine: { flex: 1, height: StyleSheet.hairlineWidth, marginTop: 12 },
-  timeBlock: { position: 'absolute', right: 8, borderLeftWidth: 3, borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4, justifyContent: 'center' },
-  timeBlockName: { fontSize: 12, fontWeight: '600' },
-  timeBlockTime: { fontSize: 10, marginTop: 1 },
-
-  modalContainer: { flex: 1 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 56 : 16, paddingBottom: 12, borderBottomWidth: 1 },
-  modalHeaderTitle: { fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center' },
-  detailTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  detailBadgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 },
-  detailInfoSection: { borderTopWidth: 1, paddingTop: 12, marginBottom: 16 },
-  detailInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
-  detailInfoLabel: { fontSize: 12, fontWeight: '500', width: 70 },
-  detailInfoValue: { fontSize: 13, fontWeight: '500' },
-  detailEditSection: { borderTopWidth: 1, paddingTop: 12, marginBottom: 16 },
-  detailSectionTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12 },
-  fieldLabel: { fontSize: 12, fontWeight: '500', marginBottom: 4, marginTop: 8 },
-  fieldPicker: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
-  fieldPickerText: { flex: 1, fontSize: 14 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  inlineStatusList: { borderWidth: 1, borderRadius: 8, marginTop: 4, overflow: 'hidden' },
-  inlineStatusOption: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, gap: 8, borderBottomWidth: StyleSheet.hairlineWidth },
-  inlineStatusText: { flex: 1, fontSize: 14, fontWeight: '500' },
-  progressInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  progressTrackLarge: { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
-  progressFillLarge: { height: '100%', borderRadius: 3 },
-  progressInput: { width: 56, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, textAlign: 'center', fontSize: 14 },
-  notesInput: { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13, minHeight: 60, textAlignVertical: 'top' },
-
-  activityNote: { borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 8 },
-  noteHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  noteUser: { fontSize: 12, fontWeight: '600' },
-  noteDate: { fontSize: 10 },
-  noteContent: { fontSize: 13 },
-  noNotesText: { fontSize: 13, textAlign: 'center', paddingVertical: 12 },
-  addNoteRow: { flexDirection: 'row', marginTop: 10, gap: 8 },
-  addNoteInput: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13 },
-  addNoteBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-
-  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
-  switchLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  switchLabel: { fontSize: 14, fontWeight: '500' },
-  stepRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
-  stepCheckbox: { padding: 2 },
-  stepName: { flex: 1, fontSize: 13, fontWeight: '500' },
-  stepCompleted: { textDecorationLine: 'line-through', opacity: 0.6 },
-  stepDeleteBtn: { padding: 4 },
-  linkedItemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
-  linkedItemName: { flex: 1, fontSize: 13, fontWeight: '500' },
   depLineH: { position: 'absolute', height: 2 },
   depLineV: { position: 'absolute', width: 2 },
   depArrow: { position: 'absolute', width: 0, height: 0, borderTopWidth: 4, borderBottomWidth: 4, borderLeftWidth: 6, borderTopColor: 'transparent', borderBottomColor: 'transparent' },
 
-  detailActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-  actionBtnText: { fontWeight: '600', fontSize: 14 },
+});
 
-  fab: { position: 'absolute', bottom: 24, right: 20, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4 },
+const S = metrics.schedule;
 
-  pickerOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
-  pickerContainer: { maxHeight: '70%', borderTopLeftRadius: 16, borderTopRightRadius: 16 },
-  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
-  pickerTitle: { fontSize: 16, fontWeight: '700' },
-  pickerSectionHeader: { paddingHorizontal: 16, paddingVertical: 6 },
-  pickerSectionText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  pickerItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
-  pickerItemText: { fontSize: 14, fontWeight: '500' },
+// Revamp v1 header + list / gantt / calendar styles (sheets below use `styles`).
+const ss = StyleSheet.create({
+  top: { paddingHorizontal: space.screenX, paddingBottom: S.gapOther, zIndex: 10 },
+  list: { paddingHorizontal: space.screenX, gap: S.dayGroupGap },
+  earlier: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  dayGroup: {},
+  todayMarker: { marginBottom: S.dayGroupGap },
+  ganttMenu: { position: 'absolute', right: space.screenX, top: '100%', width: metrics.workspace.menuWidth, zIndex: 20 },
+  ganttHeader: { flexDirection: 'row', borderBottomWidth: size.border, marginHorizontal: space.screenX },
+  ganttCorner: { justifyContent: 'flex-end', paddingBottom: space.inline },
+  ganttMonthAbove: { paddingBottom: space.inlineSm },
+  ganttDateCell: { alignItems: 'center', justifyContent: 'flex-end', paddingBottom: space.inlineSm, gap: space.inlineSm / 2 },
+  ganttDateNum: {
+    width: S.gantt.todayCircle,
+    height: S.gantt.todayCircle,
+    borderRadius: S.gantt.todayCircle / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ganttContainer: { flexDirection: 'row', marginHorizontal: space.screenX },
+  ganttNameRow: { justifyContent: 'center', borderBottomWidth: size.border, paddingRight: space.inline },
+  ganttGridLine: { position: 'absolute', top: 0, width: size.border },
+  ganttBarRow: { position: 'absolute', left: 0, right: 0, justifyContent: 'center', borderBottomWidth: size.border },
+  ganttStatus: { position: 'absolute' },
+  calHeader: { flexDirection: 'row', height: S.calendar.headerHeight, borderBottomWidth: size.border, paddingLeft: space.screenX },
+  calGutter: { width: S.calendar.gutter, paddingBottom: space.inline },
+  calDayHead: { alignItems: 'center', justifyContent: 'center', gap: space.inlineSm / 2 },
+  calDateCircle: {
+    width: S.calendar.dateCircle,
+    height: S.calendar.dateCircle,
+    borderRadius: S.calendar.dateCircle / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calAllDayScroll: { flexGrow: 0, maxHeight: S.calendar.allDayMax, borderBottomWidth: size.border },
+  calAllDay: { flexDirection: 'row', paddingLeft: space.screenX, paddingVertical: space.inlineSm },
+  calModeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: space.inline },
+  monthWeekRow: { flexDirection: 'row' },
+  monthDayName: { flex: 1, alignItems: 'center', paddingBottom: space.inlineSm },
+  monthCell: { flex: 1, height: S.calendar.monthCell, alignItems: 'center', justifyContent: 'center', gap: space.inlineSm / 2 },
+  monthDots: { flexDirection: 'row', gap: space.inlineSm / 2, height: S.calendar.monthDot },
+  monthDot: { width: S.calendar.monthDot, height: S.calendar.monthDot, borderRadius: S.calendar.monthDot / 2 },
+  monthAgenda: { paddingTop: S.dayGroupGap },
+  calAllDayCol: { gap: space.inlineSm / 2, paddingHorizontal: S.calendar.blockInset },
+  calHour: { position: 'absolute', left: 0, marginTop: -space.inline },
+  calDayCol: { borderLeftWidth: size.border },
+  calHourLine: { position: 'absolute', left: 0, right: 0, height: size.border },
+});
+
+const fs = StyleSheet.create({
+  flex: { flex: 1 },
+  page: { flex: 1 },
+  pageHeader: { paddingHorizontal: space.screenX },
+  pageBody: { paddingHorizontal: space.screenX, paddingTop: space.inline, gap: metrics.sheet.gap },
+  group: { gap: metrics.form.labelGap },
+  dot: { width: size.statusDot, height: size.statusDot, borderRadius: size.statusDot / 2 },
+  value: { flexDirection: 'row', alignItems: 'center', gap: metrics.statusDot.gap },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: metrics.propertyRow.gap, paddingVertical: metrics.propertyRow.formPadY },
+  inlineInput: { minWidth: metrics.form.dateInputWidth, textAlign: 'right', paddingVertical: 0 },
+  pctInput: { width: metrics.form.pctInputWidth, textAlign: 'center', paddingVertical: space.inlineSm, borderWidth: size.border, borderRadius: radii.md },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, paddingVertical: metrics.listRow.padY },
+  strike: { textDecorationLine: 'line-through' },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  iconBtn: { minWidth: metrics.minHit, minHeight: metrics.minHit, alignItems: 'center', justifyContent: 'center' },
+  note: { paddingVertical: metrics.listRow.padY, gap: metrics.listRow.bodyGap },
+  noteHead: { flexDirection: 'row', alignItems: 'baseline', gap: space.inline },
+  pickList: { marginHorizontal: space.screenX },
+  pickContent: { paddingBottom: space.screenBottom },
+  pickHeader: { paddingTop: space.section, paddingBottom: space.inline, paddingHorizontal: space.inlineSm },
+  pickRow: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, minHeight: metrics.minHit + space.inline, paddingHorizontal: space.cardX, borderBottomWidth: size.border },
 });

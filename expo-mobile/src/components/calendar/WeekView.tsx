@@ -6,16 +6,18 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { fontSize, fontWeight, radius, type Theme } from '../../theme';
+import { CalendarDays, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { metrics, radii, size, tabular, type, useColors } from '../../theme';
 import { toLocalDateStr } from '../../lib/dates';
 import { useLayout } from '../../lib/useLayout';
+import { CalendarBlock, FAB_CLEARANCE, NowLine } from '../kit';
 import {
   DAY_NAMES,
-  formatTimeShort,
+  eventBlockColor,
+  formatClock,
+  formatClockRange,
   getEventDurationMinutes,
   isEventAllDay,
   isToday,
@@ -28,8 +30,10 @@ import type { ScrollViewInstance } from 'react-native';
 // Scrolling 28-day time grid. Receives pre-bucketed eventsByDay and the
 // minute tick (nowMinutes) — the only view that re-renders on the tick.
 
-export const HOUR_HEIGHT = 56;
-export const TIME_LABEL_WIDTH = 50;
+const K = metrics.calendar;
+
+export const HOUR_HEIGHT = K.hourHeight;
+export const TIME_LABEL_WIDTH = K.gutter;
 /** How many day columns fit on screen at once on a phone. */
 export const WEEK_VISIBLE_DAYS = 3;
 /** On a wide screen (Duo unfolded) the whole Mon–Sun week fits. */
@@ -49,11 +53,11 @@ export function useWeekVisibleDays(): number {
 export function useWeekColWidth(): number {
   const { width } = useLayout();
   const visibleDays = useWeekVisibleDays();
-  return Math.floor((width - TIME_LABEL_WIDTH) / visibleDays);
+  return Math.floor((width - K.padX * 2 - TIME_LABEL_WIDTH) / visibleDays);
 }
 export const TOTAL_GRID_HEIGHT = 24 * HOUR_HEIGHT;
-export const MIN_EVENT_HEIGHT = 24;
-export const DAY_HEADER_HEIGHT = 56;
+export const MIN_EVENT_HEIGHT = K.minEvent;
+export const DAY_HEADER_HEIGHT = K.dayHeader;
 export const WEEK_TOTAL_DAYS = 28;
 
 const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => {
@@ -64,12 +68,13 @@ const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => {
 });
 
 interface WeekViewProps {
-  theme: Theme;
   weekDays: Date[];
   eventsByDay: EventsByDay;
   nowMinutes: number;
   anyAllDayEvents: boolean;
   allDayExpanded: boolean;
+  /** "+N more" / "Less" under the all-day row. */
+  onToggleAllDay: () => void;
   initialOffset: number;
   weekScrollRef: RefObject<ScrollViewInstance | null>;
   timeGridScrollRef: RefObject<ScrollViewInstance | null>;
@@ -85,12 +90,12 @@ interface WeekViewProps {
 }
 
 function WeekViewInner({
-  theme,
   weekDays,
   eventsByDay,
   nowMinutes,
   anyAllDayEvents,
   allDayExpanded,
+  onToggleAllDay,
   initialOffset,
   weekScrollRef,
   timeGridScrollRef,
@@ -101,6 +106,7 @@ function WeekViewInner({
   onSlotLongPress,
   isEmpty,
 }: WeekViewProps) {
+  const c = useColors();
   const [allDayRowHeight, setAllDayRowHeight] = useState(0);
   // The time grid's onLayout scrolls to "now". It also fires when a fold or
   // unfold resizes the grid; that must keep the user's vertical position, so a
@@ -111,63 +117,53 @@ function WeekViewInner({
   const lastLayoutWindow = useRef<string | null>(null);
   const GRID_COL_WIDTH = useWeekColWidth();
   const dayColsWidth = WEEK_TOTAL_DAYS * GRID_COL_WIDTH;
+  const nowY = (nowMinutes / 60) * HOUR_HEIGHT;
+  const nowLabel = formatClock(`${Math.floor(nowMinutes / 60)}:${nowMinutes % 60}`);
+
+  const allDayFor = (day: Date) => (eventsByDay[toLocalDateStr(day)] || []).filter(e => isEventAllDay(e));
+  const anyOverflow = weekDays.some(d => allDayFor(d).length > 1);
 
   return (
     // Single outer flex-row guarantees the left panel and right panel
     // are measured by the SAME layout pass, so their widths are
     // pixel-perfect matches with zero drift between rows.
-    <View style={{ flex: 1, flexDirection: 'row' }}>
+    <View style={[wx.root, { paddingHorizontal: K.padX }]}>
 
-      {/* ══ LEFT PANEL (fixed TIME_LABEL_WIDTH) ══════════════════════════ */}
-      <View style={{ width: TIME_LABEL_WIDTH, flexDirection: 'column' }}>
+      {/* ══ LEFT PANEL (fixed gutter) ═════════════════════════════════════ */}
+      <View style={{ width: TIME_LABEL_WIDTH }}>
+        <View style={{ height: DAY_HEADER_HEIGHT }} />
 
-        {/* Row 1 spacer — same height as day-header row */}
-        <View style={{
-          height: DAY_HEADER_HEIGHT,
-          backgroundColor: 'transparent',
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: theme.border + '60',
-        }} />
-
-        {/* Row 2 label — height driven by right panel via allDayRowHeight state */}
+        {/* "All day" — height follows the right panel's all-day row */}
         {anyAllDayEvents && allDayRowHeight > 0 && (
-          <View style={{
-            height: allDayRowHeight,
-            justifyContent: 'center',
-            alignItems: 'flex-end',
-            paddingRight: 6,
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: theme.border,
-            backgroundColor: theme.card,
-          }}>
-            <Text style={[styles.allDayLabel, { color: theme.textSecondary }]}>ALL</Text>
-            <Text style={[styles.allDayLabel, { color: theme.textSecondary }]}>DAY</Text>
+          <View style={[wx.allDayGutter, { height: allDayRowHeight, borderBottomColor: c.hairline }]}>
+            <Text style={[type.tiny, { color: c.muted }]}>All day</Text>
           </View>
         )}
 
-        {/* Row 3 time labels — vertical scroll synced with timeGridScrollRef */}
-        <ScrollView
-          ref={timeLabelScrollRef}
-          scrollEnabled={false}
-          showsVerticalScrollIndicator={false}
-          style={{ flex: 1 }}
-        >
-          {HOUR_LABELS.map((label, i) => (
-            <View key={i} style={{ height: HOUR_HEIGHT, justifyContent: 'flex-start' }}>
-              <Text style={[styles.hourLabel, { color: theme.textSecondary }]}>
-                {i > 0 ? label : ''}
-              </Text>
-            </View>
-          ))}
+        {/* Hour labels — vertical scroll synced with timeGridScrollRef */}
+        <ScrollView ref={timeLabelScrollRef} scrollEnabled={false} showsVerticalScrollIndicator={false} style={wx.flex}>
+          <View style={{ height: TOTAL_GRID_HEIGHT + FAB_CLEARANCE }}>
+            {HOUR_LABELS.map((label, i) => {
+              const y = i * HOUR_HEIGHT;
+              // The now label takes over where it would collide with an hour.
+              const hidden = i === 0 || Math.abs(y - nowY) < K.nowLabelClear;
+              return hidden ? null : (
+                <Text key={i} style={[type.tiny, tabular, wx.hourLabel, { top: y, color: c.muted }]}>
+                  {label}
+                </Text>
+              );
+            })}
+            <Text style={[type.tiny, tabular, wx.hourLabel, { top: nowY, color: c.accent }]}>{nowLabel}</Text>
+          </View>
         </ScrollView>
       </View>
 
-      {/* ══ RIGHT PANEL (flex:1) — single horizontal ScrollView ═════════ */}
+      {/* ══ RIGHT PANEL — single horizontal ScrollView ═════════════════════ */}
       <ScrollView
         ref={weekScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={{ flex: 1 }}
+        style={wx.flex}
         contentOffset={{ x: initialOffset, y: 0 }}
         onScroll={onWeekScroll}
         scrollEventThrottle={32}
@@ -177,126 +173,77 @@ function WeekViewInner({
       >
         <View style={{ width: dayColsWidth, flex: 1 }}>
 
-          {/* Row 1: Day headers */}
-          <View style={{
-            flexDirection: 'row',
-            height: DAY_HEADER_HEIGHT,
-            backgroundColor: 'transparent',
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: theme.border + '60',
-          }}>
+          {/* Row 1: day headers — THU over 19; today = accent circle */}
+          <View style={[wx.row, { height: DAY_HEADER_HEIGHT }]}>
             {weekDays.map((day, idx) => {
-              const currentDay = isToday(day);
-              const dowName = (DAY_NAMES[(day.getDay() + 6) % 7] || '').toUpperCase();
-              const dateNum = day.getDate();
+              const today = isToday(day);
+              const dow = (DAY_NAMES[(day.getDay() + 6) % 7] || '').toUpperCase();
               return (
-                <View
-                  key={idx}
-                  style={{
-                    width: GRID_COL_WIDTH,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderLeftWidth: StyleSheet.hairlineWidth,
-                    borderLeftColor: theme.border + '60',
-                  }}
-                >
-                  <Text style={[
-                    styles.dowName,
-                    { color: currentDay ? theme.primary : theme.textSecondary },
-                  ]}>
-                    {dowName}
-                  </Text>
-                  {currentDay ? (
-                    <View style={[styles.todayCircle, { backgroundColor: theme.primary }]}>
-                      <Text style={styles.todayCircleText}>{dateNum}</Text>
+                <View key={idx} style={[wx.dayHead, { width: GRID_COL_WIDTH }]} accessibilityLabel={day.toDateString()}>
+                  <Text style={[type.micro, { color: today ? c.accent : c.muted }]}>{dow}</Text>
+                  {today ? (
+                    <View style={[wx.todayCircle, { backgroundColor: c.accent }]}>
+                      <Text style={[type.rowTitleMedium, tabular, { color: c.onAccent }]}>{day.getDate()}</Text>
                     </View>
                   ) : (
-                    <Text style={[styles.dateNum, { color: theme.textPrimary }]}>{dateNum}</Text>
+                    <Text style={[type.rowTitle, tabular, wx.dateNum, { color: c.text }]}>{day.getDate()}</Text>
                   )}
                 </View>
               );
             })}
           </View>
 
-          {/* Row 2: All-day chips — fixed 36px single row when collapsed */}
+          {/* Row 2: all-day — one chip per day, "+N more" expands */}
           {anyAllDayEvents && (
             <View
-              style={{
-                flexDirection: 'row',
-                borderBottomWidth: StyleSheet.hairlineWidth,
-                borderBottomColor: theme.border,
-                backgroundColor: theme.card,
-                height: allDayExpanded ? undefined : 36,
-              }}
+              style={[wx.row, wx.allDayRow, { borderBottomColor: c.hairline }]}
               onLayout={(e) => setAllDayRowHeight(e.nativeEvent.layout.height)}
             >
               {weekDays.map((day, dayIdx) => {
-                const dayAllEvents = (eventsByDay[toLocalDateStr(day)] || []).filter(e => isEventAllDay(e));
-                const visibleEvents = allDayExpanded ? dayAllEvents : dayAllEvents.slice(0, 1);
-                const overflowCount = !allDayExpanded ? Math.max(0, dayAllEvents.length - 1) : 0;
+                const all = allDayFor(day);
+                const shown = allDayExpanded ? all : all.slice(0, 1);
+                const hiddenCount = all.length - shown.length;
                 return (
-                  <View
-                    key={dayIdx}
-                    style={{
-                      width: GRID_COL_WIDTH,
-                      borderLeftWidth: StyleSheet.hairlineWidth,
-                      borderLeftColor: theme.border,
-                      paddingHorizontal: 2,
-                      paddingVertical: 5,
-                      gap: 2,
-                      overflow: 'hidden',
-                      position: 'relative',
-                    }}
-                  >
-                    {visibleEvents.map(event => (
-                      <TouchableOpacity
+                  <View key={dayIdx} style={[wx.allDayCol, { width: GRID_COL_WIDTH }]}>
+                    {shown.map(event => (
+                      <Pressable
                         key={event.id}
-                        style={{
-                          height: 22,
-                          backgroundColor: (event.color || theme.textMuted) + '30',
-                          borderRadius: radius.sm + 1,
-                          borderLeftWidth: 3,
-                          borderLeftColor: event.color || theme.textMuted,
-                          paddingLeft: 4,
-                          paddingRight: overflowCount > 0 ? 22 : 4,
-                          justifyContent: 'center',
-                          overflow: 'hidden',
-                        }}
                         onPress={() => onEventPress(event)}
-                        activeOpacity={0.75}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${event.title}, all day`}
+                        style={({ pressed }) => ({ opacity: pressed ? metrics.pressedOpacity : 1 })}
                       >
-                        <Text
-                          style={[styles.allDayChipText, { color: theme.textPrimary }]}
-                          numberOfLines={1}
-                        >
-                          {event.title}
-                        </Text>
-                      </TouchableOpacity>
+                        <CalendarBlock variant="allDay" title={event.title} color={eventBlockColor(event)} />
+                      </Pressable>
                     ))}
-                    {allDayExpanded && dayAllEvents.length > 1 && (
-                      <Text style={[styles.allDayMore, { color: theme.textSecondary }]}>
-                        +{dayAllEvents.length - 1} more
-                      </Text>
-                    )}
-                    {!allDayExpanded && overflowCount > 0 && (
-                      <View style={[styles.allDayOverflow, { backgroundColor: theme.textSecondary + '30' }]}>
-                        <Text style={[styles.allDayOverflowText, { color: theme.textSecondary }]}>
-                          +{overflowCount}
+                    {hiddenCount > 0 || (allDayExpanded && all.length > 1) ? (
+                      <Pressable onPress={onToggleAllDay} hitSlop={metrics.hitSlop} accessibilityRole="button" style={wx.more}>
+                        <Text style={[type.meta, tabular, { color: c.muted }]}>
+                          {hiddenCount > 0 ? `+${hiddenCount} more` : 'Less'}
                         </Text>
-                      </View>
-                    )}
+                        {hiddenCount > 0 ? (
+                          <ChevronDown size={size.icon.caret} color={c.muted} strokeWidth={metrics.iconStroke} />
+                        ) : (
+                          <ChevronUp size={size.icon.caret} color={c.muted} strokeWidth={metrics.iconStroke} />
+                        )}
+                      </Pressable>
+                    ) : anyOverflow && !allDayExpanded ? (
+                      // Keep the chips on one line across days.
+                      <View style={wx.morePlaceholder} />
+                    ) : null}
                   </View>
                 );
               })}
             </View>
           )}
 
-          {/* Row 3: Time grid */}
+          {/* Row 3: time grid */}
           <ScrollView
             ref={timeGridScrollRef}
-            style={{ flex: 1 }}
+            style={wx.flex}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ height: TOTAL_GRID_HEIGHT }}
+            // Room under 11 PM so the last slots clear the + button (GOTCHAS #9).
+            contentContainerStyle={{ height: TOTAL_GRID_HEIGHT + FAB_CLEARANCE }}
             onLayout={() => {
               const windowChanged = lastLayoutWindow.current !== null && lastLayoutWindow.current !== windowKey;
               lastLayoutWindow.current = windowKey;
@@ -310,18 +257,14 @@ function WeekViewInner({
               }, 100);
             }}
             onScroll={(e) => {
-              timeLabelScrollRef.current?.scrollTo({
-                y: e.nativeEvent.contentOffset.y,
-                animated: false,
-              });
+              timeLabelScrollRef.current?.scrollTo({ y: e.nativeEvent.contentOffset.y, animated: false });
             }}
             scrollEventThrottle={16}
           >
-            <View style={{ flexDirection: 'row', height: TOTAL_GRID_HEIGHT }}>
+            <View style={[wx.row, { height: TOTAL_GRID_HEIGHT }]}>
               {weekDays.map((day, dayIdx) => {
                 const dateKey = toLocalDateStr(day);
-                const currentDay = isToday(day);
-                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                const today = isToday(day);
                 const dayEvents = (eventsByDay[dateKey] || []).filter(e => !isEventAllDay(e) && e.startTime);
 
                 const allLayoutEvents = dayEvents.map(event => {
@@ -366,7 +309,7 @@ function WeekViewInner({
                   }
                 }
                 // For each event, totalLanes = max simultaneous events during its duration.
-                // This means non-overlapping events keep full width; only truly concurrent
+                // Non-overlapping events keep full width; only truly concurrent
                 // events split the column — matching the web calendar behaviour.
                 for (const le of layoutEvents) {
                   const checkTimes = [le.startMin, ...layoutEvents.map(x => x.startMin).filter(t => t > le.startMin && t < le.endMin)];
@@ -378,10 +321,9 @@ function WeekViewInner({
                   laneAssignment.get(le.event.id)!.totalLanes = max;
                 }
 
-                const colPad = 2;
+                const colPad = K.colPad;
                 const usableWidth = GRID_COL_WIDTH - colPad * 2;
                 const minLaneWidth = GRID_COL_WIDTH * 0.55;
-                const STACK_OFFSET = 10;
 
                 return (
                   <Pressable
@@ -389,9 +331,9 @@ function WeekViewInner({
                     style={{
                       width: GRID_COL_WIDTH,
                       height: TOTAL_GRID_HEIGHT,
-                      borderLeftWidth: StyleSheet.hairlineWidth,
-                      borderLeftColor: theme.border,
-                      backgroundColor: currentDay ? theme.primary + '0D' : isWeekend ? theme.border + '30' : 'transparent',
+                      borderLeftWidth: size.border,
+                      borderLeftColor: c.hairline,
+                      backgroundColor: today ? c.todayColumn : 'transparent',
                     }}
                     onLongPress={(e) => {
                       const hour = Math.min(23, Math.max(0, Math.floor(e.nativeEvent.locationY / HOUR_HEIGHT)));
@@ -401,109 +343,64 @@ function WeekViewInner({
                     {HOUR_LABELS.map((_, hourIdx) => (
                       <View
                         key={hourIdx}
-                        style={{
-                          position: 'absolute',
-                          top: hourIdx * HOUR_HEIGHT,
-                          left: 0,
-                          right: 0,
-                          height: 1,
-                          backgroundColor: theme.border,
-                          opacity: 0.6,
-                        }}
+                        style={[wx.hourLine, { top: hourIdx * HOUR_HEIGHT, backgroundColor: c.hairline }]}
                       />
                     ))}
-
-                    {currentDay && (
-                      <View
-                        pointerEvents="none"
-                        style={{
-                          position: 'absolute',
-                          left: 0,
-                          width: GRID_COL_WIDTH,
-                          top: (nowMinutes / 60) * HOUR_HEIGHT - 1,
-                          zIndex: 10,
-                        }}
-                      >
-                        <View style={[styles.nowDot, { backgroundColor: theme.primary }]} />
-                        <View style={[styles.nowLine, { backgroundColor: theme.primary, width: GRID_COL_WIDTH }]} />
-                      </View>
-                    )}
 
                     {layoutEvents.map(({ event, startMin, endMin }) => {
                       const top = (startMin / 60) * HOUR_HEIGHT;
                       const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, MIN_EVENT_HEIGHT);
-                      const eventColor = event.color || theme.textMuted;
                       const la = laneAssignment.get(event.id);
                       const lane = la?.lane ?? 0;
                       const tl = la?.totalLanes ?? 1;
                       const naturalLaneWidth = usableWidth / tl;
                       const stacking = naturalLaneWidth < minLaneWidth && tl > 1;
-                      const left = stacking
-                        ? colPad + lane * STACK_OFFSET
-                        : colPad + lane * naturalLaneWidth;
+                      const left = stacking ? colPad + lane * K.stackOffset : colPad + lane * naturalLaneWidth;
                       const rawBlockWidth = stacking
-                        ? Math.max(usableWidth - lane * STACK_OFFSET, minLaneWidth)
+                        ? Math.max(usableWidth - lane * K.stackOffset, minLaneWidth)
                         : naturalLaneWidth - 1;
                       const blockWidth = Math.min(rawBlockWidth, GRID_COL_WIDTH - left - colPad);
-                      const zIndex = stacking ? 1 + lane : 1;
-
                       const overlapCount = overlapCounts.get(event.id) ?? 0;
 
                       return (
-                        // Solid card base under the colour tint so stacked
-                        // blocks don't blend through each other.
-                        <TouchableOpacity
+                        <Pressable
                           key={event.id}
-                          style={{
-                            position: 'absolute',
-                            top,
-                            left,
-                            width: blockWidth,
-                            height,
-                            backgroundColor: theme.card,
-                            borderRadius: radius.md,
-                            overflow: 'hidden',
-                            zIndex,
-                          }}
                           onPress={() => onEventPress(event)}
-                          activeOpacity={0.75}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${event.title}, ${formatClockRange(event.startTime, event.endTime)}`}
+                          style={({ pressed }) => [
+                            wx.block,
+                            {
+                              top,
+                              left,
+                              width: blockWidth,
+                              height,
+                              zIndex: stacking ? 1 + lane : 1,
+                              // Solid base so stacked blocks don't blend through.
+                              backgroundColor: c.bg,
+                              opacity: pressed ? metrics.pressedOpacity : 1,
+                            },
+                          ]}
                         >
-                          {/* Contrast-safe tint: colour wash + ink text, like the all-day chips */}
-                          <View style={{
-                            flex: 1,
-                            flexDirection: 'row',
-                            backgroundColor: eventColor + '30',
-                          }}>
-                            <View style={{
-                              width: 4,
-                              backgroundColor: eventColor,
-                              borderTopLeftRadius: radius.md,
-                              borderBottomLeftRadius: radius.md,
-                            }} />
-                            <View style={{ flex: 1, paddingHorizontal: 5, paddingTop: 4, overflow: 'hidden' }}>
-                              <Text
-                                style={[styles.blockTitle, { color: theme.textPrimary }]}
-                                numberOfLines={2}
-                              >
-                                {event.title}
-                              </Text>
-                              {height > 34 && event.startTime && (
-                                <Text style={[styles.blockTime, { color: theme.textSecondary }]}>
-                                  {formatTimeShort(event.startTime)}
-                                </Text>
-                              )}
+                          <CalendarBlock
+                            title={event.title}
+                            time={formatClockRange(event.startTime, event.endTime)}
+                            color={eventBlockColor(event)}
+                            height={height}
+                          />
+                          {overlapCount > 0 && (
+                            <View style={[wx.overlapBadge, { backgroundColor: c.surface, borderColor: c.border }]}>
+                              <Text style={[type.tiny, tabular, { color: c.muted }]}>+{overlapCount}</Text>
                             </View>
-                            {overlapCount > 0 && (
-                              <View style={[styles.overlapBadge, { backgroundColor: theme.textPrimary + '22' }]}>
-                                <Text style={[styles.overlapBadgeText, { color: theme.textPrimary }]}>
-                                  +{overlapCount}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
-                        </TouchableOpacity>
+                          )}
+                        </Pressable>
                       );
                     })}
+
+                    {/* Now: 2dp line + dot across today, faint 1dp elsewhere */}
+                    <View pointerEvents="none" style={[wx.now, { top: nowY - (today ? metrics.divider.nowDot / 2 : 0) }]}>
+                      {today ? <NowLine /> : <NowLine faint />}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -515,13 +412,11 @@ function WeekViewInner({
 
       {/* Empty window hint — grid stays interactive underneath */}
       {isEmpty && (
-        <View pointerEvents="none" style={styles.emptyOverlay}>
-          <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Ionicons name="calendar-outline" size={28} color={theme.textMuted} />
-            <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>No events this week</Text>
-            <Text style={[styles.emptyDesc, { color: theme.textMuted }]}>
-              Long-press a time slot to add a task.
-            </Text>
+        <View pointerEvents="none" style={wx.emptyOverlay}>
+          <View style={[wx.emptyCard, { backgroundColor: c.surface, borderColor: c.border }]}>
+            <CalendarDays size={metrics.emptyState.icon} color={c.muted} strokeWidth={metrics.iconStroke} />
+            <Text style={[type.rowTitleMedium, { color: c.text }]}>No events this week</Text>
+            <Text style={[type.meta, wx.center, { color: c.muted }]}>Long-press a time slot to add a task.</Text>
           </View>
         </View>
       )}
@@ -531,90 +426,39 @@ function WeekViewInner({
 
 export const WeekView = memo(WeekViewInner);
 
-const styles = StyleSheet.create({
-  allDayLabel: { fontSize: fontSize.label, fontWeight: fontWeight.medium },
-  hourLabel: {
-    fontSize: fontSize.label,
-    textAlign: 'right',
-    paddingRight: 8,
-    fontWeight: fontWeight.regular,
-    lineHeight: 12,
-    marginTop: -6,
-  },
-  dowName: {
-    fontSize: fontSize.data,
-    fontWeight: fontWeight.medium,
-    marginBottom: 4,
-  },
-  todayCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayCircleText: {
-    fontSize: fontSize.bodyLg,
-    fontWeight: fontWeight.bold,
-    color: '#FFFFFF',
-  },
-  dateNum: { fontSize: fontSize.base, fontWeight: fontWeight.regular },
-  allDayChipText: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold },
-  allDayMore: { fontSize: fontSize.label, textAlign: 'center' },
-  allDayOverflow: {
-    position: 'absolute',
-    right: 4,
-    top: 6,
-    height: 20,
-    minWidth: 20,
-    paddingHorizontal: 4,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  allDayOverflowText: { fontSize: fontSize.label, fontWeight: fontWeight.semibold },
-  nowDot: {
-    position: 'absolute',
-    left: 0,
-    top: -3,
-    width: 8,
-    height: 8,
-    borderRadius: radius.sm,
-  },
-  nowLine: {
-    position: 'absolute',
-    left: 0,
-    height: 2,
-  },
-  blockTitle: {
-    fontSize: fontSize.data,
-    fontWeight: fontWeight.semibold,
-    lineHeight: 13,
-  },
-  blockTime: { fontSize: fontSize.label, marginTop: 1 },
+const wx = StyleSheet.create({
+  root: { flex: 1, flexDirection: 'row' },
+  flex: { flex: 1 },
+  row: { flexDirection: 'row' },
+  dayHead: { alignItems: 'center', justifyContent: 'center', gap: K.dayHeaderGap },
+  todayCircle: { width: K.dateCircle, height: K.dateCircle, borderRadius: K.dateCircle / 2, alignItems: 'center', justifyContent: 'center' },
+  dateNum: { lineHeight: K.dateCircle },
+  allDayGutter: { justifyContent: 'flex-start', paddingTop: K.allDayPadY + K.allDayGap, borderBottomWidth: size.border },
+  allDayRow: { borderBottomWidth: size.border },
+  allDayCol: { paddingHorizontal: K.colPad, paddingVertical: K.allDayPadY, gap: K.allDayGap },
+  more: { flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.toggleGap, alignSelf: 'flex-start' },
+  morePlaceholder: { height: type.meta.lineHeight },
+  hourLabel: { position: 'absolute', left: 0, marginTop: -type.tiny.lineHeight / 2 },
+  hourLine: { position: 'absolute', left: 0, right: 0, height: size.border },
+  block: { position: 'absolute', borderRadius: radii.sm, overflow: 'hidden' },
   overlapBadge: {
     position: 'absolute',
-    bottom: 4,
-    right: 4,
-    borderRadius: radius.lg,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
+    bottom: K.colPad,
+    right: K.colPad,
+    borderRadius: radii.pill,
+    borderWidth: size.border,
+    paddingHorizontal: metrics.badge.padX - 1,
   },
-  overlapBadgeText: { fontSize: fontSize.xxs, fontWeight: fontWeight.semibold },
-  emptyOverlay: {
-    ...StyleSheet.absoluteFill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  now: { position: 'absolute', left: 0, right: 0, zIndex: 10 },
+  emptyOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   emptyCard: {
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 20,
-    paddingHorizontal: 24,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    maxWidth: 260,
+    gap: metrics.emptyState.gap,
+    paddingVertical: metrics.card.padBottom + metrics.card.padTop / 2,
+    paddingHorizontal: metrics.projects.cardPad * 2,
+    borderRadius: radii.card,
+    borderWidth: size.border,
+    maxWidth: metrics.emptyState.maxWidth,
   },
-  emptyTitle: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  emptyDesc: { fontSize: fontSize.xs, textAlign: 'center' },
+  center: { textAlign: 'center' },
 });

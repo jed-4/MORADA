@@ -6,7 +6,7 @@ import { apiFetch } from '../../services/api';
 import { useClientProject } from '../../contexts/ClientProjectContext';
 import { haptic } from '../../lib/haptics';
 import { timeAgo } from '../../lib/format';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, colors as palette } from '../../theme';
 import { markupToDisplay } from '../../components/messages/mentions';
 import { PressableScale } from '../../components/ui/PressableScale';
 import { ClientEmpty, ClientHeader, ClientLoading, ClientOfflineNote } from '../../components/client/ClientUI';
@@ -110,7 +110,7 @@ export default function ClientMessagesScreen() {
                   </View>
                   <View style={styles.body}>
                     <View style={styles.titleLine}>
-                      <Text style={[styles.name, { color: theme.textPrimary, fontWeight: count ? fontWeight.bold : fontWeight.semibold }]} numberOfLines={1}>
+                      <Text style={[styles.name, { color: theme.textPrimary, fontFamily: count ? fonts.bold : fonts.semibold }]} numberOfLines={1}>
                         {item.name}
                       </Text>
                       {!!item.lastMessageAt && <Text style={[styles.time, { color: theme.textMuted }]}>{timeAgo(item.lastMessageAt)}</Text>}
@@ -145,5 +145,5 @@ const styles = StyleSheet.create({
   time: { fontSize: fontSize.xs },
   preview: { fontSize: fontSize.bodySm, lineHeight: 18 },
   badge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
-  badgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: fontWeight.bold },
+  badgeText: { color: palette.onAccent, fontSize: 11, fontFamily: fonts.bold },
 });

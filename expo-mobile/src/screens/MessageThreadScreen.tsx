@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
+  Pressable,
   StyleSheet,
   FlatList,
   ActivityIndicator,
@@ -10,7 +11,9 @@ import {
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { CheckCheck, Eye, Pin } from 'lucide-react-native';
+import { Card, DayDivider, SheetBody, TextButton } from '../components/kit';
+import { CHANNEL_EMOJIS } from '../lib/channelEmojis';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -45,7 +48,7 @@ import type {
   MessageReaction,
   ChannelMember,
 } from '../components/messages/types';
-import { useTheme } from '../theme';
+import { metrics, radii, space, size, type, useColors, useTheme } from '../theme';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { readableFrame } from '../components/ui/ReadableColumn';
 
@@ -57,7 +60,13 @@ import { readableFrame } from '../components/ui/ReadableColumn';
 // required strings at the destructure below.
 type Props = {
   navigation: NativeStackNavigationProp<any>;
-  route: { params?: { channelId?: string; channelName?: string } };
+  route: { params?: { channelId?: string; channelName?: string; focusMessageId?: string } };
+  /** D07: shown in the Messages right pane on the Duo (no back, wide header). */
+  embedded?: boolean;
+  /** Told when the channel's emoji changes, so the Duo list beside it updates. */
+  onChannelChanged?: () => void;
+  /** Told after this channel is marked read, so the Duo list beside it clears its badge. */
+  onMarkedRead?: (channelId: string) => void;
 };
 
 /** Below this scroll offset the inverted list counts as "at the newest". */
@@ -74,6 +83,7 @@ type ChannelMeta = {
   type?: string;
   dmParticipants?: string[] | null;
   isClientFacing?: boolean;
+  emoji?: string | null;
 };
 
 function getSenderName(msg: Message): string {
@@ -103,22 +113,24 @@ type ListItem =
   | { kind: 'divider'; id: string; date: string }
   | { kind: 'seen'; id: string; label: string };
 
-export default function MessageThreadScreen({ navigation, route }: Props) {
+export default function MessageThreadScreen({ navigation, route, embedded, onChannelChanged, onMarkedRead }: Props) {
   // Both params are always supplied when this screen is opened (nav + deep links).
-  const { channelId, channelName } = route.params as { channelId: string; channelName: string };
+  const { channelId, channelName, focusMessageId } = route.params as { channelId: string; channelName: string; focusMessageId?: string };
   const { user } = useAuth();
   const isClient = user?.userCategory === 'client';
   const theme = useTheme();
   const toast = useToast();
+  const k = useColors();
+  // Revamp tokens for the thread's inline colours.
   const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    muted: theme.textMuted,
-    input: theme.background,
+    bg: k.bg,
+    card: k.surface,
+    text: k.text,
+    secondary: k.muted,
+    border: k.border,
+    accent: k.accent,
+    muted: k.muted,
+    input: k.surface,
   };
 
   const [mentionUsers, setMentionUsers] = useState<MentionUser[]>([]);
@@ -138,12 +150,19 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
   const [channelMeta, setChannelMeta] = useState<ChannelMeta | null>(null);
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
   const [pinnedPreview, setPinnedPreview] = useState<Message | null>(null);
+  // The preview sheet shows a pinned message or a search hit that isn't loaded.
+  const [previewTitle, setPreviewTitle] = useState('Pinned message');
+  // Search → open thread: the message to scroll to, briefly tinted.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const jumpTargetRef = useRef<Message | null>(null);
+  const focusedRef = useRef<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [hasNew, setHasNew] = useState(false);
 
   const flatListRef = useRef<FlatList<ListItem>>(null);
   const menuSheetRef = useRef<SheetRef>(null);
   const pinnedSheetRef = useRef<SheetRef>(null);
+  const emojiSheetRef = useRef<SheetRef>(null);
   // Local image assets per optimistic temp id, kept for retries.
   const tempImagesRef = useRef<Record<string, PendingImage[]>>({});
   const isFocused = useIsFocused();
@@ -166,9 +185,13 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
     setHasNew(false);
   }, []);
 
+  // Through a ref so a new callback from the list doesn't re-run the focus effect.
+  const onMarkedReadRef = useRef(onMarkedRead);
+  onMarkedReadRef.current = onMarkedRead;
   const markRead = useCallback(async () => {
     try {
       await apiRequest(`/api/channels/${channelId}/read`, 'POST');
+      onMarkedReadRef.current?.(channelId);
     } catch {
       // silently fail
     }
@@ -222,6 +245,21 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
       // non-critical: presence dot and the CLIENT badge just won't render
     }
   }, [channelId]);
+
+  // Channel / DM icon. Saved straight away; put back if the save fails.
+  const setEmoji = useCallback(async (emoji: string | null) => {
+    emojiSheetRef.current?.dismiss();
+    const before = channelMeta?.emoji ?? null;
+    if (before === emoji) return;
+    setChannelMeta(m => ({ ...(m || {}), emoji }));
+    try {
+      await apiRequest(`/api/channels/${channelId}`, 'PATCH', { emoji });
+      onChannelChanged?.();
+    } catch {
+      setChannelMeta(m => ({ ...(m || {}), emoji: before }));
+      toast.error("Couldn't change the icon");
+    }
+  }, [channelId, channelMeta?.emoji, onChannelChanged, toast]);
 
   const fetchPinned = useCallback(async () => {
     try {
@@ -546,11 +584,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
     if (item.kind === 'divider') {
       return (
         <View style={styles.dividerRow}>
-          <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          <Text style={[styles.dividerText, { color: colors.secondary, backgroundColor: colors.bg }]}>
-            {formatDateDivider(item.date)}
-          </Text>
-          <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          <DayDivider label={formatDateDivider(item.date)} />
         </View>
       );
     }
@@ -558,14 +592,14 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
     if (item.kind === 'seen') {
       return (
         <View style={styles.seenRow}>
-          <Ionicons name="checkmark-done" size={12} color={colors.muted} />
-          <Text style={[styles.seenText, { color: colors.muted }]}>{item.label}</Text>
+          <CheckCheck size={size.icon.caret} color={colors.muted} strokeWidth={metrics.iconStroke} />
+          <Text style={[type.caption, { color: colors.muted }]}>{item.label}</Text>
         </View>
       );
     }
 
     const msg = item.msg;
-    return (
+    const bubble = (
       <MessageBubble
         msg={msg}
         isMe={msg.userId === user?.id}
@@ -582,7 +616,8 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
         onPressFile={openFileAttachment}
       />
     );
-  }, [colors.border, colors.secondary, colors.bg, colors.muted, user?.id, reactionsMap, theme, openMenu, toggleReaction, retrySend, discardFailed, openFileAttachment]);
+    return msg.id === highlightId ? <View style={[styles.highlight, { backgroundColor: k.tint }]}>{bubble}</View> : bubble;
+  }, [colors.border, colors.secondary, colors.bg, colors.muted, user?.id, reactionsMap, theme, openMenu, toggleReaction, retrySend, discardFailed, openFileAttachment, highlightId, k.tint]);
 
   // ── Pinned banner ──
 
@@ -597,9 +632,32 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
       return;
     }
     // Not in the loaded window — show the text rather than paging back to it.
+    setPreviewTitle('Pinned message');
     setPinnedPreview(topPinned);
     pinnedSheetRef.current?.present();
   }, [topPinned, listData]);
+
+  // Opened from message search: scroll to the hit and tint it for a moment.
+  // Older than the loaded window → show it in the preview sheet instead.
+  const showPreview = useCallback((msg: Message) => {
+    setPreviewTitle('Message');
+    setPinnedPreview(msg);
+    pinnedSheetRef.current?.present();
+  }, []);
+  useEffect(() => {
+    if (!focusMessageId || loading || focusedRef.current === focusMessageId) return;
+    focusedRef.current = focusMessageId;
+    const idx = listData.findIndex(r => r.kind === 'message' && r.id === focusMessageId);
+    if (idx >= 0) {
+      const row = listData[idx];
+      jumpTargetRef.current = row.kind === 'message' ? row.msg : null;
+      setHighlightId(focusMessageId);
+      setTimeout(() => flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 }), metrics.sheetSwapMs);
+      setTimeout(() => setHighlightId(h => (h === focusMessageId ? null : h)), metrics.messages.highlightMs);
+      return;
+    }
+    apiFetch<Message>(`/api/messages/${focusMessageId}`).then(showPreview).catch(() => {});
+  }, [focusMessageId, loading, listData, showPreview]);
 
   // Clients can react and copy, but the server refuses them edit, delete and
   // pin (clientAccess ALLOW_RULES), so those actions aren't offered.
@@ -631,9 +689,14 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
         isDm={channelMeta?.type === 'dm'}
         showPresence={dmOtherOnline}
         isClientFacing={!!channelMeta?.isClientFacing}
+        emoji={channelMeta?.emoji}
+        onPressIcon={isClient || !channelMeta ? undefined : () => emojiSheetRef.current?.present()}
         theme={theme}
-        paddingTop={insets.top + 8}
-        onBack={() => navigation.goBack()}
+        paddingTop={embedded ? insets.top : insets.top + 8}
+        onBack={embedded ? undefined : () => navigation.goBack()}
+        wide={embedded}
+        memberCount={embedded ? members.length : undefined}
+        actions={embedded && topPinned ? [{ icon: Pin, label: 'Pinned messages', onPress: handlePressPinned }] : undefined}
       />
 
       {/* Pinned banner */}
@@ -660,7 +723,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
             inverted
             keyExtractor={item => item.id}
             renderItem={renderItem}
-            contentContainerStyle={[styles.messageList, readableFrame]}
+            contentContainerStyle={[styles.messageList, embedded ? styles.messageListWide : readableFrame]}
             onScroll={onScroll}
             scrollEventThrottle={16}
             onEndReached={loadOlder}
@@ -677,7 +740,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
             }
             ListEmptyComponent={
               <View style={styles.emptyThread}>
-                <Text style={[styles.emptyThreadText, { color: colors.secondary }]}>
+                <Text style={[type.body, { color: colors.secondary }]}>
                   No messages yet. Say hello!
                 </Text>
               </View>
@@ -687,7 +750,11 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
             maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
             onScrollToIndexFailed={() => {
               // Target hasn't been measured yet — fall back to the text preview.
-              if (topPinned) {
+              if (jumpTargetRef.current) {
+                showPreview(jumpTargetRef.current);
+                jumpTargetRef.current = null;
+              } else if (topPinned) {
+                setPreviewTitle('Pinned message');
                 setPinnedPreview(topPinned);
                 pinnedSheetRef.current?.present();
               }
@@ -714,9 +781,9 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
           Safe next to the typing overlay — that overlay is absolutely positioned
           within listWrap, so this sibling row stacks under it, never over it. */}
       {clientFacingChannel && !loading && (
-        <View style={[styles.clientHint, { backgroundColor: theme.statusWarningBg }]}>
-          <Ionicons name="eye" size={12} color={theme.statusWarning} />
-          <Text style={[styles.clientHintText, { color: theme.statusWarning }]} numberOfLines={1}>
+        <View style={styles.clientHint}>
+          <Eye size={size.icon.caret} color={k.status.pendingText} strokeWidth={metrics.iconStroke} />
+          <Text style={[type.caption, { color: k.status.pendingText }]} numberOfLines={1}>
             The client can see this channel
           </Text>
         </View>
@@ -731,6 +798,7 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
         onSaveEdit={handleSaveEdit}
         onCancelEdit={cancelEdit}
         onTypingChange={setTyping}
+        wide={embedded}
       />
 
       {/* Long-press message menu */}
@@ -756,18 +824,44 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
         }}
       />
 
+      {/* Channel / DM icon picker — the same set as the web. */}
+      <Sheet ref={emojiSheetRef} title="Icon" scrollable>
+        <SheetBody>
+          <View style={styles.emojiGrid}>
+            {CHANNEL_EMOJIS.map(e => {
+              const on = channelMeta?.emoji === e;
+              return (
+                <Pressable
+                  key={e}
+                  onPress={() => setEmoji(e)}
+                  accessibilityRole="button"
+                  accessibilityLabel={e}
+                  accessibilityState={{ selected: on }}
+                  style={({ pressed }) => [
+                    styles.emojiCell,
+                    on && { backgroundColor: k.tint },
+                    pressed && { opacity: metrics.pressedOpacity },
+                  ]}
+                >
+                  <Text style={styles.emojiGlyph}>{e}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {channelMeta?.emoji ? <TextButton label="Remove icon" tone="danger" center onPress={() => setEmoji(null)} /> : null}
+        </SheetBody>
+      </Sheet>
+
       {/* Pinned message preview (when the message isn't in the loaded window) */}
-      <Sheet ref={pinnedSheetRef} title="Pinned message" scrollable onDismiss={() => setPinnedPreview(null)}>
-        <View style={styles.pinnedSheetBody}>
+      <Sheet ref={pinnedSheetRef} title={previewTitle} scrollable onDismiss={() => setPinnedPreview(null)}>
+        <SheetBody>
           {pinnedPreview && (
-            <>
-              <Text style={[styles.pinnedSheetSender, { color: colors.secondary }]}>
-                {getSenderName(pinnedPreview)}
-              </Text>
+            <Card variant="notes">
+              <Text style={[type.metaSemi, { color: k.text }]}>{getSenderName(pinnedPreview)}</Text>
               <MessageContent content={pinnedPreview.content} isOwn={false} theme={theme} />
-            </>
+            </Card>
           )}
-        </View>
+        </SheetBody>
       </Sheet>
 
       {/* Full-screen attachment viewer */}
@@ -777,28 +871,28 @@ export default function MessageThreadScreen({ navigation, route }: Props) {
   );
 }
 
+const EM = metrics.messages;
+
 const styles = StyleSheet.create({
+  highlight: { borderRadius: radii.md },
+  emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: EM.emojiGridGap, justifyContent: 'center' },
+  emojiCell: { width: EM.emojiCell, height: EM.emojiCell, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center' },
+  emojiGlyph: { fontSize: EM.emojiPick },
   container: { flex: 1 },
-  skeletonThread: { flex: 1, paddingHorizontal: 16, paddingTop: 24, gap: 14 },
+  skeletonThread: { flex: 1, paddingHorizontal: space.screenX, paddingTop: space.screenBottom, gap: metrics.sheet.gap },
   listWrap: { flex: 1 },
-  messageList: { paddingHorizontal: 12, paddingVertical: 12, gap: 4 },
-  olderSpinner: { paddingVertical: 14, alignItems: 'center' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 12, gap: 8 },
-  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
-  dividerText: { fontSize: 12, fontWeight: '500', paddingHorizontal: 8 },
-  seenRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 3, marginTop: 1, marginBottom: 2 },
-  seenText: { fontSize: 11, fontWeight: '500' },
-  emptyThread: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyThreadText: { fontSize: 14 },
-  pinnedSheetBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, gap: 6 },
+  messageList: { paddingHorizontal: space.screenX, paddingVertical: metrics.sheet.gap },
+  messageListWide: { paddingHorizontal: metrics.messages.duoPadX, paddingVertical: metrics.messages.duoThreadPadY },
+  olderSpinner: { paddingVertical: metrics.sheet.gap, alignItems: 'center' },
+  dividerRow: { paddingVertical: metrics.messages.msgGap },
+  seenRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: space.inlineSm, paddingTop: space.inlineSm },
+  emptyThread: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: space.screenBottom * 2 },
   clientHint: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    gap: space.inlineSm,
+    paddingHorizontal: space.screenX,
+    paddingVertical: space.inlineSm,
   },
-  clientHintText: { fontSize: 11, fontWeight: '600' },
-  pinnedSheetSender: { fontSize: 12, fontWeight: '600' },
 });

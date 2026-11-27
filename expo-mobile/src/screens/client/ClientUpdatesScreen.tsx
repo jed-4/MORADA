@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { apiFetch, getAuthedImageSource } from '../../services/api';
 import { useClientProject } from '../../contexts/ClientProjectContext';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, colors as palette } from '../../theme';
 import { diaryPhotoUrls, diaryTextFields, formatDay, sortDiary, type ClientDiaryEntry } from '../../lib/clientPortal';
 import { ClientCard, ClientEmpty, ClientHeader, ClientLoading, ClientOfflineNote } from '../../components/client/ClientUI';
 import { READABLE_MAX_WIDTH, readableFrame } from '../../components/ui/ReadableColumn';
@@ -127,7 +127,7 @@ export default function ClientUpdatesScreen() {
         <Pressable style={styles.viewer} onPress={() => setViewer(null)}>
           {viewer && <Image source={getAuthedImageSource(viewer)} style={styles.viewerImage} resizeMode="contain" />}
           <Pressable onPress={() => setViewer(null)} hitSlop={12} style={[styles.viewerClose, { top: insets.top + 12 }]}>
-            <Ionicons name="close" size={26} color="#FFFFFF" />
+            <Ionicons name="close" size={26} color={palette.onAccent} />
           </Pressable>
         </Pressable>
       </Modal>
@@ -139,15 +139,15 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { paddingHorizontal: 16, paddingBottom: 32, paddingTop: 4 },
   entryHead: { gap: 2, marginBottom: 8 },
-  entryTitle: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
+  entryTitle: { fontSize: fontSize.base, fontFamily: fonts.semibold },
   entryDate: { fontSize: fontSize.bodySm },
   field: { marginBottom: 8 },
-  fieldLabel: { fontSize: 11, fontWeight: fontWeight.semibold, letterSpacing: 0.5, marginBottom: 2 },
+  fieldLabel: { fontSize: 11, fontFamily: fonts.semibold, letterSpacing: 0.5, marginBottom: 2 },
   fieldValue: { fontSize: fontSize.sm, lineHeight: 20 },
   photos: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   photo: { borderRadius: radius.lg },
   byline: { fontSize: fontSize.xs, marginTop: 10 },
-  viewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center' },
+  viewer: { flex: 1, backgroundColor: palette.viewerBg, justifyContent: 'center' },
   viewerImage: { width: '100%', height: '80%' },
   viewerClose: { position: 'absolute', right: 16 },
 });

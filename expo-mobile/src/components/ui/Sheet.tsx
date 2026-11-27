@@ -11,7 +11,7 @@ import {
   type BottomSheetFooterProps,
 } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, fontSize, fontWeight, MAX_FONT_SCALE } from '../../theme';
+import { useColors, MAX_FONT_SCALE, metrics, radii, shadow, size, type } from '../../theme';
 import { haptic } from '../../lib/haptics';
 import { useLayout } from '../../lib/useLayout';
 
@@ -72,7 +72,7 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
   { title, children, snapPoints, scrollable, stackBehavior, onDismiss, footer },
   ref,
 ) {
-  const theme = useTheme();
+  const c = useColors();
   const insets = useSafeAreaInsets();
   const { width, isWide } = useLayout();
   // Equal side margins centre the sheet; the backdrop still covers the screen.
@@ -89,22 +89,26 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
         appearsOnIndex={0}
         disappearsOnIndex={-1}
         pressBehavior="close"
-        opacity={0.45}
+        opacity={1}
+        style={[props.style, { backgroundColor: c.scrim }]}
       />
     ),
-    [],
+    [c.scrim],
   );
 
   const points = useMemo(() => snapPoints, [snapPoints]);
 
+  // Revamp: a plain centred title on the sheet's bg, no rule under it.
   const header = title ? (
-    <View style={[styles.header, { borderBottomColor: theme.border }]}>
-      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.title, { color: theme.textPrimary }]}>{title}</Text>
+    <View style={styles.header}>
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[type.sheetTitle, styles.title, { color: c.text }]} accessibilityRole="header">
+        {title}
+      </Text>
     </View>
   ) : null;
 
   // With a footer, leave room so the last field can scroll clear of it.
-  const contentStyle = { paddingBottom: footer ? FOOTER_SPACE + insets.bottom : insets.bottom + 16 };
+  const contentStyle = { paddingBottom: footer ? metrics.sheet.footerSpace + insets.bottom : insets.bottom + metrics.sheet.padX };
 
   const renderFooter = useCallback(
     (props: BottomSheetFooterProps) => (
@@ -112,14 +116,14 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
         <View
           style={[
             styles.footer,
-            { backgroundColor: theme.card, borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 12) },
+            { backgroundColor: c.bg, borderTopColor: c.border, paddingBottom: Math.max(insets.bottom, metrics.actionBar.padY) },
           ]}
         >
           {footer}
         </View>
       </BottomSheetFooter>
     ),
-    [footer, theme.card, theme.border, insets.bottom],
+    [footer, c.bg, c.border, insets.bottom],
   );
 
   return (
@@ -134,13 +138,20 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
       onAnimate={(_from, to) => {
         if (to === 0) haptic.light();
       }}
-      style={sheetStyle}
+      style={[shadow.sheet, sheetStyle]}
       backdropComponent={renderBackdrop}
       footerComponent={footer ? renderFooter : undefined}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
-      backgroundStyle={{ backgroundColor: theme.card, borderRadius: 20 }}
-      handleIndicatorStyle={{ backgroundColor: theme.borderStrong, width: 40 }}
+      // Revamp v1 (COMPONENTS §24): bg fill, 20 top radius, 36×5 grabber.
+      backgroundStyle={{ backgroundColor: c.bg, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet }}
+      handleStyle={{ paddingTop: metrics.sheet.grabberTop }}
+      handleIndicatorStyle={{
+        backgroundColor: c.grabber,
+        width: metrics.sheet.grabberWidth,
+        height: metrics.sheet.grabberHeight,
+        borderRadius: metrics.sheet.grabberHeight / 2,
+      }}
     >
       {scrollable ? (
         <BottomSheetScrollView
@@ -163,26 +174,18 @@ export const Sheet = forwardRef<BottomSheetModal, SheetProps>(function Sheet(
 /** TextInput that plays nicely with sheet keyboard handling. */
 export { BottomSheetTextInput as SheetTextInput };
 
-/** Room reserved under sheet content for the footer bar (button + padding). */
-const FOOTER_SPACE = 84;
-
 const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: metrics.actionBar.gap,
+    paddingHorizontal: metrics.sheet.padX,
+    paddingTop: metrics.actionBar.padY,
+    borderTopWidth: size.border,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 8,
+    paddingHorizontal: metrics.sheet.padX,
+    paddingTop: metrics.sheet.titlePadTop,
+    paddingBottom: metrics.sheet.titlePadBottom,
   },
-  title: {
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
-  },
+  title: { textAlign: 'center' },
 });

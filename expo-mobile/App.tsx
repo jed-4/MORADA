@@ -2,7 +2,19 @@
 // iOS may launch the app in the background only to deliver a fence event, so
 // the task has to exist before anything else runs.
 import './src/services/siteGeofence';
+// Revamp v1: Inter on every <Text>/<TextInput>. Must run before any screen
+// module renders text (see src/lib/globalFont.tsx).
+import './src/lib/globalFont';
 import { useEffect } from 'react';
+import { View, useColorScheme } from 'react-native';
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter';
+import { colors, darkColors } from './src/theme';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
@@ -28,6 +40,19 @@ function App() {
     reportAppStart();
     checkForOtaUpdate();
   }, []);
+
+  // Inter 400/500/600/700. On a load error we carry on with the system font
+  // rather than block the app.
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
+  const scheme = useColorScheme();
+  if (!fontsLoaded && !fontError) {
+    return <View style={{ flex: 1, backgroundColor: (scheme === 'dark' ? darkColors : colors).bg }} />;
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

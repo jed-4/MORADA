@@ -21,6 +21,8 @@ import { useLayout } from './useLayout';
 
 /** Route param the detail screen sends back to the list on unfold. */
 export const TWO_PANE_SELECT_PARAM = 'twoPaneSelect';
+/** Sent with it so handing back the SAME id a second time still registers. */
+const TWO_PANE_SELECT_AT_PARAM = 'twoPaneSelectAt';
 
 interface Nav {
   navigate: (name: string, params?: any) => void;
@@ -49,9 +51,17 @@ export function useTwoPaneSelection<P extends object>({ navigation, route, detai
 
   const open = useCallback(
     (id: string) => {
-      setSelectedId(id);
       setHeldOnFold(false);
-      if (!isWide) navigation.navigate(detailRoute, paramsRef.current(id));
+      if (isWide) {
+        setSelectedId(id);
+        return;
+      }
+      // Phone / folded: the pushed screen shows it. Leave no selection behind,
+      // or coming back to the list and later unfolding would mount that stale
+      // item on the right (and, for Messages, silently mark it read). An unfold
+      // while the detail is still pushed hands the id back (useReturnToTwoPane).
+      setSelectedId(null);
+      navigation.navigate(detailRoute, paramsRef.current(id));
     },
     [isWide, navigation, detailRoute],
   );
@@ -74,12 +84,13 @@ export function useTwoPaneSelection<P extends object>({ navigation, route, detai
 
   // Unfolded on the detail screen → it popped back here with its id.
   const handedBack = route?.params?.[TWO_PANE_SELECT_PARAM] as string | undefined;
+  const handedBackAt = route?.params?.[TWO_PANE_SELECT_AT_PARAM] as number | undefined;
   useEffect(() => {
     if (handedBack) {
       setSelectedId(handedBack);
       setHeldOnFold(false);
     }
-  }, [handedBack]);
+  }, [handedBack, handedBackAt]);
 
   const narrowDetail = !isWide && heldOnFold && !!selectedId;
 
@@ -124,7 +135,7 @@ export function useReturnToTwoPane({ navigation, listRoute, id, embedded }: Retu
     const state = navigation.getState();
     const below = state?.routes?.[state.index - 1];
     if (below?.name === listRoute) {
-      navigation.popTo(listRoute, { [TWO_PANE_SELECT_PARAM]: id }, { merge: true });
+      navigation.popTo(listRoute, { [TWO_PANE_SELECT_PARAM]: id, [TWO_PANE_SELECT_AT_PARAM]: Date.now() }, { merge: true });
     }
   }, [isWide, embedded, id, listRoute, navigation]);
 }

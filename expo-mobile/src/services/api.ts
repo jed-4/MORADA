@@ -150,7 +150,10 @@ export const apiFetch = async <T>(path: string): Promise<T> => {
 export const getAuthedImageSource = (uri: string): { uri: string; headers?: Record<string, string> } => {
   const absolute = uri.startsWith('http') ? uri : `${API_BASE_URL}${uri}`;
   if (absolute.startsWith(API_BASE_URL) && sessionId) {
-    return { uri: absolute, headers: { 'X-Session-ID': sessionId } };
+    // X-Client is required: the server only honours X-Session-ID when the
+    // request says it's the mobile app (server/auth.ts mobileSessionMiddleware).
+    // Without it every protected photo 401'd and rendered as an empty box.
+    return { uri: absolute, headers: { 'X-Session-ID': sessionId, 'X-Client': 'mobile' } };
   }
   return { uri: absolute };
 };

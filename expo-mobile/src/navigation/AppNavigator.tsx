@@ -3,7 +3,7 @@ import { NavigationContainer, StackActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, AppState, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Pressable, Text, View, useColorScheme } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { usePolling } from '../lib/usePolling';
 import { haptic } from '../lib/haptics';
@@ -13,7 +13,10 @@ import { navigationRef, navigateFromPush } from './navigationRef';
 import { setAppBadgeCount } from '../services/pushNotifications';
 import { handleNotificationAction, registerNotificationCategories } from '../services/notificationActions';
 import { refreshSiteFences } from '../services/siteGeofence';
-import { useTheme, type Theme } from '../theme';
+import { useTheme, fonts, type Theme } from '../theme';
+import { TabBar } from '../components/kit/TabBar';
+import { DESIGN_PREVIEW } from '../lib/designPreview';
+import DesignPreviewScreen from '../screens/dev/DesignPreviewScreen';
 import { goBackOrHome, isFirstRoute } from './back';
 import OfflineFrame from '../components/ui/OfflineBanner';
 import { navigationIntegration } from '../lib/sentry';
@@ -29,6 +32,7 @@ import LoginScreen from '../screens/LoginScreen';
 import ClientNavigator from './ClientNavigator';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import DashboardScreen from '../screens/DashboardScreen';
+import ActivityScreen from '../screens/ActivityScreen';
 import BusinessDashboardScreen from '../screens/BusinessDashboardScreen';
 import ProjectsScreen from '../screens/ProjectsScreen';
 import ProjectDetailScreen from '../screens/ProjectDetailScreen';
@@ -53,6 +57,7 @@ import MessagesScreen from '../screens/MessagesScreen';
 import MessageThreadScreen from '../screens/MessageThreadScreen';
 import ReceiptCaptureScreen from '../screens/ReceiptCaptureScreen';
 import LabourHoursScreen from '../screens/LabourHoursScreen';
+import LabourCodeDetailScreen from '../screens/LabourCodeDetailScreen';
 import DefectsListScreen from '../screens/DefectsListScreen';
 import DefectDetailScreen from '../screens/DefectDetailScreen';
 import DefectCaptureScreen from '../screens/DefectCaptureScreen';
@@ -87,9 +92,10 @@ function withoutShareTarget(state: NavigationState | undefined): NavigationState
 function stackScreenOptions(theme: Theme, headerShown: boolean) {
   return ({ navigation, route }: { navigation: any; route: { key: string } }) => ({
     headerShown,
-    headerStyle: { backgroundColor: theme.card },
+    // Revamp v1: native headers sit on the app canvas, not a white bar.
+    headerStyle: { backgroundColor: theme.background },
     headerTintColor: theme.textPrimary,
-    headerTitleStyle: { fontWeight: '600' as const },
+    headerTitleStyle: { fontFamily: fonts.semibold },
     headerShadowVisible: false,
     headerBackButtonDisplayMode: 'minimal' as const,
     headerLeft: isFirstRoute(navigation, route.key)
@@ -127,6 +133,7 @@ function WorkspaceStack() {
       screenOptions={stackScreenOptions(theme, false)}
     >
       <Stack.Screen name="WorkspaceHome" component={DashboardScreen} />
+      <Stack.Screen name="Activity" component={ActivityScreen} />
       <Stack.Screen name="BusinessDashboard" component={BusinessDashboardScreen} />
       <Stack.Screen
         name="Notifications"
@@ -203,14 +210,16 @@ function ProjectsStack() {
       <Stack.Screen
         name="LabourHours"
         component={LabourHoursScreen}
-        options={projectPageOptions('Labour Hours')}
+        options={{ headerShown: false }}
       />
+      <Stack.Screen name="LabourCodeDetail" component={LabourCodeDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DefectsList" component={DefectsListScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DefectDetail" component={DefectDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen
         name="DefectCapture"
         component={DefectCaptureScreen}
-        options={projectPageOptions('Add defects')}
+        // Revamp v1: a full-screen form over the tab bar (design P12 Add).
+        options={{ headerShown: false, presentation: 'fullScreenModal' }}
       />
       {/* Deliveries: params { projectId, projectName? } / { projectId, poId, poNumber? } */}
       <Stack.Screen name="DeliveriesList" component={DeliveriesListScreen} options={{ headerShown: false }} />
@@ -273,6 +282,9 @@ function MoreStack() {
       />
       <Stack.Screen name="DefectDetail" component={DefectDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
+      {DESIGN_PREVIEW ? (
+        <Stack.Screen name="DesignPreview" component={DesignPreviewScreen} options={{ headerShown: false }} />
+      ) : null}
     </Stack.Navigator>
   );
 }
@@ -363,14 +375,6 @@ function MainTabs() {
     };
   }, []);
 
-  const colors = {
-    bg: theme.background,
-    card: theme.card,
-    border: theme.border,
-    active: theme.primary,
-    inactive: theme.textMuted,
-  };
-
   return (
     <>
       <Tab.Navigator
@@ -380,43 +384,12 @@ function MainTabs() {
         screenListeners={{
           tabPress: () => haptic.select(),
         }}
-        screenOptions={({ route }) => ({
-          tabBarIcon: ({ focused, color, size }) => {
-            let iconName: keyof typeof Ionicons.glyphMap = 'home';
-            if (route.name === 'Workspace') iconName = focused ? 'home' : 'home-outline';
-            else if (route.name === 'Projects') iconName = focused ? 'briefcase' : 'briefcase-outline';
-            else if (route.name === 'Messages') iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
-            else if (route.name === 'Calendar') iconName = focused ? 'calendar' : 'calendar-outline';
-            else if (route.name === 'More') iconName = moreVisible ? 'grid' : 'grid-outline';
-            // Soft plum pill behind the active tab's icon.
-            return (
-              <View
-                style={{
-                  width: 52,
-                  height: 28,
-                  borderRadius: 999,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: focused ? theme.primaryLight : 'transparent',
-                }}
-              >
-                <Ionicons name={iconName} size={22} color={color} />
-              </View>
-            );
-          },
-          tabBarActiveTintColor: colors.active,
-          tabBarInactiveTintColor: colors.inactive,
-          tabBarStyle: {
-            backgroundColor: theme.card,
-            borderTopColor: colors.border,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            height: 74,
-            paddingTop: 8,
-            paddingBottom: 14,
-          },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 3 },
+        // Revamp v1 tab bar (components/kit/TabBar). More shows active while
+        // its sheet is open; the press itself is still intercepted below.
+        tabBar={(props) => <TabBar {...props} activeOverride={moreVisible ? 'More' : null} />}
+        screenOptions={{
           headerShown: false,
-        })}
+        }}
       >
         <Tab.Screen
           name="Workspace"
@@ -511,10 +484,10 @@ export default function AppNavigator() {
           notification: theme.statusDanger,
         },
         fonts: {
-          regular: { fontFamily: 'System', fontWeight: '400' },
-          medium: { fontFamily: 'System', fontWeight: '500' },
-          bold: { fontFamily: 'System', fontWeight: '700' },
-          heavy: { fontFamily: 'System', fontWeight: '800' },
+          regular: { fontFamily: fonts.regular, fontWeight: '400' },
+          medium: { fontFamily: fonts.medium, fontWeight: '500' },
+          bold: { fontFamily: fonts.bold, fontWeight: '700' },
+          heavy: { fontFamily: fonts.bold, fontWeight: '800' },
         },
       }}
     >

@@ -1,17 +1,9 @@
 import { useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Check, Plus, Search } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { metrics, radii, size, space, type, useColors } from '../../theme';
+import { Card, FieldHint, ListRow, SheetHeader } from '../kit';
 import { haptic } from '../../lib/haptics';
 
 export interface PickerOption {
@@ -58,7 +50,7 @@ export function PickerSheet({
   onAdd,
   addHint,
 }: PickerSheetProps) {
-  const theme = useTheme();
+  const c = useColors();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [adding, setAdding] = useState(false);
@@ -111,17 +103,14 @@ export function PickerSheet({
       onRequestClose={close}
       supportedOrientations={['portrait', 'portrait-upside-down', 'landscape', 'landscape-left', 'landscape-right']}
     >
-      <View style={[styles.screen, { backgroundColor: theme.background, paddingBottom: insets.bottom }]}>
-        <View style={[styles.header, { borderBottomColor: theme.border, backgroundColor: theme.card }]}>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>{title}</Text>
-          <Pressable onPress={close} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close">
-            <Text style={[styles.closeText, { color: theme.primary }]}>Done</Text>
-          </Pressable>
+      <View style={[styles.screen, { backgroundColor: c.bg, paddingBottom: insets.bottom }]}>
+        <View style={styles.header}>
+          <SheetHeader title={title} onDone={close} />
         </View>
 
         {showSearch && (
-          <View style={[styles.search, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Ionicons name="search" size={16} color={theme.textMuted} />
+          <View style={[styles.search, { backgroundColor: c.surface, borderColor: c.border }]}>
+            <Search size={metrics.projects.searchIcon} color={c.muted} strokeWidth={metrics.iconStroke} />
             <TextInput
               value={query}
               onChangeText={(t) => {
@@ -129,8 +118,8 @@ export function PickerSheet({
                 setAddError(null);
               }}
               placeholder={onAdd ? 'Search or add' : 'Search'}
-              placeholderTextColor={theme.textMuted}
-              style={[styles.searchInput, { color: theme.textPrimary }]}
+              placeholderTextColor={c.faint}
+              style={[type.body, styles.searchInput, { color: c.text }]}
               autoCorrect={false}
               returnKeyType={canAdd ? 'done' : 'search'}
               onSubmitEditing={() => {
@@ -140,81 +129,48 @@ export function PickerSheet({
             />
           </View>
         )}
-        {onAdd && addHint && !query ? (
-          <Text style={[styles.hint, { color: theme.textMuted }]}>{addHint}</Text>
-        ) : null}
+        {onAdd && addHint && !query ? <View style={styles.hint}><FieldHint>{addHint}</FieldHint></View> : null}
 
-        <FlatList
-          data={filtered}
-          keyExtractor={(o) => o.value}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.list}
-          ListHeaderComponent={
-            <>
-              {canAdd && (
-                <Pressable
-                  onPress={add}
-                  disabled={adding}
-                  style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}
-                  accessibilityRole="button"
-                >
-                  {adding ? (
-                    <ActivityIndicator size="small" color={theme.primary} />
-                  ) : (
-                    <Ionicons name="add-circle-outline" size={20} color={theme.primary} />
-                  )}
-                  <Text style={[styles.rowLabel, { color: theme.primary }]} numberOfLines={2}>
-                    Add “{query.trim()}”
-                  </Text>
-                </Pressable>
-              )}
-              {addError ? <Text style={[styles.error, { color: theme.statusDanger }]}>{addError}</Text> : null}
-              {allowNone && !query && (
-                <Pressable
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.list}>
+          {addError ? <FieldHint tone="danger">{addError}</FieldHint> : null}
+          {canAdd || (allowNone && !query) || filtered.length > 0 ? (
+            <Card variant="list">
+              {canAdd ? (
+                <ListRow
+                  key="__add"
+                  lead={adding ? <ActivityIndicator size="small" color={c.accent} /> : <Plus size={size.icon.row} color={c.accent} strokeWidth={metrics.iconStroke} />}
+                  title={`Add “${query.trim()}”`}
+                  onPress={adding ? undefined : add}
+                />
+              ) : null}
+              {allowNone && !query ? (
+                <ListRow
+                  key="__none"
+                  title={noneLabel}
+                  trailing={!selected ? <Check size={size.icon.row} color={c.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
                   onPress={() => pick(null)}
-                  style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.rowLabel, { color: theme.textSecondary }]}>{noneLabel}</Text>
-                  {!selected && <Ionicons name="checkmark" size={20} color={theme.primary} />}
-                </Pressable>
-              )}
-            </>
-          }
-          renderItem={({ item }) => {
-            const active = item.value === selected;
-            return (
-              <Pressable
-                onPress={() => pick(item)}
-                style={[
-                  styles.row,
-                  { backgroundColor: theme.card, borderColor: active ? theme.primary : theme.border },
-                ]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-              >
-                <View style={styles.rowText}>
-                  <Text style={[styles.rowLabel, { color: theme.textPrimary }]} numberOfLines={2}>
-                    {item.label}
-                  </Text>
-                  {item.hint ? (
-                    <Text style={[styles.rowHint, { color: theme.textMuted }]} numberOfLines={1}>
-                      {item.hint}
-                    </Text>
-                  ) : null}
-                </View>
-                {active && <Ionicons name="checkmark" size={20} color={theme.primary} />}
-              </Pressable>
-            );
-          }}
-          ListEmptyComponent={
-            !canAdd ? (
-              <Text style={[styles.empty, { color: theme.textMuted }]}>
-                {query ? 'Nothing matches.' : 'Nothing to choose from yet.'}
-              </Text>
-            ) : undefined
-          }
-        />
+                />
+              ) : null}
+              {filtered.map((item) => {
+                const active = item.value === selected;
+                return (
+                  <ListRow
+                    key={item.value}
+                    title={item.label}
+                    subtitle={item.hint}
+                    selected={active}
+                    trailing={active ? <Check size={size.icon.row} color={c.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
+                    onPress={() => pick(item)}
+                  />
+                );
+              })}
+            </Card>
+          ) : (
+            <Text style={[type.body, styles.empty, { color: c.muted }]}>
+              {query ? 'Nothing matches.' : 'Nothing to choose from yet.'}
+            </Text>
+          )}
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -222,44 +178,20 @@ export function PickerSheet({
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  title: { fontSize: fontSize.lg, fontWeight: fontWeight.semibold },
-  closeBtn: { minHeight: 44, minWidth: 44, alignItems: 'flex-end', justifyContent: 'center' },
-  closeText: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
+  header: { paddingHorizontal: space.screenX, paddingTop: metrics.sheet.grabberTop },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    margin: 14,
-    marginBottom: 6,
-    paddingHorizontal: 12,
-    minHeight: 44,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
+    gap: space.inline,
+    marginHorizontal: space.screenX,
+    marginBottom: space.inline,
+    paddingHorizontal: metrics.projects.cardPad,
+    minHeight: metrics.projects.searchHeight,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
   },
-  searchInput: { flex: 1, fontSize: fontSize.base, paddingVertical: 8 },
-  hint: { fontSize: fontSize.xs, marginHorizontal: 16, marginBottom: 4 },
-  list: { padding: 14, gap: 8, paddingBottom: 40 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    minHeight: 48,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-  },
-  rowText: { flex: 1, minWidth: 0 },
-  rowLabel: { flex: 1, fontSize: fontSize.base, fontWeight: fontWeight.medium },
-  rowHint: { fontSize: fontSize.xs, marginTop: 2 },
-  error: { fontSize: fontSize.sm, marginBottom: 4 },
-  empty: { textAlign: 'center', marginTop: 30, fontSize: fontSize.sm },
+  searchInput: { flex: 1, paddingVertical: 0 },
+  hint: { marginHorizontal: space.screenX, marginBottom: space.inline },
+  list: { paddingHorizontal: space.screenX, paddingTop: space.inline, paddingBottom: space.screenBottom, gap: space.inline },
+  empty: { textAlign: 'center', paddingTop: space.screenBottom },
 });

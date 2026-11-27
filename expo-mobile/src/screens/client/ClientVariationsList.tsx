@@ -6,7 +6,7 @@ import { apiFetch } from '../../services/api';
 import { useClientProject } from '../../contexts/ClientProjectContext';
 import { haptic } from '../../lib/haptics';
 import { formatMoney } from '../../lib/selections';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts } from '../../theme';
 import {
   approvedVariationTotal,
   formatDay,
@@ -151,11 +151,11 @@ const styles = StyleSheet.create({
   search: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: 10, height: 40, marginBottom: 4 },
   searchInput: { flex: 1, fontSize: fontSize.sm },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 16, marginBottom: 8 },
-  sectionTitle: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, letterSpacing: 0.6 },
+  sectionTitle: { fontSize: fontSize.xs, fontFamily: fonts.semibold, letterSpacing: 0.6 },
   sectionMeta: { fontSize: fontSize.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: radius.xl, padding: 14 },
   rowBody: { flex: 1, gap: 5 },
-  rowTitle: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.medium },
+  rowTitle: { fontSize: fontSize.bodyLg, fontFamily: fonts.medium },
   rowMeta: { fontSize: fontSize.bodySm },
-  amount: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  amount: { fontSize: fontSize.sm, fontFamily: fonts.semibold },
 });

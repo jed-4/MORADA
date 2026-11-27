@@ -1,10 +1,10 @@
 import { memo } from 'react';
 import { View, Text, StyleSheet, Pressable, Image } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { FileText, X } from 'lucide-react-native';
 import { getAuthedImageSource } from '../../services/api';
-import { getInitials } from '../../lib/format';
 import { haptic } from '../../lib/haptics';
-import type { Theme } from '../../theme';
+import { metrics, radii, size, space, tabular, type, useColors, type Theme } from '../../theme';
+import { Avatar } from '../kit';
 import { MessageContent } from './MessageContent';
 import { ReactionPills } from './ReactionPills';
 import type { Message, MessageAttachment, MessageReaction } from './types';
@@ -66,136 +66,118 @@ export const MessageBubble = memo(function MessageBubble({
   onPressImage,
   onPressFile,
 }: MessageBubbleProps) {
-  const initials = getInitials(senderName);
+  const c = useColors();
+  void theme;
   const isTemp = !!(msg.pending || msg.failed);
   const imageAttachments = (msg.attachments || []).filter(isImageAttachment);
   const otherAttachments = (msg.attachments || []).filter(a => !isImageAttachment(a));
   const hasText = msg.content.trim().length > 0;
+  // Revamp (D07): flat rows — avatar · name + time / body. Everyone on the
+  // left; your own name reads "You". Follow-ups from the same sender hang
+  // under the first without repeating the header.
+  const name = isMe ? 'You' : senderName;
 
   return (
-    <View style={[styles.messageRow, isMe && styles.messageRowMe]}>
-      {!isMe && (
-        <View style={styles.avatarCol}>
-          {isFirstFromSender ? (
-            <View style={[styles.avatar, { backgroundColor: theme.primary + '30' }]}>
-              <Text style={[styles.avatarText, { color: theme.primary }]}>{initials}</Text>
-            </View>
-          ) : (
-            <View style={styles.avatarPlaceholder} />
-          )}
-        </View>
-      )}
-      <View style={[styles.bubbleCol, isMe && styles.bubbleColMe]}>
-        {isFirstFromSender && !isMe && (
-          <View style={styles.senderRow}>
-            <Text style={[styles.senderName, { color: theme.textSecondary }]}>{senderName}</Text>
-            <Text style={[styles.messageTime, { color: theme.textMuted }]}>{formatTime(msg.createdAt)}</Text>
+    <View style={[styles.row, isFirstFromSender && styles.rowFirst]}>
+      <View style={styles.avatarCol}>
+        {isFirstFromSender ? <Avatar name={senderName} size="duo" /> : null}
+      </View>
+      <View style={styles.body}>
+        {isFirstFromSender ? (
+          <View style={styles.head}>
+            <Text style={[type.metaSemi, { color: c.text }]}>{name}</Text>
+            <Text style={[type.caption, tabular, { color: c.muted }]}>
+              {msg.pending ? (msg.uploadStatus || 'Sending…') : formatTime(msg.createdAt)}
+            </Text>
           </View>
-        )}
+        ) : null}
         <Pressable
           onPress={msg.failed ? () => onRetry(msg) : undefined}
           onLongPress={isTemp ? undefined : () => { haptic.light(); onLongPress(msg); }}
-          delayLongPress={300}
-          style={[
-            styles.bubble,
-            isMe
-              ? [styles.bubbleMe, { backgroundColor: theme.primary }]
-              : [styles.bubbleOther, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: StyleSheet.hairlineWidth }],
-            (msg.pending || msg.failed) && styles.bubbleUnsent,
-          ]}
+          delayLongPress={metrics.longPressMs}
+          style={[styles.content, isTemp && styles.unsent]}
         >
           {/* Local (still-uploading) images on optimistic temps */}
           {(msg.localUris || []).map((uri, i) => (
-            <Image key={`local-${i}`} source={{ uri }} style={styles.attachmentImage} resizeMode="cover" />
+            <Image key={`local-${i}`} source={{ uri }} style={[styles.image, { backgroundColor: c.greyFill }]} resizeMode="cover" />
           ))}
           {/* Server attachments */}
           {imageAttachments.map(att => (
             <Pressable key={att.id} onPress={() => onPressImage(att)} disabled={isTemp}>
-              <Image
-                source={getAuthedImageSource(att.fileUrl)}
-                style={styles.attachmentImage}
-                resizeMode="cover"
-              />
+              <Image source={getAuthedImageSource(att.fileUrl)} style={[styles.image, { backgroundColor: c.greyFill }]} resizeMode="cover" />
             </Pressable>
           ))}
           {otherAttachments.map(att => (
             <Pressable
               key={att.id}
-              style={styles.fileRow}
+              style={[styles.file, { backgroundColor: c.surface, borderColor: c.border }]}
               onPress={() => onPressFile?.(att)}
               disabled={isTemp || !onPressFile}
-              hitSlop={6}
               accessibilityRole="button"
               accessibilityLabel={`Open ${att.fileName}`}
             >
-              <Ionicons name="document-outline" size={15} color={isMe ? '#FFFFFF' : theme.textSecondary} />
-              <Text
-                style={[styles.fileName, { color: isMe ? '#FFFFFF' : theme.textPrimary, textDecorationLine: 'underline' }]}
-                numberOfLines={1}
-              >
-                {att.fileName}
-              </Text>
+              <FileText size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />
+              <Text style={[type.body, styles.fileName, { color: c.link }]} numberOfLines={1}>{att.fileName}</Text>
             </Pressable>
           ))}
           {hasText && <MessageContent content={msg.content} isOwn={isMe} theme={theme} />}
-          {msg.isEdited ? (
-            <Text style={[styles.editedTag, { color: isMe ? 'rgba(255,255,255,0.7)' : theme.textMuted }]}>
-              (edited)
-            </Text>
-          ) : null}
+          {msg.isEdited ? <Text style={[type.caption, { color: c.muted }]}>edited</Text> : null}
         </Pressable>
 
         <ReactionPills
           reactions={reactions}
           currentUserId={currentUserId}
-          alignRight={isMe}
+          alignRight={false}
           theme={theme}
           onToggle={emoji => onToggleReaction(msg, emoji)}
         />
 
-        {isMe && (
-          msg.failed ? (
-            <View style={styles.failedRow}>
-              <Pressable hitSlop={8} onPress={() => onRetry(msg)}>
-                <Text style={[styles.failedText, { color: theme.statusDanger }]}>Failed — tap to retry</Text>
-              </Pressable>
-              <Pressable hitSlop={8} onPress={() => onDiscard(msg.id)}>
-                <Ionicons name="close-circle" size={15} color={theme.statusDanger} />
-              </Pressable>
-            </View>
-          ) : (
-            <Text style={[styles.messageTimeMe, { color: theme.textMuted }]}>
-              {msg.pending ? (msg.uploadStatus || 'Sending…') : formatTime(msg.createdAt)}
-            </Text>
-          )
-        )}
+        {/* A follow-up has no header, so its send/upload progress goes here —
+            main showed "Sending…" / upload status under every own message. */}
+        {isMe && msg.pending && !isFirstFromSender ? (
+          <Text style={[type.caption, tabular, styles.status, { color: c.muted }]}>
+            {msg.uploadStatus || 'Sending…'}
+          </Text>
+        ) : null}
+
+        {isMe && msg.failed ? (
+          <View style={styles.failed}>
+            <Pressable hitSlop={metrics.hitSlop} onPress={() => onRetry(msg)} accessibilityRole="button">
+              <Text style={[type.caption, { color: c.danger }]}>Didn't send. Tap to retry</Text>
+            </Pressable>
+            <Pressable hitSlop={metrics.hitSlop} onPress={() => onDiscard(msg.id)} accessibilityRole="button" accessibilityLabel="Discard message">
+              <X size={size.icon.meta} color={c.danger} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     </View>
   );
 });
 
+const M = metrics.messages;
+
 const styles = StyleSheet.create({
-  messageRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4, gap: 8 },
-  messageRowMe: { justifyContent: 'flex-end' },
-  avatarCol: { width: 32, alignItems: 'center', justifyContent: 'flex-end' },
-  avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 12, fontWeight: '700' },
-  avatarPlaceholder: { width: 32, height: 32 },
-  bubbleCol: { maxWidth: '75%' },
-  bubbleColMe: { alignItems: 'flex-end' },
-  senderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-  senderName: { fontSize: 12, fontWeight: '600' },
-  messageTime: { fontSize: 11 },
-  messageTimeMe: { fontSize: 11, marginTop: 2 },
-  bubble: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
-  bubbleMe: { borderBottomRightRadius: 4 },
-  bubbleOther: { borderBottomLeftRadius: 4 },
-  bubbleUnsent: { opacity: 0.55 },
-  // ~70% of the bubble's max width on a typical phone
-  attachmentImage: { width: 200, height: 150, borderRadius: 10 },
-  fileRow: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 200 },
-  fileName: { fontSize: 13, flexShrink: 1 },
-  editedTag: { fontSize: 10, marginTop: 1 },
-  failedRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
-  failedText: { fontSize: 11, fontWeight: '600' },
+  row: { flexDirection: 'row', gap: M.msgGap, paddingTop: space.inlineSm },
+  rowFirst: { paddingTop: M.msgGap },
+  avatarCol: { width: metrics.avatar.duo.size },
+  body: { flex: 1, minWidth: 0 },
+  head: { flexDirection: 'row', alignItems: 'baseline', gap: space.inline, marginBottom: metrics.listRow.bodyGap },
+  content: { gap: space.inline, alignSelf: 'stretch' },
+  unsent: { opacity: metrics.disabledOpacity },
+  image: { width: M.attachW, height: M.attachH, borderRadius: radii.lg },
+  file: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.inline,
+    alignSelf: 'flex-start',
+    maxWidth: M.attachW + space.screenBottom * 2,
+    paddingHorizontal: space.cardX,
+    paddingVertical: space.inline,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+  },
+  fileName: { flexShrink: 1 },
+  status: { marginTop: space.inlineSm },
+  failed: { flexDirection: 'row', alignItems: 'center', gap: space.inline, marginTop: space.inlineSm },
 });

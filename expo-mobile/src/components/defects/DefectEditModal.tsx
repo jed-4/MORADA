@@ -12,10 +12,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Trash2 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiRequest } from '../../services/api';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { metrics, space, type, useColors } from '../../theme';
+import { SheetHeader, TextButton } from '../kit';
 import { haptic } from '../../lib/haptics';
 import { useDirtyGuard } from '../../lib/useDirtyGuard';
 import { useKeyboardAwareScroll } from '../../lib/useKeyboardAwareScroll';
@@ -41,7 +42,7 @@ interface Props {
 
 /** Edit a defect's fields (not its stage — that's the action buttons). */
 export function DefectEditModal({ defect, visible, canDelete, onClose, onSaved, onDeleted }: Props) {
-  const theme = useTheme();
+  const c = useColors();
   const insets = useSafeAreaInsets();
   const kb = useKeyboardAwareScroll({ extraSpace: 40 });
   const [refs, setRefs] = useState<DefectRefs>({ locations: [], trades: [], users: [] });
@@ -142,40 +143,43 @@ export function DefectEditModal({ defect, visible, canDelete, onClose, onSaved, 
       supportedOrientations={['portrait', 'portrait-upside-down', 'landscape', 'landscape-left', 'landscape-right']}
     >
       <KeyboardAvoidingView
-        style={[styles.screen, { backgroundColor: theme.background }]}
+        style={[styles.screen, { backgroundColor: c.bg }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-          <Pressable onPress={() => dirty.guard(onClose)} style={styles.headerBtn} accessibilityRole="button">
-            <Text style={[styles.headerBtnText, { color: theme.textSecondary }]}>Cancel</Text>
-          </Pressable>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>Edit defect</Text>
-          <Pressable onPress={save} disabled={saving} style={[styles.headerBtn, styles.headerRight]} accessibilityRole="button">
-            {saving ? (
-              <ActivityIndicator color={theme.primary} />
-            ) : (
-              <Text style={[styles.headerBtnText, { color: theme.primary, fontWeight: fontWeight.semibold }]}>Save</Text>
-            )}
-          </Pressable>
+        {/* Same look as Add defect (P12): Cancel · title · Save, borderless fields, one property card. */}
+        <View style={styles.header}>
+          <SheetHeader
+            title="Edit defect"
+            onCancel={() => dirty.guard(onClose)}
+            doneLabel="Save"
+            onDone={save}
+            doneLoading={saving}
+          />
         </View>
         {fields && defect ? (
-          <ScrollView {...kb.scrollProps} contentContainerStyle={[styles.content, readableFrame, { paddingBottom: insets.bottom + 32 }]}>
-            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Title</Text>
-            <TextInput
-              value={title}
-              onChangeText={setTitle}
-              onFocus={kb.onInputFocus}
-              style={[styles.input, { backgroundColor: theme.card, borderColor: theme.border, color: theme.textPrimary }]}
-              maxLength={200}
-            />
-            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Notes</Text>
-            <TextInput
-              value={description}
-              onChangeText={setDescription}
-              onFocus={kb.onInputFocus}
-              multiline
-              style={[styles.input, styles.multiline, { backgroundColor: theme.card, borderColor: theme.border, color: theme.textPrimary }]}
-            />
+          <ScrollView {...kb.scrollProps} contentContainerStyle={[styles.content, readableFrame, { paddingBottom: insets.bottom + space.screenBottom }]}>
+            <View style={styles.fields}>
+              <TextInput
+                value={title}
+                onChangeText={setTitle}
+                onFocus={kb.onInputFocus}
+                placeholder="Defect title"
+                placeholderTextColor={c.placeholderLarge}
+                style={[type.headingSemi, styles.input, { color: c.text }]}
+                maxLength={200}
+                accessibilityLabel="Title"
+              />
+              <TextInput
+                value={description}
+                onChangeText={setDescription}
+                onFocus={kb.onInputFocus}
+                placeholder="Add notes (optional)"
+                placeholderTextColor={c.placeholderLarge}
+                multiline
+                style={[type.rowTitle, styles.input, { color: c.textLong }]}
+                accessibilityLabel="Notes"
+              />
+            </View>
             <DefectFieldRows
               projectId={defect.projectId}
               value={fields}
@@ -183,23 +187,9 @@ export function DefectEditModal({ defect, visible, canDelete, onClose, onSaved, 
               refs={refs}
               onRefsChange={setRefs}
             />
-            {canDelete && (
-              <Pressable
-                onPress={confirmDelete}
-                disabled={deleting}
-                style={[styles.deleteBtn, { borderColor: theme.statusDanger }]}
-                accessibilityRole="button"
-              >
-                {deleting ? (
-                  <ActivityIndicator color={theme.statusDanger} />
-                ) : (
-                  <>
-                    <Ionicons name="trash-outline" size={18} color={theme.statusDanger} />
-                    <Text style={[styles.deleteText, { color: theme.statusDanger }]}>Delete defect</Text>
-                  </>
-                )}
-              </Pressable>
-            )}
+            {canDelete ? (
+              <TextButton label={deleting ? 'Deleting…' : 'Delete defect'} icon={Trash2} tone="danger" center disabled={deleting} onPress={confirmDelete} />
+            ) : null}
           </ScrollView>
         ) : null}
       </KeyboardAvoidingView>
@@ -209,38 +199,8 @@ export function DefectEditModal({ defect, visible, canDelete, onClose, onSaved, 
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerBtn: { minHeight: 44, minWidth: 64, justifyContent: 'center' },
-  headerRight: { alignItems: 'flex-end' },
-  headerBtnText: { fontSize: fontSize.base },
-  title: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
-  content: { padding: 16, gap: 8 },
-  fieldLabel: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, marginTop: 4 },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.xl,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    minHeight: 48,
-    fontSize: fontSize.base,
-  },
-  multiline: { minHeight: 90, textAlignVertical: 'top', marginBottom: 8 },
-  deleteBtn: {
-    marginTop: 24,
-    minHeight: 48,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  deleteText: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
+  header: { paddingHorizontal: space.screenX, paddingTop: metrics.sheet.grabberTop },
+  content: { paddingHorizontal: space.screenX, paddingTop: space.inlineSm, gap: metrics.defects.formGap },
+  fields: { gap: metrics.defects.fieldGap },
+  input: { paddingVertical: 0, paddingHorizontal: 0 },
 });

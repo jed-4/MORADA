@@ -16,11 +16,12 @@ import {
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Check, ChevronLeft, CircleAlert, Ellipsis, Image as ImageIcon } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../contexts/AuthContext';
 import { apiRequest, uploadPhoto, getAuthedImageSource } from '../services/api';
 
-import { useTheme } from '../theme';
+import { useTheme, useColors, fonts, metrics, radii, size, space, type } from '../theme';
 import type { TextInputInstance } from 'react-native';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { usePreventRemove } from '@react-navigation/native';
@@ -382,22 +383,24 @@ export default function NoteEditorScreen({ navigation, route }: Props) {
   visibilityRef.current = visibility;
 
   const theme = useTheme();
-const colors = {
-    bg: theme.background,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    placeholder: theme.textMuted,
-    toolbarBg: theme.card,
-    toolbarBorder: theme.border,
-    activeBtn: theme.primary,
-    inactiveBtn: theme.textMuted,
-    checkboxBg: theme.border,
-    checkboxChecked: theme.primary,
-    dividerColor: theme.border,
-    danger: theme.statusDanger,
-};
+  const k = useColors();
+  // Revamp tokens: the page is bg, the toolbar sits on the same bg with a 1dp rule.
+  const colors = {
+    bg: k.bg,
+    text: k.textLong,
+    secondary: k.muted,
+    border: k.border,
+    accent: k.accent,
+    placeholder: k.placeholderLarge,
+    toolbarBg: k.bg,
+    toolbarBorder: k.border,
+    activeBtn: k.accent,
+    inactiveBtn: k.faint,
+    checkboxBg: k.border,
+    checkboxChecked: k.accent,
+    dividerColor: k.border,
+    danger: k.danger,
+  };
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -712,14 +715,14 @@ const colors = {
     }
   };
 
-  const getBlockStyle = (type: BlockType) => {
-    switch (type) {
+  const getBlockStyle = (blockType: BlockType) => {
+    switch (blockType) {
       case 'h1':
-        return { fontSize: 26, fontWeight: '700' as const, lineHeight: 34 };
+        return { fontSize: type.heading.fontSize, fontFamily: fonts.bold, lineHeight: type.headingSemi.lineHeight };
       case 'h2':
-        return { fontSize: 20, fontWeight: '600' as const, lineHeight: 28 };
+        return { fontSize: type.pageTitle.fontSize, fontFamily: fonts.semibold, lineHeight: type.pageTitle.lineHeight + space.inlineSm };
       default:
-        return { fontSize: 16, fontWeight: '400' as const, lineHeight: 24 };
+        return { fontSize: type.bodyLong.fontSize, fontFamily: fonts.regular, lineHeight: type.bodyLong.lineHeight };
     }
   };
 
@@ -857,7 +860,7 @@ const colors = {
               },
             ]}
           >
-            {block.checked && <Ionicons name="checkmark" size={14} color="#fff" />}
+            {block.checked && <Check size={size.icon.caret} color={k.onAccent} strokeWidth={metrics.iconStrokeActive} />}
           </TouchableOpacity>
         )}
         {prefix !== '' && (
@@ -877,7 +880,7 @@ const colors = {
             {
               color: block.type === 'todo' && block.checked ? colors.secondary : colors.text,
               fontSize: blockStyle.fontSize,
-              fontWeight: blockStyle.fontWeight,
+              fontFamily: blockStyle.fontFamily,
               lineHeight: blockStyle.lineHeight,
               textDecorationLine: block.type === 'todo' && block.checked ? 'line-through' : 'none',
             },
@@ -1098,7 +1101,7 @@ const colors = {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.accent} />
+          <ChevronLeft size={metrics.pageHeader.back} color={k.accent} strokeWidth={metrics.iconStroke} />
         </TouchableOpacity>
         <View style={styles.saveIndicator}>
           {saveStatus === 'saving' && (
@@ -1109,13 +1112,13 @@ const colors = {
           )}
           {saveStatus === 'saved' && (
             <>
-              <Ionicons name="checkmark-circle" size={16} color={colors.accent} />
-              <Text style={[styles.saveText, { color: colors.accent }]}>Saved</Text>
+              <Check size={size.icon.meta} color={k.muted} strokeWidth={metrics.iconStroke} />
+              <Text style={[styles.saveText, { color: k.muted }]}>Saved</Text>
             </>
           )}
           {saveStatus === 'error' && (
             <TouchableOpacity style={styles.saveIndicator} onPress={() => doSave()}>
-              <Ionicons name="alert-circle" size={16} color={colors.danger} />
+              <CircleAlert size={size.icon.meta} color={k.danger} strokeWidth={metrics.iconStroke} />
               <Text style={[styles.saveText, { color: colors.danger }]}>Unsaved — tap to retry</Text>
             </TouchableOpacity>
           )}
@@ -1125,7 +1128,7 @@ const colors = {
           style={styles.attachBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="image-outline" size={20} color={colors.secondary} />
+          <ImageIcon size={size.icon.header} color={k.icon} strokeWidth={metrics.iconStroke} />
         </TouchableOpacity>
         <TouchableOpacity
           onPress={handleChangeVisibility}
@@ -1208,7 +1211,7 @@ const colors = {
           }}
           style={styles.moreBtn}
         >
-          <Ionicons name="ellipsis-horizontal" size={22} color={colors.secondary} />
+          <Ellipsis size={size.icon.header} color={k.icon} strokeWidth={metrics.iconStroke} />
         </TouchableOpacity>
       </View>
 
@@ -1306,7 +1309,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 8,
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: size.border,
   },
   backBtn: {
     padding: 8,
@@ -1318,10 +1321,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-  saveText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  saveText: { ...type.caption },
   moreBtn: {
     padding: 8,
   },
@@ -1334,18 +1334,8 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    flexGrow: 1,
-  },
-  titleInput: {
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 16,
-    lineHeight: 36,
-    minHeight: 44,
-  },
+  scrollContent: { paddingHorizontal: space.screenX, paddingTop: space.section, flexGrow: 1 },
+  titleInput: { ...type.title, marginBottom: space.section, minHeight: metrics.minHit },
   blockRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1354,7 +1344,7 @@ const styles = StyleSheet.create({
   },
   blockPrefix: {
     paddingTop: Platform.OS === 'ios' ? 0 : 2,
-    fontWeight: '500',
+    fontFamily: fonts.medium,
     width: 24,
   },
   blockInput: {
@@ -1366,8 +1356,8 @@ const styles = StyleSheet.create({
   checkbox: {
     width: 20,
     height: 20,
-    borderRadius: 4,
-    borderWidth: 2,
+    borderRadius: radii.xs + 1,
+    borderWidth: metrics.checkbox.borderWidth,
     marginRight: 10,
     marginTop: 3,
     justifyContent: 'center',
@@ -1408,10 +1398,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  toolbarLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
+  toolbarLabel: { ...type.metaMedium },
   toolbarSpacer: {
     flex: 1,
     minWidth: 20,
@@ -1420,7 +1407,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   toolbarDivider: {
-    width: StyleSheet.hairlineWidth,
+    width: size.border,
     alignSelf: 'stretch',
     marginHorizontal: 6,
     opacity: 0.4,
@@ -1433,25 +1420,21 @@ const styles = StyleSheet.create({
   imageBlock: {
     marginVertical: 8,
     borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: size.border,
     overflow: 'hidden',
   },
   imageBlockCollapsed: {
     marginVertical: 4,
     marginHorizontal: 0,
     borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: size.border,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 8,
   },
-  imageCollapsedName: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  imageCollapsedName: { ...type.metaMedium, flex: 1 },
   imagePlaceholder: {
     height: 200,
     justifyContent: 'center',
@@ -1459,10 +1442,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 8,
   },
-  uploadingText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  uploadingText: { ...type.metaMedium },
   blockImage: {
     width: '100%',
     height: 250,

@@ -1,12 +1,12 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, Platform, Image, ScrollView } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, StyleSheet, Pressable, TextInput, Image, ScrollView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Check, Megaphone, Paperclip, Pencil, SendHorizontal, X } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { getInitials } from '../../lib/format';
 import { haptic } from '../../lib/haptics';
-import { PressableScale } from '../ui/PressableScale';
+import { Avatar } from '../kit';
 import { useToast } from '../ui/Toast';
-import type { Theme } from '../../theme';
+import { metrics, radii, size, space, type, useColors, type Theme } from '../../theme';
 import { markupToDisplay, extractMentions, displayToMarkup, type PendingMention } from './mentions';
 import type { Message } from './types';
 
@@ -51,6 +51,8 @@ interface MessageComposerProps {
    * would otherwise announce "typing" the instant the edit bar opens.
    */
   onTypingChange?: (typing: boolean) => void;
+  /** D07 Duo pane: 24 side padding, no top rule. */
+  wide?: boolean;
 }
 
 export function MessageComposer({
@@ -61,7 +63,11 @@ export function MessageComposer({
   onSaveEdit,
   onCancelEdit,
   onTypingChange,
+  wide,
 }: MessageComposerProps) {
+  const c = useColors();
+  const insets = useSafeAreaInsets();
+  void theme;
   const toast = useToast();
   const [messageText, setMessageText] = useState('');
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
@@ -196,160 +202,149 @@ export function MessageComposer({
     <>
       {/* Mention suggestions */}
       {mentionActive && (broadcastOptions.length > 0 || filteredMentionUsers.length > 0) && (
-        <View style={[styles.mentionList, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <ScrollView style={[styles.mentionList, { backgroundColor: c.surface, borderColor: c.border }]} keyboardShouldPersistTaps="handled">
           {broadcastOptions.map(token => (
-            <PressableScale
+            <Pressable
               key={token}
-              style={[styles.mentionItem, { borderBottomColor: theme.border }]}
+              style={({ pressed }) => [styles.mentionItem, { borderBottomColor: c.border, opacity: pressed ? metrics.pressedOpacity : 1 }]}
               onPress={() => pickBroadcast(token)}
             >
-              <View style={[styles.mentionAvatar, { backgroundColor: theme.primary + '30' }]}>
-                <Ionicons name="megaphone-outline" size={13} color={theme.primary} />
+              <View style={[styles.mentionIcon, { backgroundColor: c.greyFill }]}>
+                <Megaphone size={size.icon.meta} color={c.icon} strokeWidth={metrics.iconStroke} />
               </View>
-              <Text style={[styles.mentionName, { color: theme.textPrimary }]}>@{token}</Text>
-              <Text style={[styles.mentionHint, { color: theme.textMuted }]}>
-                {token === 'channel' ? 'Notify all channel members' : 'Notify active members'}
+              <Text style={[type.body, { color: c.text }]}>@{token}</Text>
+              <Text style={[type.caption, styles.mentionHint, { color: c.muted }]} numberOfLines={1}>
+                {token === 'channel' ? 'Everyone in the channel' : 'Everyone active now'}
               </Text>
-            </PressableScale>
+            </Pressable>
           ))}
           {filteredMentionUsers.map(u => {
             const name = userDisplayName(u);
             return (
-              <PressableScale
+              <Pressable
                 key={u.id}
-                style={[styles.mentionItem, { borderBottomColor: theme.border }]}
+                style={({ pressed }) => [styles.mentionItem, { borderBottomColor: c.border, opacity: pressed ? metrics.pressedOpacity : 1 }]}
                 onPress={() => pickMention(u)}
               >
-                <View style={[styles.mentionAvatar, { backgroundColor: theme.primary + '30' }]}>
-                  <Text style={[styles.mentionInitials, { color: theme.primary }]}>{getInitials(name)}</Text>
-                </View>
-                <Text style={[styles.mentionName, { color: theme.textPrimary }]}>{name}</Text>
-              </PressableScale>
+                <Avatar name={name} />
+                <Text style={[type.body, { color: c.text }]}>{name}</Text>
+              </Pressable>
             );
           })}
-        </View>
-      )}
-
-      {/* Editing banner */}
-      {editingMessage && (
-        <View style={[styles.editBanner, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
-          <Ionicons name="pencil" size={13} color={theme.primary} />
-          <Text style={[styles.editBannerText, { color: theme.textSecondary }]}>Editing message</Text>
-          <Pressable hitSlop={8} onPress={onCancelEdit} style={styles.editBannerClose}>
-            <Text style={[styles.editBannerCancel, { color: theme.primary }]}>Cancel</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {/* Staged image previews */}
-      {pendingImages.length > 0 && !editingMessage && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={[styles.previewStrip, { backgroundColor: theme.card, borderTopColor: theme.border }]}
-          contentContainerStyle={styles.previewStripContent}
-        >
-          {pendingImages.map((img, i) => (
-            <View key={`${img.uri}-${i}`} style={styles.previewWrap}>
-              <Image source={{ uri: img.uri }} style={styles.previewImage} />
-              <Pressable
-                hitSlop={6}
-                style={[styles.previewRemove, { backgroundColor: theme.textPrimary }]}
-                onPress={() => removePendingImage(i)}
-              >
-                <Ionicons name="close" size={12} color={theme.card} />
-              </Pressable>
-            </View>
-          ))}
         </ScrollView>
       )}
 
-      {/* Input bar */}
-      <View style={[styles.inputBar, { backgroundColor: theme.card, borderTopColor: theme.border }]}>
-        {!editingMessage && (
-          <PressableScale style={styles.attachBtn} onPress={pickImages}>
-            <Ionicons name="image-outline" size={22} color={theme.primary} />
-          </PressableScale>
+      <View
+        style={[
+          styles.bar,
+          { backgroundColor: c.bg, borderTopColor: c.border, paddingBottom: Math.max(insets.bottom, metrics.composer.padY) },
+          wide && styles.barWide,
+        ]}
+      >
+        {/* Editing banner */}
+        {editingMessage && (
+          <View style={styles.editBanner}>
+            <Pencil size={size.icon.meta} color={c.muted} strokeWidth={metrics.iconStroke} />
+            <Text style={[type.caption, styles.flex, { color: c.muted }]}>Editing message</Text>
+            <Pressable hitSlop={metrics.hitSlop} onPress={onCancelEdit} accessibilityRole="button">
+              <Text style={[type.meta, { color: c.accent }]}>Cancel</Text>
+            </Pressable>
+          </View>
         )}
-        <TextInput
-          style={[styles.input, { backgroundColor: theme.background, color: theme.textPrimary, borderColor: theme.border }]}
-          placeholder="Message..."
-          placeholderTextColor={theme.textMuted}
-          value={messageText}
-          onChangeText={onChangeInput}
-          multiline
-          maxLength={4000}
-        />
-        <PressableScale
-          style={[styles.sendBtn, { backgroundColor: canSend ? theme.primary : theme.border }]}
-          onPress={submit}
-          disabled={!canSend}
-        >
-          <Ionicons name={editingMessage ? 'checkmark' : 'send'} size={18} color="#ffffff" />
-        </PressableScale>
+
+        {/* Staged image previews */}
+        {pendingImages.length > 0 && !editingMessage && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.previewStripContent} style={styles.previewStrip}>
+            {pendingImages.map((img, i) => (
+              <View key={`${img.uri}-${i}`}>
+                <Image source={{ uri: img.uri }} style={[styles.previewImage, { backgroundColor: c.greyFill }]} />
+                <Pressable
+                  hitSlop={metrics.hitSlop}
+                  style={[styles.previewRemove, { backgroundColor: c.text }]}
+                  onPress={() => removePendingImage(i)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove photo"
+                >
+                  <X size={size.icon.caret} color={c.surface} strokeWidth={metrics.iconStrokeActive} />
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        {/* Input: attach · text · send, in one white box (design ChatInput). */}
+        <View style={[styles.box, { backgroundColor: c.surface, borderColor: c.border }]}>
+          {!editingMessage ? (
+            <Pressable onPress={pickImages} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Attach photos">
+              <Paperclip size={metrics.composer.icon} color={c.icon} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+          ) : null}
+          <TextInput
+            style={[type.body, styles.input, { color: c.text }]}
+            placeholder="Message"
+            placeholderTextColor={c.faint}
+            value={messageText}
+            onChangeText={onChangeInput}
+            multiline
+            maxLength={4000}
+            accessibilityLabel="Message"
+          />
+          <Pressable onPress={submit} disabled={!canSend} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel={editingMessage ? 'Save edit' : 'Send'}>
+            {editingMessage ? (
+              <Check size={metrics.composer.icon} color={canSend ? c.accent : c.faint} strokeWidth={metrics.iconStrokeActive} />
+            ) : (
+              <SendHorizontal size={metrics.composer.icon} color={canSend ? c.accent : c.faint} strokeWidth={metrics.iconStroke} />
+            )}
+          </Pressable>
+        </View>
       </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  mentionList: { borderTopWidth: 1, maxHeight: 240 },
+  flex: { flex: 1 },
+  mentionList: { borderTopWidth: size.border, maxHeight: metrics.composer.mentionMax },
   mentionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: space.rowGap,
+    paddingHorizontal: space.screenX,
+    paddingVertical: space.inline + space.inlineSm,
+    borderBottomWidth: size.border,
   },
-  mentionAvatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  mentionInitials: { fontSize: 11, fontWeight: '700' },
-  mentionName: { fontSize: 14, fontWeight: '500' },
-  mentionHint: { fontSize: 12, marginLeft: 'auto' },
-  editBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderTopWidth: 1,
+  mentionIcon: { width: metrics.avatar.row.size, height: metrics.avatar.row.size, borderRadius: metrics.avatar.row.size / 2, alignItems: 'center', justifyContent: 'center' },
+  mentionHint: { marginLeft: 'auto', flexShrink: 1 },
+  bar: { paddingHorizontal: space.screenX, paddingTop: metrics.composer.padY, borderTopWidth: size.border, gap: space.inline },
+  barWide: {
+    paddingHorizontal: metrics.messages.duoPadX,
+    paddingTop: metrics.messages.duoComposerTop,
+    paddingBottom: metrics.messages.duoComposerBottom,
+    borderTopWidth: 0,
   },
-  editBannerText: { fontSize: 12, fontWeight: '600' },
-  editBannerClose: { marginLeft: 'auto' },
-  editBannerCancel: { fontSize: 13, fontWeight: '600' },
-  previewStrip: { borderTopWidth: 1, flexGrow: 0 },
-  previewStripContent: { paddingHorizontal: 12, paddingVertical: 8, gap: 8 },
-  previewWrap: { position: 'relative' },
-  previewImage: { width: 56, height: 56, borderRadius: 8 },
+  editBanner: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  previewStrip: { flexGrow: 0 },
+  previewStripContent: { gap: space.inline, paddingTop: space.inlineSm },
+  previewImage: { width: metrics.composer.previewSize, height: metrics.composer.previewSize, borderRadius: radii.lg },
   previewRemove: {
     position: 'absolute',
-    top: -5,
-    right: -5,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    top: -space.inlineSm,
+    right: -space.inlineSm,
+    width: metrics.badge.height,
+    height: metrics.badge.height,
+    borderRadius: metrics.badge.height / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  inputBar: {
+  box: {
+    minHeight: metrics.composer.height,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    paddingBottom: Platform.OS === 'ios' ? 30 : 10,
-    borderTopWidth: 1,
-    gap: 10,
+    alignItems: 'center',
+    gap: metrics.composer.gap,
+    paddingLeft: metrics.composer.padLeft,
+    paddingRight: metrics.composer.padRight,
   },
-  attachBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 10,
-    fontSize: 15,
-    maxHeight: 120,
-  },
-  sendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  input: { flex: 1, paddingTop: space.inline, paddingBottom: space.inline, maxHeight: metrics.composer.inputMax },
 });

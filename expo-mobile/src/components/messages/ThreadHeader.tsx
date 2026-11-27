@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { PressableScale } from '../ui/PressableScale';
-import { PresenceDot } from './PresenceDot';
+import type { ReactNode } from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { ChevronLeft, Hash, type LucideIcon } from 'lucide-react-native';
 import { ClientBadge } from './ClientBadge';
-import { getInitials } from '../../lib/format';
-import type { Theme } from '../../theme';
+import { PresenceDot } from './PresenceDot';
+import { Avatar } from '../kit';
+import { metrics, radii, size, space, type, useColors, type Theme } from '../../theme';
 
 // Thread header: back button + channel/DM title, with a presence dot on the
 // counterpart's avatar for DMs. Channels get no dot — presence is per-person.
@@ -21,7 +21,16 @@ interface ThreadHeaderProps {
   isClientFacing?: boolean;
   theme: Theme;
   paddingTop: number;
-  onBack: () => void;
+  /** Omitted in the Duo right pane: there's nothing to go back to. */
+  onBack?: () => void;
+  /** D07 Duo pane header: big channel icon, name + member count, actions. */
+  wide?: boolean;
+  /** Channel emoji (set on the web); replaces the # when present. */
+  emoji?: string | null;
+  /** Tap the channel / DM icon to change its emoji. Omitted for clients. */
+  onPressIcon?: () => void;
+  memberCount?: number;
+  actions?: { icon: LucideIcon; label: string; onPress: () => void }[];
 }
 
 /** Preserves the Phase-2 title rules: `#channel`, or a humanised dm- fallback. */
@@ -39,44 +48,118 @@ export function ThreadHeader({
   theme,
   paddingTop,
   onBack,
+  wide,
+  emoji,
+  onPressIcon,
+  memberCount,
+  actions,
 }: ThreadHeaderProps) {
-  return (
-    <View style={[styles.header, { paddingTop }]}>
-      <PressableScale haptics onPress={onBack} style={styles.backBtn}>
-        <Ionicons name="chevron-back" size={24} color={theme.primary} />
-      </PressableScale>
-      <View style={styles.headerCenter}>
-        {isDm && (
-          <View style={styles.avatarWrap}>
-            <View style={[styles.avatar, { backgroundColor: theme.primary + '30' }]}>
-              <Text style={[styles.avatarText, { color: theme.primary }]}>
-                {getInitials(formatThreadTitle(channelName, isDm))}
-              </Text>
+  const c = useColors();
+  // The icon is a button when the emoji can be changed from here.
+  const iconWrap = (node: ReactNode) =>
+    onPressIcon ? (
+      <Pressable onPress={onPressIcon} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Change icon">
+        {node}
+      </Pressable>
+    ) : (
+      node
+    );
+  const title = formatThreadTitle(channelName, isDm).replace(/^#/, '');
+  if (wide) {
+    return (
+      <View style={[styles.wideHeader, { paddingTop: paddingTop + M.duoHeaderPadY, borderBottomColor: c.border }]}>
+        {onBack ? (
+          <Pressable onPress={onBack} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
+            <ChevronLeft size={metrics.pageHeader.back} color={c.accent} strokeWidth={metrics.iconStroke} />
+          </Pressable>
+        ) : null}
+        {iconWrap(
+          isDm && !emoji ? (
+            <View>
+              <Avatar name={title} size="duo" />
+              {showPresence ? <PresenceDot theme={theme} ringColor={c.bg} size={9} /> : null}
             </View>
-            {showPresence && <PresenceDot theme={theme} ringColor={theme.card} size={9} />}
-          </View>
+          ) : (
+            <View style={[styles.wideHash, { backgroundColor: c.greyFill }]}>
+              {emoji ? <Text style={{ fontSize: M.emojiDuo }}>{emoji}</Text> : <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
+            </View>
+          ),
         )}
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]} numberOfLines={1}>
-          {formatThreadTitle(channelName, isDm)}
-        </Text>
-        {isClientFacing && !isDm && <ClientBadge theme={theme} showIcon />}
+        <View style={styles.title}>
+          <View style={styles.nameLine}>
+            <Text style={[type.sheetTitle, styles.shrink, { color: c.text }]} numberOfLines={1} accessibilityRole="header">
+              {title}
+            </Text>
+            {isClientFacing && !isDm ? <ClientBadge /> : null}
+          </View>
+          {memberCount ? (
+            <Text style={[type.caption, { color: c.muted }]}>{`${memberCount} ${memberCount === 1 ? 'member' : 'members'}`}</Text>
+          ) : null}
+        </View>
+        {actions?.map(a => (
+          <Pressable key={a.label} onPress={a.onPress} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel={a.label}>
+            <a.icon size={M.duoActionIcon} color={c.accent} strokeWidth={metrics.iconStroke} />
+          </Pressable>
+        ))}
       </View>
-      <View style={{ width: 40 }} />
+    );
+  }
+  return (
+    <View style={[styles.header, { paddingTop, borderBottomColor: c.border }]}>
+      {onBack ? (
+        <Pressable onPress={onBack} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
+          <ChevronLeft size={metrics.pageHeader.back} color={c.accent} strokeWidth={metrics.iconStroke} />
+        </Pressable>
+      ) : null}
+      {iconWrap(
+        isDm && !emoji ? (
+          <View>
+            <Avatar name={title} />
+            {showPresence ? <PresenceDot theme={theme} ringColor={c.bg} size={9} /> : null}
+          </View>
+        ) : (
+          <View style={[styles.hash, { backgroundColor: c.greyFill }]}>
+            {emoji ? <Text style={{ fontSize: M.emojiHeader }}>{emoji}</Text> : <Hash size={size.icon.row} color={c.icon} strokeWidth={metrics.iconStroke} />}
+          </View>
+        ),
+      )}
+      <Text style={[type.sectionTitle, styles.title, { color: c.text }]} numberOfLines={1} accessibilityRole="header">
+        {title}
+      </Text>
+      {isClientFacing && !isDm ? <ClientBadge /> : null}
     </View>
   );
 }
 
+const M = metrics.messages;
+
 const styles = StyleSheet.create({
+  wideHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: metrics.listRow.gap,
+    minHeight: M.duoHeaderHeight,
+    paddingHorizontal: M.duoPadX,
+    paddingBottom: M.duoHeaderPadY,
+    borderBottomWidth: size.border,
+  },
+  wideHash: { width: M.duoIcon, height: M.duoIcon, borderRadius: M.duoIconRadius, alignItems: 'center', justifyContent: 'center' },
+  nameLine: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  shrink: { flexShrink: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: 12,
-    paddingHorizontal: 8,
+    gap: metrics.messages.threadHeaderGap,
+    paddingHorizontal: space.screenX,
+    paddingBottom: space.inline + space.inlineSm,
+    borderBottomWidth: size.border,
   },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  avatarWrap: { width: 26, height: 26 },
-  avatar: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 10, fontWeight: '700' },
-  headerTitle: { fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  hash: {
+    width: metrics.avatar.row.size,
+    height: metrics.avatar.row.size,
+    borderRadius: radii.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: { flex: 1 },
 });

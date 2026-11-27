@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AppState, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { useTheme, radius } from '../theme';
+import { useTheme, radius, fonts } from '../theme';
 import { haptic } from '../lib/haptics';
 import { authenticate, getBiometricSupport, RELOCK_AFTER_MS, setAppLockedNow, useAppLockEnabled } from '../lib/appLock';
 
@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   cover: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 14 },
   logo: { width: 88, height: 88, borderRadius: 20, marginBottom: 6 },
-  title: { fontSize: 20, fontWeight: '700' },
+  title: { fontSize: 20, fontFamily: fonts.bold },
   unlockBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -154,8 +154,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     marginTop: 10,
   },
-  unlockText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  unlockText: { color: '#fff', fontSize: 16, fontFamily: fonts.semibold },
   hint: { fontSize: 13, textAlign: 'center' },
   signOut: { marginTop: 18 },
-  signOutText: { fontSize: 14, fontWeight: '600' },
+  signOutText: { fontSize: 14, fontFamily: fonts.semibold },
 });

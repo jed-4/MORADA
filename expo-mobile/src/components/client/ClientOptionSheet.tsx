@@ -3,7 +3,7 @@ import DocumentViewer, { type ViewableDocument } from '../DocumentViewer';
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, size, colors as palette } from '../../theme';
 import { formatMoney, prettifySpecKey, type SelectionOption } from '../../lib/selections';
 import { selectionPhotoSource } from '../../services/selectionsOffline';
 import { ClientStatusPill } from './ClientUI';
@@ -138,7 +138,7 @@ export default function ClientOptionSheet({
               {specs.length > 0 && (
                 <View style={[styles.specs, { borderColor: theme.border, backgroundColor: theme.card }]}>
                   {specs.map(([key, value], i) => (
-                    <View key={key} style={[styles.specRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border }]}>
+                    <View key={key} style={[styles.specRow, i > 0 && { borderTopWidth: size.border, borderTopColor: theme.border }]}>
                       <Text style={[styles.specKey, { color: theme.textSecondary }]}>{prettifySpecKey(key)}</Text>
                       <Text style={[styles.specValue, { color: theme.textPrimary }]}>{String(value)}</Text>
                     </View>
@@ -188,7 +188,7 @@ export default function ClientOptionSheet({
                   disabled={choosing}
                   style={({ pressed }) => [styles.choose, { backgroundColor: theme.primary, opacity: pressed || choosing ? 0.8 : 1 }]}
                 >
-                  {choosing ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.chooseText}>Select this option</Text>}
+                  {choosing ? <ActivityIndicator color={palette.onAccent} /> : <Text style={styles.chooseText}>Select this option</Text>}
                 </Pressable>
               )}
             </View>
@@ -211,8 +211,8 @@ const styles = StyleSheet.create({
   noPhoto: { height: 180, alignItems: 'center', justifyContent: 'center' },
   body: { paddingHorizontal: 16, paddingTop: 12, gap: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  title: { flex: 1, fontSize: fontSize.xl, fontWeight: fontWeight.bold },
-  price: { fontSize: fontSize.lg, fontWeight: fontWeight.semibold },
+  title: { flex: 1, fontSize: fontSize.xl, fontFamily: fonts.bold },
+  price: { fontSize: fontSize.lg, fontFamily: fonts.semibold },
   meta: { fontSize: fontSize.sm },
   tags: { flexDirection: 'row', gap: 6 },
   description: { fontSize: fontSize.sm, lineHeight: 21, marginTop: 4 },
@@ -221,14 +221,14 @@ const styles = StyleSheet.create({
   specKey: { fontSize: fontSize.bodySm, flexShrink: 0 },
   specValue: { fontSize: fontSize.bodySm, flex: 1, textAlign: 'right' },
   link: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
-  linkText: { fontSize: fontSize.sm, fontWeight: fontWeight.medium, flex: 1 },
+  linkText: { fontSize: fontSize.sm, fontFamily: fonts.medium, flex: 1 },
   docs: { gap: 6, marginTop: 4 },
-  docsTitle: { fontSize: 11, fontWeight: fontWeight.semibold, letterSpacing: 0.5 },
+  docsTitle: { fontSize: 11, fontFamily: fonts.semibold, letterSpacing: 0.5 },
   doc: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
   docName: { fontSize: fontSize.sm, flex: 1 },
-  footer: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  footer: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: size.border },
   choose: { borderRadius: radius.lg, paddingVertical: 15, alignItems: 'center' },
-  chooseText: { color: '#FFFFFF', fontSize: fontSize.base, fontWeight: fontWeight.semibold },
+  chooseText: { color: palette.onAccent, fontSize: fontSize.base, fontFamily: fonts.semibold },
   chosenNote: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, justifyContent: 'center' },
   chosenText: { fontSize: fontSize.sm },
 });

@@ -6,25 +6,26 @@ import { Appearance, useColorScheme } from 'react-native';
 // white text.
 const light = {
   // Surfaces
-  background:   '#F9F6F1',
-  card:         '#FFFFFF',
-  nav:          '#F5F0E9',
-  subtle:       '#F1ECF6',
+  // Revamp v1 (Nov 2026): surfaces, borders, text and brand now point at the
+  // approved design tokens below (`colors`). Old names are kept so every
+  // existing screen picks up the new palette without an import change.
+  background:   '#FBFAF8', // colors.bg
+  card:         '#FFFFFF', // colors.surface
+  nav:          '#FBFAF8', // colors.bg — headers sit on the canvas
+  subtle:       '#F3F0F7', // colors.tint
   // Borders
-  // Borders — a step stronger than the web (#EAEAE8 / #D8D7D4) so card
-  // edges still read in direct sunlight.
-  border:       '#DEDCD8',
-  borderStrong: '#C8C5C0',
-  // Text — darkened for outdoor use. WCAG AA (4.5:1) on background, card
-  // and nav: secondary 7.2 / 7.7 / 6.8, muted 5.0 / 5.4 / 4.7.
-  // (Was #6B6560 = 5.3 / 5.7 and #8A8680 = 3.4 / 3.6 — muted failed.)
-  textPrimary:   '#2C2825',
-  textSecondary: '#57524D',
-  textMuted:     '#6E6A64',
+  border:       '#EBE8E3', // colors.border
+  borderStrong: '#D6D1CA', // colors.dashedBorder
+  // Text. Revamp v1 muted is lighter than the old sunlight-tuned #6E6A64
+  // (about 2.9:1 on bg) — approved in the design; revisit if it's hard to
+  // read outdoors.
+  textPrimary:   '#1F1D1B', // colors.text
+  textSecondary: '#6B665F', // colors.icon
+  textMuted:     '#9B968F', // colors.muted
   // Brand
-  primary:      '#87749A',
-  primaryHover: '#7E6A92',
-  primaryLight: '#F1ECF6',
+  primary:      '#7E6C98', // colors.accent
+  primaryHover: '#5F4E78', // colors.link
+  primaryLight: '#F3F0F7', // colors.tint
   // Organic accents
   teal:         '#70CAD0',
   tealLight:    '#E8F6F8',
@@ -37,7 +38,7 @@ const light = {
   rose:         '#D08AAF',
   roseLight:    '#F8ECF2',
   lavender:     '#A68AC7',
-  lavenderLight:'#F1ECF6',
+  lavenderLight:'#F3F0F7',
   // Accent TEXT inks. The accents above are decorative (1.8–2.4:1 on white)
   // — use these when a sage/amber/coral/teal hue has to be READ (labels,
   // counts, small icons). All ≥ 5:1 on background, card and their own wash.
@@ -73,7 +74,7 @@ const dark = {
   // Lifted so muted text clears 4.5:1 on the dark card (was 3.2:1).
   textSecondary: '#B8B4AC',
   textMuted:     '#A6A29A',
-  primary:      '#87749A',
+  primary:      '#7E6C98',
   primaryHover: '#93819F',
   primaryLight: '#4C464A',
   teal:         '#70CAD0',
@@ -156,7 +157,7 @@ export const radius = {
 
 // ── Schedule type colours (mirrors web TYPE_COLORS — task = --primary) ────
 export const typeColors = {
-  task:       '#87749A',
+  task:       '#7E6C98',
   milestone:  '#D4B670',
   inspection: '#82C8A2',
   delivery:   '#70CAD0',
@@ -190,3 +191,606 @@ export function currentTheme(): Theme {
 }
 
 export { light as lightTheme, dark as darkTheme };
+
+// ══════════════════════════════════════════════════════════════════════════
+// Revamp v1 design tokens (approved Nov 2026)
+// Source: design/tokens/theme.ts, measured from the approved Figma frames
+// (file purB3wnrQmpAgjBmG4fQiP, page "Revamp"). The Figma *variables* are an
+// old palette — these values win. New UI imports from here; never inline a
+// hex, font size, radius or spacing value in a screen or component.
+// ══════════════════════════════════════════════════════════════════════════
+
+const designLight = {
+  // Surfaces
+  bg: '#FBFAF8',            // app background (every screen)
+  surface: '#FFFFFF',       // cards, tab bar, inputs
+  border: '#EBE8E3',        // 1px card borders, row dividers, header rules
+  hairline: '#EFECE8',      // calendar/gantt grid lines, thumbnail border
+  track: '#ECE9E4',         // empty part of 3px progress lines
+  greyFill: '#F2F0EC',      // weekend columns, internal events, no-image tiles, empty-state circle
+  avatarFill: '#F1EEEA',    // initials avatars, segmented-control background
+  thumbFill: '#F5F4F2',     // product thumbnail background
+  pillFill: '#F4F2EF',      // Workspace "Project: Choose" pill
+  dashedBorder: '#D6D1CA',  // Add-defect photo tiles
+  grabber: '#DDD9D3',       // bottom-sheet grabber, inactive carousel dot
+  scrim: 'rgba(31,28,26,0.38)', // behind bottom sheets
+
+  // Text
+  text: '#1F1D1B',          // primary text, titles
+  textBody: '#2F2B27',      // calendar event titles, chat/comment bodies
+  textLong: '#3D3934',      // long-form paragraphs: scope bullets, notes
+  textPreview: '#5C5751',   // site-diary 2-line previews
+  muted: '#9B968F',         // ALL secondary text: meta, counts, labels, dates
+  mutedStrong: '#8A857E',   // Workspace only (date line, stage text)
+  faint: '#B4AFA8',         // inactive tabs, bullets, placeholders, "·" separators
+  placeholderLarge: '#C9C4BC', // big borderless field placeholders
+  icon: '#6B665F',          // line icons in lists, initials text
+
+  // Accent (sparingly: active tab, today, links, FAB, checked, progress, unread)
+  accent: '#7E6C98',
+  link: '#5F4E78',
+  tint: '#F3F0F7',
+  todayColumn: '#F6F4F9',
+  accentDisabled: '#DCD5E6',
+  accentLine: 'rgba(126,108,152,0.35)',
+  ganttToday: 'rgba(126,108,152,0.60)',
+  onAccent: '#FFFFFF',
+  onAccentSoft: 'rgba(255,255,255,0.8)', // secondary text on an accent hero
+  photoBadge: 'rgba(0,0,0,0.55)',       // count badge over a photo
+  viewerBg: 'rgba(0,0,0,0.92)',         // full-screen photo viewer
+
+  // Calendar internal (non-project) events
+  internalFill: '#F2F0EC',
+  internalStrip: '#C9C4BC',
+
+  // Status dots (7dp dot + muted word; never pills)
+  status: {
+    done: '#6FBF8E',
+    inProgress: '#7E6C98',
+    upcoming: '#C9C4BC',
+    pending: '#E0A84E',
+    pendingText: '#B7862F',
+    sent: '#6FA0D2',
+    rejected: '#D9776B',
+  },
+
+  // The one warning colour
+  danger: '#C4574B',
+
+  // Scope item type dots
+  type: { scope: '#A595C4', material: '#D9A38F' },
+
+  // Gantt trade colours (bar = tint fill + 3dp strip)
+  trade: {
+    slate: { strip: '#8E9AAF', fill: '#EAEBEC' },
+    blue:  { strip: '#6FA0D2', fill: '#E5ECF2' },
+    teal:  { strip: '#5FB3B3', fill: '#E2EFED' },
+    leave: { strip: '#B9B4AC', fill: '#F0EFEC' },
+  },
+
+  // Fallback project colours (real colours come from project data). Squares render at 90% opacity.
+  projectFallback: ['#B6A6D0', '#E9C866', '#7FCB9B', '#D97C93', '#E58E66', '#6FC1C1', '#8FBF8A', '#F0A868', '#E8A0B4', '#7CC4A0'],
+};
+
+export type DesignColors = typeof designLight;
+
+/**
+ * Dark-mode equivalents. Not part of the approved (light-only) design: same
+ * roles mapped onto the app's existing dark surfaces so dark mode keeps
+ * working. Status / trade / project hues are shared with light.
+ */
+const designDark: DesignColors = {
+  ...designLight,
+  bg: '#302E2A',
+  surface: '#3B3934',
+  border: '#48443E',
+  hairline: '#433F3A',
+  track: '#4A4640',
+  greyFill: '#45423D',
+  avatarFill: '#45423D',
+  thumbFill: '#45423D',
+  pillFill: '#45423D',
+  dashedBorder: '#5A554E',
+  grabber: '#5A554E',
+  scrim: 'rgba(0,0,0,0.5)',
+  text: '#E8E4DC',
+  textBody: '#DDD8CF',
+  textLong: '#D2CDC4',
+  textPreview: '#BDB8AF',
+  muted: '#A6A29A',
+  mutedStrong: '#A6A29A',
+  faint: '#827D76',
+  placeholderLarge: '#6F6A63',
+  icon: '#B8B4AC',
+  accent: '#9C8AB8',
+  link: '#C3B5DA',
+  tint: '#4C464A',
+  todayColumn: '#3A3640',
+  accentDisabled: '#5A5266',
+  accentLine: 'rgba(156,138,184,0.45)',
+  ganttToday: 'rgba(156,138,184,0.70)',
+  internalFill: '#45423D',
+  internalStrip: '#6F6A63',
+  status: { ...designLight.status, pendingText: '#E0A84E', inProgress: '#9C8AB8' },
+  danger: '#EFA39C',
+};
+
+/** Light design colours, for module-level code. Inside components prefer useColors(). */
+export const colors = designLight;
+export const darkColors = designDark;
+
+/** Design colours for the current light/dark scheme. */
+export function useColors(): DesignColors {
+  return useColorScheme() === 'dark' ? designDark : designLight;
+}
+
+/** Design colours for the current scheme, read at call time (non-hook helpers). */
+export function currentColors(): DesignColors {
+  return Appearance.getColorScheme() === 'dark' ? designDark : designLight;
+}
+
+/** Project-colour tint for calendar blocks / agenda: `amount` of the project colour over `base`. */
+export function projectTint(hex: string, amount = 0.16, base: string = designLight.bg): string {
+  const p = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [r1, g1, b1] = p(hex);
+  const [r0, g0, b0] = p(base);
+  const mix = (c: number, b: number) => Math.round(b + (c - b) * amount);
+  return '#' + [mix(r1, r0), mix(g1, g0), mix(b1, b0)].map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+// ─── Typography (Inter) ──────────────────────────────────────────────────
+// Loaded in App.tsx via @expo-google-fonts/inter. Use these explicit families
+// rather than fontWeight: Android won't pick the SemiBold file from a weight.
+export const fonts = {
+  regular: 'Inter_400Regular',
+  medium: 'Inter_500Medium',
+  semibold: 'Inter_600SemiBold',
+  bold: 'Inter_700Bold',
+} as const;
+
+export const type = {
+  display:       { fontFamily: fonts.bold,     fontSize: 30, lineHeight: 36 },
+  displayDuo:    { fontFamily: fonts.bold,     fontSize: 28, lineHeight: 34 },
+  title:         { fontFamily: fonts.bold,     fontSize: 24, lineHeight: 29 },
+  heading:       { fontFamily: fonts.bold,     fontSize: 22, lineHeight: 27 },
+  headingSemi:   { fontFamily: fonts.semibold, fontSize: 22, lineHeight: 29 },
+  pageTitle:     { fontFamily: fonts.bold,     fontSize: 20, lineHeight: 24 },
+  detailTitle:   { fontFamily: fonts.semibold, fontSize: 20, lineHeight: 24 },
+  emptyTitle:    { fontFamily: fonts.regular,  fontSize: 17, lineHeight: 21 },
+  price:         { fontFamily: fonts.regular,  fontSize: 17, lineHeight: 21 },
+  cardTitle:     { fontFamily: fonts.bold,     fontSize: 16, lineHeight: 19 },
+  sheetTitle:    { fontFamily: fonts.semibold, fontSize: 16, lineHeight: 19 },
+  sectionTitle:  { fontFamily: fonts.semibold, fontSize: 15, lineHeight: 18 },
+  // Project overview card headers — a step up so the sections stand out.
+  sectionTitleProminent: { fontFamily: fonts.bold, fontSize: 17, lineHeight: 21 },
+  rowTitle:      { fontFamily: fonts.regular,  fontSize: 15, lineHeight: 18 },
+  rowTitleStrong:{ fontFamily: fonts.semibold, fontSize: 15, lineHeight: 18 },
+  rowTitleMedium:{ fontFamily: fonts.medium,   fontSize: 15, lineHeight: 18 },
+  bodyLong:      { fontFamily: fonts.regular,  fontSize: 15, lineHeight: 22 },
+  checklistItem: { fontFamily: fonts.regular,  fontSize: 15, lineHeight: 21 },
+  body:          { fontFamily: fonts.regular,  fontSize: 14, lineHeight: 17 },
+  bodyRead:      { fontFamily: fonts.regular,  fontSize: 14, lineHeight: 21 },
+  bodyPreview:   { fontFamily: fonts.regular,  fontSize: 14, lineHeight: 20 },
+  meta:          { fontFamily: fonts.regular,  fontSize: 13, lineHeight: 16 },
+  metaMedium:    { fontFamily: fonts.medium,   fontSize: 13, lineHeight: 16 },
+  metaSemi:      { fontFamily: fonts.semibold, fontSize: 13, lineHeight: 16 },
+  caption:       { fontFamily: fonts.regular,  fontSize: 12, lineHeight: 15 },
+  captionSemi:   { fontFamily: fonts.semibold, fontSize: 12, lineHeight: 15 },
+  tile:          { fontFamily: fonts.regular,  fontSize: 11.5, lineHeight: 14 },
+  micro:         { fontFamily: fonts.regular,  fontSize: 11, lineHeight: 13 },
+  tiny:          { fontFamily: fonts.regular,  fontSize: 10, lineHeight: 12 },
+  // Amber CLIENT pill on client-facing channels.
+  badgeLabel:    { fontFamily: fonts.bold,     fontSize: 9,  lineHeight: 11, letterSpacing: 0.5 },
+  ganttName:     { fontFamily: fonts.regular,  fontSize: 12.5, lineHeight: 15 },
+  initials:      { fontFamily: fonts.regular,  fontSize: 9,  lineHeight: 11 },
+  duoTab:        { fontFamily: fonts.regular,  fontSize: 13, lineHeight: 16 },
+} as const;
+
+/** Use on every number that should line up: prices, hours, counts, dates in columns. */
+export const tabular = { fontVariant: ['tabular-nums'] as ('tabular-nums')[] };
+
+// ─── Radii ───────────────────────────────────────────────────────────────
+export const radii = {
+  xs: 2,
+  squareSm: 3,
+  squareMd: 4,
+  sm: 5,
+  seg: 6,
+  md: 8,
+  badge: 9,
+  lg: 10,
+  card: 12,
+  section: 14,
+  sheet: 20,
+  fab: 26,
+  pill: 999,
+} as const;
+
+// ─── Spacing ─────────────────────────────────────────────────────────────
+export const space = {
+  screenX: 16,
+  screenTop: 4,
+  screenBottom: 24,
+  section: 14,
+  sectionRoot: 24,
+  groupHeaderToCard: 8,
+  cardX: 14,
+  rowY: 11,
+  rowGap: 12,
+  propRowY: 10,
+  inline: 6,
+  inlineSm: 4,
+  tabGap: 20,
+  duoPaneX: 24,
+  duoPaneTop: 12,
+  duoMainX: 28,
+} as const;
+
+// ─── Sizes ───────────────────────────────────────────────────────────────
+export const size = {
+  tabBarPhone: 83,
+  tabBarDuo: 56,
+  fab: 52,
+  fabIcon: 24,
+  fabInset: 16,
+  statusDot: 7,
+  typeDot: 6,
+  checkbox: 18,
+  taskCircle: 20,
+  projectSquare: { header: 10, row: 14, card: 18, rail: 16, taskHeader: 12 },
+  thumb: 48,
+  progress: 3,
+  underline: 2,
+  border: 1,
+  icon: { nav: 22, header: 20, row: 16, caret: 12, meta: 13 },
+  railWidth: 88,
+  listPane: { tasks: 400, selections: 420, diary: 400, messages: 380 },
+} as const;
+
+// ─── Elevation: only the FAB and bottom sheets have shadows ──────────────
+export const shadow = {
+  fab: { shadowColor: '#2B2624', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
+  sheet: { shadowColor: '#2B2624', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: -6 }, elevation: 12 },
+} as const;
+
+export const breakpoints = {
+  /** Two-pane layouts when width >= 700 AND width > height. */
+  wide: 700,
+} as const;
+
+// ─── Component geometry (design/COMPONENTS.md) ───────────────────────────
+// The fixed measurements of each shared component, so components/kit never
+// inlines a number. Screens use the components, not these values.
+export const metrics = {
+  iconStroke: 1.7,
+  iconStrokeActive: 1.8,
+  checkStroke: 2.5,
+  disabledOpacity: 0.5,
+  pressedOpacity: 0.6,
+  solidPressedOpacity: 0.9,
+  /** Wait for one sheet to close before presenting the next. */
+  sheetSwapMs: 350,
+  inlineGap: 6,
+  hitSlop: 10,
+  longPressMs: 450,
+  minHit: 44,
+  card: { sectionPad: { top: 14, right: 14, bottom: 6, left: 16 }, sectionGap: 4, padTop: 12, padBottom: 14, notesPadY: 12, duoPad: 4 },
+  square: {
+    radius: { header: 3, taskHeader: 3, row: 4, rail: 4, card: 5 },
+    opacity: 0.9,
+  },
+  pageHeader: { height: 28, padY: 2, gap: 4, tasksTitleGap: 3, projectPadLeft: 8, projectGap: 6, actionGap: 18, back: 22, backTasks: 24, rootAction: 22 },
+  sheetHeader: { height: 44, sideWidth: 70 },
+  underlineTabs: { height: 27, gap: 20, underlineGap: 7, navGap: 14, navIcon: 16 },
+  segmented: { height: 32, pad: 2, gap: 2, segPadY: 5, segPadX: 12 },
+  groupHeader: { height: 18, gap: 8, toggleGap: 4, collapsedRowPad: 11, sectionCardPad: 12, sectionIcon: 16, sectionIconProminent: 18 },
+  listRow: { padY: 11, gap: 12, bodyGap: 2 },
+  propertyRow: { padY: 9, gap: 10, labelWidth: 116, formValueMax: '62%' as const, formPadY: 12, copyIcon: 15, swatch: 12, avatar: 20, valueIcon: 15 },
+  statusDot: { gap: 5 },
+  checkbox: { borderWidth: 1.5, check: 12 },
+  progress: { labelGap: 6, inlineLabelWidth: 56, inlineGap: 10 },
+  fab: { cameraIcon: 22, duoRight: 24, duoBottom: 20 },
+  tabBar: { padTop: 8, padX: 8, minPadBottom: 8, icon: 22, gap: 3, badgeOffsetX: 10, badgeOffsetY: -4, duo: { gap: 24, innerGap: 8, itemHeight: 40, padX: 14 } },
+  filterChip: { gap: 2, padY: 5, padX: 10, innerGap: 5 },
+  captureChip: {
+    workspace: { width: 85, height: 40, icon: 16, gap: 4 },
+    sheet: { width: 114, height: 34, padY: 9, padX: 4, icon: 15, gap: 6 },
+    duo: { width: 99, height: 76, icon: 20, gap: 6 },
+  },
+  sectionTile: { width: 76, height: 64, pad: { top: 9, right: 4, bottom: 9, left: 7 }, icon: 18, gap: 8 },
+  avatar: {
+    row: { size: 28, font: 11 },
+    duo: { size: 32, font: 11 },
+    activity: { size: 22, font: 9 },
+    chip: { size: 20, font: 9 },
+    profile: { size: 40, font: 16 },
+  },
+  badge: { height: 18, padX: 6 },
+  emptyState: { gap: 10, padBottom: 80, circle: 56, icon: 26, maxWidth: 250, areaMinHeight: 336 },
+  sheet: { grabberWidth: 36, grabberHeight: 5, grabberTop: 8, padX: 16, padBottom: 34, gap: 14, titlePadTop: 4, titlePadBottom: 12, footerSpace: 84 },
+  tasksPane: { heldPadLeft: 60, heldPadTop: 14, padX: 24, padTop: 12, propLabel: 110, editIcon: 18 },
+  form: { inputHeight: 44, inputPadX: 14, inputPadY: 11, multilineHeight: 110, labelGap: 6, dateInputWidth: 120, pctInputWidth: 52 },
+  actionBar: { padY: 10, padX: 16, buttonHeight: 39, primaryWidth: 140, primaryHeight: 40, icon: 16, gap: 12, savePadLeft: 20 },
+  thumb: { fallbackIcon: 18, diary: 80 },
+  calendarBlock: {
+    strip: 3,
+    tint: 0.16,
+    tintDark: 0.28,
+    weekPad: { top: 5, right: 5, left: 6 },
+    listPad: { y: 6, right: 8, left: 9 },
+    showTimeMinHeight: 49,
+    allDayHeight: 21,
+    agendaWidth: 3,
+    agendaHeight: 32,
+  },
+  // nameCharWidth: rough average glyph width of type.tiny, to judge whether an
+  // item name fits inside its bar.
+  ganttBar: { height: 22, strip: 3, labelPadX: 6, minLabelWidth: 44, nameCharWidth: 6 },
+  divider: { gap: 10, nowDot: 7, nowLine: 2 },
+  workspace: {
+    contentTop: 8,
+    sectionGap: 28,
+    headerIcon: 22,
+    headerGap: 2,
+    captureGap: 8,
+    chipGap: 6,
+    pill: { padTop: 5, padRight: 8, padBottom: 5, padLeft: 10, gap: 5, icon: 13, caret: 12, maxName: 150 },
+    subLabelPad: { top: 6, bottom: 2 },
+    row: { padY: 11, gap: 10, pin: 12 },
+    agendaRow: { padY: 10, gap: 12 },
+    activityRow: { padY: 9, gap: 10 },
+    maxProjects: 5,
+    maxTimesheets: 5,
+    menuWidth: 220,
+    menuTop: 64,
+    menuIcon: 18,
+    clockGap: 12,
+    duoPadX: 28,
+    duoPadTop: 10,
+    duoColGap: 28,
+    duoLeft: 420,
+  },
+  projects: {
+    contentTop: 8,
+    groupGap: 24,
+    cardGap: 10,
+    groupTopPad: 4,
+    cardPad: 12,
+    cardInnerGap: 12,
+    progressTop: 10,
+    searchHeight: 40,
+    searchGap: 10,
+    searchIcon: 16,
+  },
+  projectDetail: {
+    duoPadX: 28,
+    duoColGap: 24,
+    duoCardGap: 16,
+    duoSide: 340,
+    navHeight: 34,
+    navPad: { top: 6, right: 16, bottom: 6, left: 10 },
+    navGap: 2,
+    contentTop: 8,
+    contentGap: 14,
+    headerGap: 10,
+    metaPadLeft: 28,
+    metaGap: 10,
+    tileGap: 8,
+    cardPadBottom: 6,
+    maxTaskRows: 5,
+    maxDiaryRows: 3,
+    maxNoteRows: 3,
+  },
+  projectTasks: {
+    headerTop: 6,
+    headerBottom: 4,
+    listTop: 16,
+    groupGap: 20,
+    circleOffset: 1,
+    emptyGroupsIcon: 14,
+    boardCardGap: 8,
+    /** Phone board: a column is this share of the screen so the next one peeks in. */
+    boardColumnShare: 0.68,
+    boardColumnMin: 240,
+    /** Duo list pane, slimmer than the TwoPane default so the task gets the room (Jed, 11-21). */
+    listPaneWidth: 300,
+  },
+  schedule: {
+    duoPadX: 24,
+    top: 4,
+    gapList: 14,
+    gapOther: 12,
+    dayLabelGap: 6,
+    dayGroupGap: 14,
+    gantt: {
+      nameCol: 124,
+      nameColWide: 230,
+      rowHeight: 38,
+      headerHeight: 48,
+      // D04 Duo: row pitch 36, header 42.
+      rowHeightWide: 36,
+      headerHeightWide: 42,
+      // "25 ›" marker for work starting past the right edge.
+      offRangeGap: 6,
+      todayCircle: 22,
+      todayLine: 2,
+      barInset: 2,
+      visibleDays: 7,
+      visibleDaysWide: 18,
+      depArrow: 4,
+    },
+    calendar: {
+      headerHeight: 53,
+      gutter: 44,
+      dayWidth: 105,
+      hourHeight: 50,
+      dateCircle: 26,
+      startHour: 6,
+      endHour: 18,
+      blockInset: 3,
+      // All-day strip caps here and scrolls (about three chips).
+      allDayMax: 96,
+      // Month mode: day cell height, item dot size, dots shown per day.
+      monthCell: 44,
+      monthDot: 5,
+      monthDots: 3,
+    },
+  },
+  scope: {
+    gap: 14,
+    itemPadY: 12,
+    checkOffset: 2,
+    itemBodyGap: 3,
+    detailIndent: 30,
+    bulletGap: 8,
+    bullet: 4,
+  },
+  selections: {
+    duoPadX: 24,
+    duoImage: 180,
+    duoImageCard: 220,
+    duoTopGap: 20,
+    duoChatHeight: 30,
+    rowPadY: 10,
+    rowBodyGap: 3,
+    trailingGap: 5,
+    groupLimit: 7,
+    heroImage: 190,
+    heroPad: { top: 18, bottom: 12 },
+    dot: 6,
+    dotGap: 6,
+    titleGap: 4,
+    optionThumb: 48,
+    propLabel: 120,
+    fileIcon: 32,
+  },
+  defects: {
+    propLabel: 84,
+    rowPadY: 10,
+    rowGap: 4,
+    groupGap: 14,
+    photoTile: { height: 84, icon: 22 },
+    capturedThumb: 64,
+    capturedGap: 8,
+    formGap: 16,
+    fieldGap: 8,
+  },
+  diary: {
+    // D06 Duo entry pane
+    duoPadX: 24,
+    duoGap: 18,
+    duoColGap: 20,
+    duoSide: 236,
+    duoPropLabel: 72,
+    duoEditIcon: 18,
+    duoMoreIcon: 20,
+    addPhotoIcon: 24,
+    propLabel: 104,
+    metaTop: 2,
+    blockGap: 18,
+    labelGap: 5,
+    photoGap: 8,
+  },
+  checklists: {
+    menuListMax: 220,
+    rowPadY: 12,
+    rowGap: 7,
+    checkOffset: 1,
+    itemGap: 3,
+  },
+  labour: {
+    gap: 14,
+    summaryGap: 10,
+    summaryRowGap: 6,
+    rowPadTop: 11,
+    rowPadBottom: 12,
+    rowGap: 8,
+    rowInnerGap: 10,
+    codeWidth: 28,
+    barIndent: 38,
+  },
+  calendar: {
+    top: 6,
+    padX: 12,
+    gap: 12,
+    headerArrowGap: 6,
+    headerActionGap: 16,
+    arrow: 18,
+    hourHeight: 52,
+    gutter: 44,
+    dayHeader: 44,
+    dateCircle: 28,
+    dayHeaderGap: 3,
+    allDayPadY: 5,
+    allDayGap: 3,
+    colPad: 3,
+    minEvent: 22,
+    stackOffset: 10,
+    nowLabelClear: 18,
+    filterDot: 8,
+    monthCell: 64,
+    monthToday: 22,
+    filterDotOffset: 2,
+    list: { padX: 16, gap: 16, dayGap: 8, timeCol: 52, rowPadY: 10, rowGap: 12, nowGap: 8, nowDot: 6 },
+  },
+  more: {
+    gap: 14,
+    rowGap: 12,
+    rowHeight: 45,
+    rowPadY: 12,
+    profileHeight: 55,
+    profilePadBottom: 12,
+    profileTextGap: 2,
+    chipGap: 8,
+  },
+  messages: {
+    // D07 Duo conversation pane
+    duoPadX: 24,
+    duoHeaderHeight: 60,
+    duoHeaderPadY: 12,
+    duoIcon: 34,
+    duoIconRadius: 9,
+    duoActionIcon: 18,
+    duoThreadPadY: 16,
+    duoComposerTop: 10,
+    duoComposerBottom: 14,
+    threadHeaderGap: 10,
+    msgGap: 12,
+    attachW: 220,
+    attachH: 160,
+    top: 8,
+    gap: 22,
+    topGap: 12,
+    rowMin: 60,
+    lead: 28,
+    // Channel emoji (set on the web) in place of the # / project square.
+    emoji: 20,
+    emojiHeader: 16,
+    emojiDuo: 20,
+    emojiCell: 44,
+    emojiPick: 26,
+    emojiGridGap: 4,
+    seedPadX: 24,
+    // Search → thread: how long the found message stays tinted.
+    highlightMs: 2500,
+    // Search results: snippet length around the first match.
+    snippetChars: 90,
+    // Amber CLIENT pill (client-facing channels)
+    clientBadge: { padX: 6, padY: 2, gap: 3, icon: 10 },
+  },
+  labourDetail: {
+    titleGap: 4,
+    sectionGap: 8,
+    pillGap: 8,
+    pillInnerGap: 6,
+    pillPadY: 5,
+    pillPadRight: 10,
+    pillPadLeft: 6,
+    logHeaderGap: 8,
+    entryGap: 12,
+    entryPadY: 11,
+    entryMin: 60,
+    entryBodyGap: 3,
+  },
+  composer: { height: 42, padY: 11, padRight: 12, padLeft: 14, gap: 10, icon: 18, inputMax: 120, mentionMax: 240, previewSize: 56 },
+} as const;

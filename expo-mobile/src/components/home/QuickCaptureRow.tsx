@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Alert, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Briefcase, Camera, Check, ChevronDown, Clock, Hammer, Receipt, type LucideIcon } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useRoute } from '@react-navigation/native';
-import { useTheme, radius } from '../../theme';
+import { metrics, radii, size, space, type, useColors } from '../../theme';
 import { Sheet, type SheetRef } from '../ui/Sheet';
-import { SectionHeader } from '../ui/SectionHeader';
-import { PressableScale } from '../ui/PressableScale';
+import { CaptureChip, Card, ListRow, ProjectSquare } from '../kit';
+import { useLayout } from '../../lib/useLayout';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { usePermission } from '../../lib/usePermission';
 import { haptic } from '../../lib/haptics';
@@ -19,10 +19,11 @@ import { haptic } from '../../lib/haptics';
 //   Receipt — Capture Receipt
 //   Defect  — the Defects walkthrough (DefectCapture)
 //   Clock in — only while NOT clocked in (clocked in, the timer card above
-//              already has Clock Out)
+//              already has Clock Out). Opens Timesheets with no project
+//              chosen, so the user picks there (Business (Overhead) included).
 //
-// Each acts on the last project used here (remembered between launches);
-// with none yet, or "Change", it asks with a project list. Buttons the user's
+// The others act on the last project used here (remembered between launches);
+// with none yet, or the "Project:" pill, it asks with a project list. Buttons the user's
 // role can't use are hidden (the server still checks).
 //
 // Fold-safe: the buttons just flex across whatever width they get.
@@ -31,6 +32,7 @@ interface QuickProject {
   id: string;
   name: string;
   projectNumber?: string;
+  color?: string | null;
 }
 
 type Action = 'diary' | 'receipt' | 'defect';
@@ -47,7 +49,7 @@ export function QuickCaptureRow({
   isClockedIn: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
-  const theme = useTheme();
+  const c = useColors();
   const canDiary = usePermission('projects.site_diary', 'add');
   const canDefect = usePermission('projects.defects', 'add');
   const [lastProject, setLastProject] = usePersistedState<{ id: string; name: string } | null>(
@@ -141,103 +143,95 @@ export function QuickCaptureRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captureAt, canDiary]);
 
-  const buttons: Array<{ key: string; icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }> = [
-    ...(canDiary ? [{ key: 'diary', icon: 'camera-outline' as const, label: 'Photo to diary', onPress: () => start('diary') }] : []),
-    { key: 'receipt', icon: 'receipt-outline', label: 'Receipt', onPress: () => start('receipt') },
-    ...(canDefect ? [{ key: 'defect', icon: 'construct-outline' as const, label: 'Defect', onPress: () => start('defect') }] : []),
+  const buttons: Array<{ key: string; icon: LucideIcon; label: string; a11y: string; onPress: () => void }> = [
+    ...(canDiary ? [{ key: 'diary', icon: Camera, label: 'Photo', a11y: 'Photo to diary', onPress: () => start('diary') }] : []),
+    { key: 'receipt', icon: Receipt, label: 'Receipt', a11y: 'Receipt', onPress: () => start('receipt') },
+    ...(canDefect ? [{ key: 'defect', icon: Hammer, label: 'Defect', a11y: 'Defect', onPress: () => start('defect') }] : []),
     ...(!isClockedIn
       ? [{
           key: 'clock',
-          icon: 'time-outline' as const,
+          icon: Clock,
           label: 'Clock in',
+          a11y: 'Clock in',
           onPress: () => { haptic.light(); tabNav.navigate('More', { screen: 'Timesheets' }); },
         }]
       : []),
   ];
 
+  const w = metrics.workspace;
+  const { isWide } = useLayout();
   return (
-    <View style={style}>
-      <SectionHeader title="Quick capture" />
+    <View style={[{ gap: w.captureGap }, style]}>
+      <View style={styles.labelRow}>
+        <Text style={[type.metaSemi, { color: c.muted }]}>Quick capture</Text>
+        <View style={{ flex: 1 }} />
+        <Pressable
+          onPress={changeProject}
+          hitSlop={metrics.hitSlop}
+          accessibilityRole="button"
+          accessibilityLabel={project ? `Project: ${project.name}. Change project` : 'Choose a project'}
+          style={[styles.pill, { backgroundColor: c.pillFill }]}
+        >
+          <Briefcase size={w.pill.icon} color={c.mutedStrong} strokeWidth={metrics.iconStroke} />
+          <Text style={[type.caption, { color: c.mutedStrong }]}>Project:</Text>
+          <Text numberOfLines={1} style={[type.captionSemi, { color: c.link, maxWidth: w.pill.maxName }]}>
+            {project ? project.name : 'Choose'}
+          </Text>
+          <ChevronDown size={w.pill.caret} color={c.muted} strokeWidth={metrics.iconStrokeActive} />
+        </Pressable>
+      </View>
       <View style={styles.row}>
         {buttons.map(b => (
-          <PressableScale
+          <CaptureChip
             key={b.key}
+            icon={b.icon}
+            label={b.label}
             onPress={b.onPress}
-            style={[styles.btn, { backgroundColor: theme.card, borderColor: theme.border }]}
-            accessibilityRole="button"
-            accessibilityLabel={b.key === 'clock' ? 'Clock in' : `${b.label}${project ? ` for ${project.name}` : ''}`}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: theme.primaryLight }]}>
-              <Ionicons name={b.icon} size={24} color={theme.primary} />
-            </View>
-            <Text style={[styles.btnLabel, { color: theme.textPrimary }]} numberOfLines={2}>{b.label}</Text>
-          </PressableScale>
+            // Duo (D01): taller bordered tiles, icon over label.
+            variant={isWide ? 'duo' : 'workspace'}
+            style={styles.chip}
+            accessibilityLabel={b.key === 'clock' ? b.a11y : `${b.a11y}${project ? ` for ${project.name}` : ''}`}
+          />
         ))}
       </View>
-      <TouchableOpacity
-        onPress={changeProject}
-        style={styles.projectLine}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={project ? `Project: ${project.name}. Change project` : 'Choose a project'}
-      >
-        <Ionicons name="briefcase-outline" size={13} color={theme.textMuted} />
-        <Text style={[styles.projectText, { color: theme.textSecondary }]} numberOfLines={1}>
-          {project ? project.name : 'No project chosen yet'}
-        </Text>
-        <Text style={[styles.changeText, { color: theme.primary }]}>{project ? 'Change' : 'Choose'}</Text>
-      </TouchableOpacity>
 
       <Sheet ref={pickerRef} title="Which project?" scrollable snapPoints={['60%', '88%']}>
-        {projects.length === 0 ? (
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No projects to choose from.</Text>
-        ) : (
-          projects.map(p => (
-            <TouchableOpacity
-              key={p.id}
-              onPress={() => pick(p)}
-              style={[styles.pickRow, { borderBottomColor: theme.border }]}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="briefcase-outline" size={18} color={theme.primary} />
-              <Text style={[styles.pickName, { color: theme.textPrimary }]} numberOfLines={1}>
-                {p.projectNumber ? `${p.projectNumber} - ${p.name}` : p.name}
-              </Text>
-              {project?.id === p.id && <Ionicons name="checkmark-circle" size={20} color={theme.primary} />}
-            </TouchableOpacity>
-          ))
-        )}
+        <View style={styles.sheetBody}>
+          {projects.length === 0 ? (
+            <Text style={[type.body, { color: c.muted }]}>No projects to choose from.</Text>
+          ) : (
+            <Card variant="list">
+              {projects.map(p => (
+                <ListRow
+                  key={p.id}
+                  onPress={() => pick(p)}
+                  lead={<ProjectSquare color={p.color} fallbackKey={p.id} />}
+                  title={p.projectNumber ? `${p.projectNumber} - ${p.name}` : p.name}
+                  titleLines={1}
+                  trailing={project?.id === p.id ? <Check size={size.icon.row} color={c.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
+                />
+              ))}
+            </Card>
+          )}
+        </View>
       </Sheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 10, paddingHorizontal: 20 },
-  btn: {
-    flex: 1,
-    minHeight: 92,
-    borderRadius: radius.xxl,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 6,
-    gap: 8,
-  },
-  iconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  btnLabel: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
-  projectLine: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 22, marginTop: 10 },
-  projectText: { fontSize: 13, flexShrink: 1 },
-  changeText: { fontSize: 13, fontWeight: '700' },
-  pickRow: {
+  labelRow: { flexDirection: 'row', alignItems: 'center' },
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: metrics.workspace.pill.gap,
+    borderRadius: radii.pill,
+    paddingTop: metrics.workspace.pill.padTop,
+    paddingRight: metrics.workspace.pill.padRight,
+    paddingBottom: metrics.workspace.pill.padBottom,
+    paddingLeft: metrics.workspace.pill.padLeft,
   },
-  pickName: { flex: 1, fontSize: 15 },
-  emptyText: { padding: 20, fontSize: 14 },
+  row: { flexDirection: 'row', gap: metrics.workspace.chipGap },
+  chip: { flex: 1, minWidth: 0 },
+  sheetBody: { paddingHorizontal: space.screenX },
 });

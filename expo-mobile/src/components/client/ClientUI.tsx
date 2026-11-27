@@ -2,15 +2,26 @@ import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, fontSize, fontWeight, radius, type Theme } from '../../theme';
+import { ChevronLeft, CloudOff } from 'lucide-react-native';
+import { metrics, size, space, type, useColors, type Theme } from '../../theme';
+import { Card, StatusDot, type DotStatus } from '../kit';
 import type { ClientTone } from '../../lib/clientPortal';
 
 /**
  * Shared furniture for client mode — the phone counterpart of the web's
  * components/client/ClientPage + ClientListPage, so every client screen has
- * the same header, cards and status pills.
+ * the same header, cards and status. Revamp: the portal inherits the team
+ * app's theme (Phase 0): bg pages, white 1dp cards, dot + word status.
  */
 
+const TONE_DOT: Record<ClientTone, DotStatus> = {
+  done: 'done',
+  info: 'sent',
+  attention: 'rejected',
+  waiting: 'pending',
+};
+
+/** Kept for callers that colour other things by tone. */
 export function toneColors(theme: Theme, tone: ClientTone): { fg: string; bg: string } {
   switch (tone) {
     case 'done':
@@ -25,14 +36,9 @@ export function toneColors(theme: Theme, tone: ClientTone): { fg: string; bg: st
   }
 }
 
+/** Status as a 7dp dot + word (never a filled pill). */
 export function ClientStatusPill({ label, tone }: { label: string; tone: ClientTone }) {
-  const theme = useTheme();
-  const { fg, bg } = toneColors(theme, tone);
-  return (
-    <View style={[styles.pill, { backgroundColor: bg }]}>
-      <Text style={[styles.pillText, { color: fg }]} numberOfLines={1}>{label}</Text>
-    </View>
-  );
+  return <StatusDot status={TONE_DOT[tone] ?? 'pending'} label={label} />;
 }
 
 /** Title bar used at the top of every client tab. */
@@ -48,20 +54,20 @@ export function ClientHeader({
   /** Shown as a back chevron — for screens pushed on top of the tabs. */
   onBack?: () => void;
 }) {
-  const theme = useTheme();
+  const c = useColors();
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: theme.background }]}>
-      {onBack && (
-        <Pressable onPress={onBack} hitSlop={10} accessibilityLabel="Back" style={{ marginLeft: -6 }}>
-          <Ionicons name="chevron-back" size={26} color={theme.textSecondary} />
+    <View style={[styles.header, { paddingTop: insets.top + metrics.schedule.top + space.inline, backgroundColor: c.bg }]}>
+      {onBack ? (
+        <Pressable onPress={onBack} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Back">
+          <ChevronLeft size={metrics.pageHeader.back} color={c.accent} strokeWidth={metrics.iconStroke} />
         </Pressable>
-      )}
+      ) : null}
       <View style={styles.headerText}>
-        <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={1}>{title}</Text>
-        {!!subtitle && (
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]} numberOfLines={1}>{subtitle}</Text>
-        )}
+        <Text style={[onBack ? type.pageTitle : type.display, { color: c.text }]} numberOfLines={1} accessibilityRole="header">
+          {title}
+        </Text>
+        {subtitle ? <Text style={[type.meta, { color: c.muted }]} numberOfLines={1}>{subtitle}</Text> : null}
       </View>
       {right}
     </View>
@@ -69,60 +75,49 @@ export function ClientHeader({
 }
 
 export function ClientCard({ children, style }: { children: ReactNode; style?: any }) {
-  const theme = useTheme();
-  return (
-    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }, style]}>
-      {children}
-    </View>
-  );
+  return <Card style={style}>{children}</Card>;
 }
 
 export function ClientEmpty({ icon, title, body }: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }) {
-  const theme = useTheme();
+  const c = useColors();
   return (
     <View style={styles.empty}>
-      <View style={[styles.emptyIcon, { backgroundColor: theme.primaryLight }]}>
-        <Ionicons name={icon} size={24} color={theme.primary} />
+      <View style={[styles.emptyIcon, { backgroundColor: c.greyFill }]}>
+        <Ionicons name={icon} size={metrics.emptyState.icon} color={c.muted} />
       </View>
-      <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{title}</Text>
-      <Text style={[styles.emptyBody, { color: theme.textSecondary }]}>{body}</Text>
+      <Text style={[type.emptyTitle, styles.center, { color: c.text }]}>{title}</Text>
+      <Text style={[type.meta, styles.center, { color: c.muted }]}>{body}</Text>
     </View>
   );
 }
 
 export function ClientLoading() {
-  const theme = useTheme();
+  const c = useColors();
   return (
     <View style={styles.loading}>
-      <ActivityIndicator color={theme.primary} />
+      <ActivityIndicator color={c.accent} />
     </View>
   );
 }
 
-/** Small banner shown when the last refresh failed but older data is on screen. */
+/** Small note shown when the last refresh failed but older data is on screen. */
 export function ClientOfflineNote({ text }: { text: string }) {
-  const theme = useTheme();
+  const c = useColors();
   return (
-    <View style={[styles.offline, { backgroundColor: theme.statusWarningBg }]}>
-      <Ionicons name="cloud-offline-outline" size={14} color={theme.statusWarning} />
-      <Text style={[styles.offlineText, { color: theme.statusWarning }]}>{text}</Text>
+    <View style={styles.offline}>
+      <CloudOff size={size.icon.meta} color={c.status.pendingText} strokeWidth={metrics.iconStroke} />
+      <Text style={[type.caption, styles.flex, { color: c.status.pendingText }]}>{text}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  pill: { borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
-  pillText: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12, gap: 12 },
-  headerText: { flex: 1 },
-  title: { fontSize: fontSize.xxl, fontWeight: fontWeight.bold },
-  subtitle: { fontSize: fontSize.bodySm, marginTop: 2 },
-  card: { borderWidth: 1, borderRadius: radius.xl, padding: 14 },
-  empty: { alignItems: 'center', paddingVertical: 48, paddingHorizontal: 32 },
-  emptyIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  emptyTitle: { fontSize: fontSize.base, fontWeight: fontWeight.semibold, marginBottom: 6, textAlign: 'center' },
-  emptyBody: { fontSize: fontSize.sm, lineHeight: 20, textAlign: 'center' },
-  loading: { paddingVertical: 48, alignItems: 'center' },
-  offline: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.lg },
-  offlineText: { fontSize: fontSize.xs, fontWeight: fontWeight.medium, flex: 1 },
+  flex: { flex: 1 },
+  center: { textAlign: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.screenX, paddingBottom: space.rowGap, gap: space.inline },
+  headerText: { flex: 1, gap: metrics.listRow.bodyGap },
+  empty: { alignItems: 'center', paddingVertical: metrics.emptyState.padBottom / 2, paddingHorizontal: space.screenBottom, gap: metrics.emptyState.gap },
+  emptyIcon: { width: metrics.emptyState.circle, height: metrics.emptyState.circle, borderRadius: metrics.emptyState.circle / 2, alignItems: 'center', justifyContent: 'center' },
+  loading: { paddingVertical: metrics.emptyState.padBottom / 2, alignItems: 'center' },
+  offline: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm, marginHorizontal: space.screenX, marginBottom: space.inline },
 });

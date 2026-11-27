@@ -1,42 +1,27 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { StatusDot, type DotStatus } from '../kit';
 import { STATE_LABEL, type SelectionState } from '../../lib/selections';
 
-/**
- * Compact state pill for a selection row. Deliberately quiet — on the spec
- * sheet most rows are approved, so the pill only has to earn attention when
- * something ISN'T settled.
- */
-export default function StatusPill({ state }: { state: SelectionState }) {
-  const theme = useTheme();
-
-  const palette: Record<SelectionState, { bg: string; fg: string }> = {
-    approved: { bg: theme.statusSuccessBg, fg: theme.statusSuccess },
-    received: { bg: theme.statusSuccessBg, fg: theme.statusSuccess },
-    ordered: { bg: theme.statusInfoBg, fg: theme.statusInfo },
-    awaiting: { bg: theme.statusWarningBg, fg: theme.statusWarning },
-    open: { bg: theme.subtle, fg: theme.textSecondary },
-  };
-  const { bg, fg } = palette[state];
-
-  return (
-    <View style={[styles.pill, { backgroundColor: bg }]}>
-      <Text style={[styles.text, { color: fg }]}>{STATE_LABEL[state]}</Text>
-    </View>
-  );
+/** Selection state → the design's dot + word (never a filled pill). */
+export function selectionDot(state: SelectionState): { status: DotStatus; label: string } {
+  switch (state) {
+    case 'approved':
+    case 'received':
+      return { status: 'done', label: STATE_LABEL[state] };
+    case 'ordered':
+      return { status: 'sent', label: STATE_LABEL[state] };
+    case 'awaiting':
+      // A client's pick waiting on sign-off.
+      return { status: 'pending', label: 'Pending' };
+    default:
+      return { status: 'upcoming', label: STATE_LABEL[state] };
+  }
 }
 
-const styles = StyleSheet.create({
-  pill: {
-    borderRadius: radius.sm,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    alignSelf: 'flex-end',
-  },
-  text: {
-    fontSize: fontSize.label,
-    fontWeight: fontWeight.bold,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-});
+/**
+ * Selection state as a 7dp dot + muted word (revamp v1). The file keeps its
+ * old name so existing imports still work.
+ */
+export default function StatusPill({ state, small = true }: { state: SelectionState; small?: boolean }) {
+  const { status, label } = selectionDot(state);
+  return <StatusDot status={status} label={label} small={small} />;
+}

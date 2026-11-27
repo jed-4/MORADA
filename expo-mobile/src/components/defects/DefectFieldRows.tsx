@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import type { Ionicons } from '@expo/vector-icons';
+import { metrics, space, type, useColors } from '../../theme';
+import { Card, PropertyRow } from '../kit';
 import { haptic } from '../../lib/haptics';
 import { fromLocalDateStr, toLocalDateStr } from '../../lib/dates';
 import {
@@ -58,7 +59,7 @@ const formatDue = (s: string) =>
  * date was picked by hand.
  */
 export function DefectFieldRows({ projectId, value, onChange, refs, onRefsChange, sticky }: Props) {
-  const theme = useTheme();
+  const c = useColors();
   const isDark = useColorScheme() === 'dark';
   const [picker, setPicker] = useState<PickerKey>(null);
   const [showDate, setShowDate] = useState(false);
@@ -100,73 +101,58 @@ export function DefectFieldRows({ projectId, value, onChange, refs, onRefsChange
   };
 
   return (
-    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      {rows.map((row, i) => (
-        <Pressable
-          key={row.key}
-          onPress={() => {
-            haptic.light();
-            setPicker(row.key);
-          }}
-          style={[styles.row, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border }]}
-          accessibilityRole="button"
-          accessibilityLabel={`${row.label}: ${row.text || 'not set'}`}
-        >
-          <Ionicons name={row.icon} size={18} color={theme.textMuted} />
-          <Text style={[styles.label, { color: theme.textSecondary }]}>{row.label}</Text>
-          <Text
-            style={[styles.value, { color: row.text ? theme.textPrimary : theme.textMuted }]}
-            numberOfLines={1}
-          >
-            {row.text || 'Choose'}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-        </Pressable>
-      ))}
-      <Pressable
-        onPress={() => {
-          haptic.light();
-          setShowDate((v) => !v);
-        }}
-        style={[styles.row, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border }]}
-        accessibilityRole="button"
-        accessibilityLabel={`Due date: ${formatDue(value.dueDate)}`}
-      >
-        <Ionicons name="calendar-outline" size={18} color={theme.textMuted} />
-        <Text style={[styles.label, { color: theme.textSecondary }]}>Due</Text>
-        <Text style={[styles.value, { color: theme.textPrimary }]} numberOfLines={1}>
-          {formatDue(value.dueDate)}
-          {!value.dueDateSet ? '  (default)' : ''}
-        </Text>
-        <Ionicons name={showDate ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textMuted} />
-      </Pressable>
-      {showDate && (
-        <View style={styles.datePicker}>
-          <DateTimePicker
-            value={value.dueDate ? fromLocalDateStr(value.dueDate) : new Date()}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'inline' : 'default'}
-            themeVariant={isDark ? 'dark' : 'light'}
-            onChange={(_e, date) => {
-              if (Platform.OS === 'android') setShowDate(false);
-              if (date) onChange({ dueDate: toLocalDateStr(date), dueDateSet: true });
+    <View style={styles.wrap}>
+      <Card variant="list">
+        {rows.map((row) => (
+          <PropertyRow
+            key={row.key}
+            form
+            label={row.label}
+            value={row.text || undefined}
+            placeholder="Choose"
+            onPress={() => {
+              haptic.light();
+              setPicker(row.key);
             }}
           />
-          {value.dueDateSet && (
-            <Pressable
-              onPress={() => onChange({ dueDate: defaultDueDate(value.jobStage), dueDateSet: false })}
-              style={styles.resetDate}
-              accessibilityRole="button"
-            >
-              <Text style={[styles.resetText, { color: theme.primary }]}>Use the {JOB_STAGE_LABEL[value.jobStage].toLowerCase()} default</Text>
-            </Pressable>
-          )}
-        </View>
-      )}
+        ))}
+        <PropertyRow
+          key="due"
+          form
+          label="Due date"
+          value={`${formatDue(value.dueDate)}${!value.dueDateSet ? ' (default)' : ''}`}
+          onPress={() => {
+            haptic.light();
+            setShowDate((v) => !v);
+          }}
+        />
+        {showDate ? (
+          <View key="picker" style={styles.datePicker}>
+            <DateTimePicker
+              value={value.dueDate ? fromLocalDateStr(value.dueDate) : new Date()}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant={isDark ? 'dark' : 'light'}
+              accentColor={c.accent}
+              onChange={(_e, date) => {
+                if (Platform.OS === 'android') setShowDate(false);
+                if (date) onChange({ dueDate: toLocalDateStr(date), dueDateSet: true });
+              }}
+            />
+            {value.dueDateSet && (
+              <Pressable
+                onPress={() => onChange({ dueDate: defaultDueDate(value.jobStage), dueDateSet: false })}
+                style={styles.resetDate}
+                accessibilityRole="button"
+              >
+                <Text style={[type.body, { color: c.accent }]}>Use the {JOB_STAGE_LABEL[value.jobStage].toLowerCase()} default</Text>
+              </Pressable>
+            )}
+          </View>
+        ) : null}
+      </Card>
       {sticky ? (
-        <Text style={[styles.stickyHint, { color: theme.textMuted, borderTopColor: theme.border }]}>
-          These stay set for the next defect.
-        </Text>
+        <Text style={[type.caption, { color: c.muted }]}>These stay set for the next defect.</Text>
       ) : null}
 
       <PickerSheet
@@ -229,17 +215,7 @@ export function DefectFieldRows({ projectId, value, onChange, refs, onRefsChange
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: radius.xxl, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 50, paddingHorizontal: 14 },
-  label: { width: 78, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
-  value: { flex: 1, fontSize: fontSize.base, textAlign: 'right' },
-  datePicker: { paddingHorizontal: 8, paddingBottom: 8 },
-  resetDate: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  resetText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  stickyHint: {
-    fontSize: fontSize.xs,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
+  wrap: { gap: space.inline },
+  datePicker: { paddingBottom: space.inline },
+  resetDate: { minHeight: metrics.minHit, alignItems: 'center', justifyContent: 'center' },
 });

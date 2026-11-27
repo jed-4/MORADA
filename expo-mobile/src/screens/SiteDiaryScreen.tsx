@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -12,15 +12,16 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  FlatList,
   Image,
   Switch,
+  Pressable,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BookOpen, Camera, Check, ChevronDown, Cloud, CloudLightning, CloudOff, CloudRain, CloudSun, Ellipsis, Pencil, Search, Snowflake, Sun, Wind, X, type LucideIcon } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, apiRequest, API_BASE_URL, isPermanentError } from '../services/api';
+import { apiFetch, apiRequest, isPermanentError } from '../services/api';
 import { isOnline, addToQueue, getQueue, saveQueue, syncQueue, addSyncListener } from '../services/offlineQueue';
 import {
   getOfflineDiaryEntries,
@@ -33,8 +34,13 @@ import { plural } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 
-import { useTheme } from '../theme';
-import { sheetFrame } from '../components/ui/Sheet';
+import { useTheme, useColors, metrics, radii, size, space, tabular, type } from '../theme';
+import { Sheet, type SheetRef } from '../components/ui/Sheet';
+import { SkeletonList } from '../components/ui/Skeleton';
+import { usePersistedState } from '../lib/usePersistedState';
+import {
+  Card, DetailHeader, EmptyState, FAB, FAB_CLEARANCE, GroupHeader, ListRow, ModalSheet, PageHeader, ProjectSquare, PropertyRow, SheetHeader,
+} from '../components/kit';
 import { TwoPane } from '../components/ui/TwoPane';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { useLayout } from '../lib/useLayout';
@@ -45,6 +51,8 @@ import { haptic } from '../lib/haptics';
 import { PhotoUploadError } from '../lib/photosUpload';
 import { useDiaryPhotos, collectLocalPhotoUris, mapPhotoUris, isLocalPhotoUri } from '../components/diary/useDiaryPhotos';
 import { DiaryFormPhoto, DIARY_FORM_THUMB } from '../components/diary/DiaryFormPhoto';
+import { goBackOrHome } from '../navigation/back';
+import { diaryPhotoList, diaryPhotoPath, isDiaryPhotoArray, withPhotoObjectsPreserved } from '../components/diary/diaryPhotoPath';
 import { useDiaryWeatherPrefill } from '../components/diary/diaryWeather';
 import { useFieldFocusChain } from '../components/diary/useFieldFocusChain';
 import { PendingUploadsBanner } from '../components/photo/PendingUploadsBanner';
@@ -107,40 +115,120 @@ function formatDateTime(dateStr: string): string {
   return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}, ${displayH}:${d.getMinutes().toString().padStart(2, '0')} ${period}`;
 }
 
-function formatDateShort(dateStr: string): string {
-  const d = new Date(dateStr);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-}
-
-function getWeatherIcon(condition?: string): string {
-  if (!condition) return 'partly-sunny-outline';
-  const c = condition.toLowerCase();
-  if (c.includes('rain') || c.includes('shower')) return 'rainy-outline';
-  if (c.includes('cloud') || c.includes('overcast')) return 'cloudy-outline';
-  if (c.includes('sun') || c.includes('clear') || c.includes('fine')) return 'sunny-outline';
-  if (c.includes('storm') || c.includes('thunder')) return 'thunderstorm-outline';
-  if (c.includes('wind')) return 'flag-outline';
-  if (c.includes('snow') || c.includes('hail')) return 'snow-outline';
-  return 'partly-sunny-outline';
-}
-
 function countPhotos(entry: SiteDiaryEntry): number {
   let count = 0;
   if (entry.overallPhotos) count += entry.overallPhotos.length;
   if (entry.fieldValues) {
     Object.entries(entry.fieldValues).forEach(([key, val]) => {
       if (key.startsWith('_')) return; // internal keys are not photos
-      if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && (val[0].startsWith('http') || val[0].startsWith('file') || val[0].startsWith('/'))) {
-        count += val.length;
-      }
+      // Strings (mobile) or { objectPath } file objects (web photo-gallery).
+      if (isDiaryPhotoArray(val)) count += diaryPhotoList(val).length;
     });
   }
   return count;
 }
 
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "Fri 20 Nov" */
+function dayLabel(d: Date): string {
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+/** "7:30 am" */
+function timeLabel(d: Date): string {
+  const h = d.getHours();
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
+}
+
+function weatherIcon(condition?: string): LucideIcon {
+  const c = (condition || '').toLowerCase();
+  if (c.includes('storm') || c.includes('thunder')) return CloudLightning;
+  if (c.includes('rain') || c.includes('shower')) return CloudRain;
+  if (c.includes('snow') || c.includes('hail')) return Snowflake;
+  if (c.includes('wind')) return Wind;
+  if (c.includes('cloud') || c.includes('overcast')) return Cloud;
+  if (c.includes('sun') || c.includes('clear') || c.includes('fine')) return Sun;
+  return CloudSun;
+}
+
+/** The first filled text field, in template order — the row's 2-line preview. */
+function previewOf(entry: SiteDiaryEntry, tpl: SiteDiaryTemplate | null | undefined): string {
+  const values = entry.fieldValues || {};
+  const fields = tpl ? [...tpl.fields].sort((a, b) => a.order - b.order) : [];
+  for (const f of fields) {
+    if (f.type !== 'text' && f.type !== 'textarea') continue;
+    const v = values[f.id];
+    if (typeof v === 'string' && v.trim()) return v.trim().replace(/\s+/g, ' ');
+  }
+  for (const [key, v] of Object.entries(values)) {
+    if (key.startsWith('_')) continue;
+    if (typeof v === 'string' && v.trim() && !/^(https?:|file:|\/)/.test(v)) return v.trim().replace(/\s+/g, ' ');
+  }
+  return '';
+}
+
+/** Monday 00:00 of the week containing `d`. */
+function mondayOf(d: Date): Date {
+  const m = new Date(d);
+  m.setHours(0, 0, 0, 0);
+  m.setDate(m.getDate() - ((m.getDay() + 6) % 7));
+  return m;
+}
+
+/** Entries (newest first) → week groups: This week, Last week, then "Week of 2 Nov". */
+function groupByWeek<T extends SiteDiaryEntry>(entries: T[]) {
+  const thisWeek = mondayOf(new Date()).getTime();
+  // Calendar arithmetic (not ms) so a daylight-saving week still lines up.
+  const lastWeek = mondayOf(new Date(Date.now() - 7 * 86400000)).getTime();
+  const nextWeek = mondayOf(new Date(Date.now() + 7 * 86400000)).getTime();
+  const groups: { key: string; title: string; range: string; entries: T[] }[] = [];
+  for (const e of entries) {
+    const mon = mondayOf(new Date(e.entryDateTime));
+    const key = String(mon.getTime());
+    let g = groups.find(x => x.key === key);
+    if (!g) {
+      const sun = new Date(mon);
+      sun.setDate(sun.getDate() + 6);
+      const range = mon.getMonth() === sun.getMonth()
+        ? `${mon.getDate()} – ${sun.getDate()} ${MONTHS[sun.getMonth()]}`
+        : `${mon.getDate()} ${MONTHS[mon.getMonth()]} – ${sun.getDate()} ${MONTHS[sun.getMonth()]}`;
+      const title = mon.getTime() === thisWeek
+        ? 'This week'
+        : mon.getTime() === lastWeek
+          ? 'Last week'
+          : mon.getTime() === nextWeek
+            ? 'Next week'
+            : `Week of ${mon.getDate()} ${MONTHS[mon.getMonth()]}${mon.getFullYear() !== new Date().getFullYear() ? ` ${mon.getFullYear()}` : ''}`;
+      g = { key, title, range, entries: [] };
+      groups.push(g);
+    }
+    g.entries.push(e);
+  }
+  return groups;
+}
+
+/** True for the title the app builds by default: "[Project - ]Template - dd/mm". */
+function isAutoTitle(title: string, tplName?: string | null): boolean {
+  return /\b\d{2}\/\d{2}$/.test(title.trim()) && (!tplName || title.includes(tplName));
+}
+
 export default function SiteDiaryScreen({ navigation, route }: Props) {
-  const { projectId, projectName } = route.params as { projectId: string; projectName: string };
+  const { projectId, projectName, projectColor } = route.params as { projectId: string; projectName: string; projectColor?: string | null };
+  const k = useColors();
+  const insets = useSafeAreaInsets();
+  const typeSheetRef = useRef<SheetRef>(null);
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [collapsedWeeks, setCollapsedWeeks] = usePersistedState<string[]>(`diary.collapsed.${projectId}`, []);
+
+  // The list draws its own one-row header.
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
   const { user } = useAuth();
 
   const [entries, setEntries] = useState<SiteDiaryEntry[]>([]);
@@ -205,17 +293,18 @@ export default function SiteDiaryScreen({ navigation, route }: Props) {
   const fullField = isWide ? styles.fullField : null;
 
   const theme = useTheme();
-const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    danger: theme.statusDanger,
-    success: theme.statusSuccess,
-    inputBg: theme.card,
-};
+  // Revamp tokens for the entry form's inline colours.
+  const colors = {
+    bg: k.bg,
+    card: k.surface,
+    text: k.text,
+    secondary: k.muted,
+    border: k.border,
+    accent: k.accent,
+    danger: k.danger,
+    success: k.status.done,
+    inputBg: k.surface,
+  };
 
   const offlineKey = `${DIARY_PROJECT_OFFLINE_KEY}_${projectId}`;
 
@@ -533,19 +622,24 @@ const colors = {
     }
   };
 
-  const renderFormPhoto = (fieldId: string | null, uri: string, idx: number) => (
-    <DiaryFormPhoto
-      key={`${idx}:${uri}`}
-      index={idx}
-      imageUri={getPhotoUrl(uri)}
-      item={diaryPhotos.itemFor(uri)}
-      busy={submitting}
-      dangerColor={colors.danger}
-      onRemove={() => removePhoto(fieldId, idx)}
-      onRetry={() => { haptic.light(); diaryPhotos.retry(uri); }}
-      onMarkup={diaryPhotos.canMarkup && isLocalPhotoUri(uri) ? () => markupPhotoAt(fieldId, idx, uri) : undefined}
-    />
-  );
+  // `value` is a stored photo: a string, or a web { objectPath } file object
+  // (kept as-is in form state so a save doesn't rewrite it).
+  const renderFormPhoto = (fieldId: string | null, value: unknown, idx: number) => {
+    const uri = diaryPhotoPath(value) ?? '';
+    return (
+      <DiaryFormPhoto
+        key={`${idx}:${uri}`}
+        index={idx}
+        imageUri={uri}
+        item={diaryPhotos.itemFor(uri)}
+        busy={submitting}
+        dangerColor={colors.danger}
+        onRemove={() => removePhoto(fieldId, idx)}
+        onRetry={() => { haptic.light(); diaryPhotos.retry(uri); }}
+        onMarkup={diaryPhotos.canMarkup && isLocalPhotoUri(value) ? () => markupPhotoAt(fieldId, idx, uri) : undefined}
+      />
+    );
+  };
 
   // Build the entry payload from the current form state.
   const buildEntryPayload = () => {
@@ -640,7 +734,7 @@ const colors = {
       // (PhotoUploadError) before anything is saved if a photo fails — a
       // device-local URI must never reach the server.
       const uploadedMap = await diaryPhotos.uploadLocal(collectLocalPhotoUris(formPayload));
-      const body: any = mapPhotoUris(formPayload, uploadedMap);
+      const body: any = withPhotoObjectsPreserved(mapPhotoUris(formPayload, uploadedMap));
 
       if (isEditMode && selectedEntry && !selectedEntry.id.startsWith('_offline_')) {
         await apiRequest(`/api/site-diary-entries/${selectedEntry.id}`, 'PATCH', body);
@@ -788,11 +882,6 @@ const colors = {
     ]);
   };
 
-  const getPhotoUrl = (path: string): string => {
-    if (path.startsWith('http') || path.startsWith('file://') || path.startsWith('content://')) return path;
-    return `${API_BASE_URL}/api/uploads/serve/${encodeURIComponent(path)}`;
-  };
-
   const allEntries = [
     ...offlineEntries.map(e => ({ ...e, _isOffline: true })),
     ...entries.map(e => ({ ...e, _isOffline: false })),
@@ -820,7 +909,7 @@ const colors = {
       case 'text':
         return (
           <View key={field.id} style={[styles.fieldContainer, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
@@ -830,7 +919,7 @@ const colors = {
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               autoCapitalize="sentences"
               autoCorrect
             />
@@ -843,7 +932,7 @@ const colors = {
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
             <View style={styles.voiceLabelRow}>
-              <Text style={[styles.fieldLabel, { color: colors.text, flexShrink: 1 }]}>
+              <Text style={[styles.fieldLabel, { color: colors.secondary, flexShrink: 1 }]}>
                 {field.title}{field.required ? ' *' : ''}
               </Text>
               <VoiceInputButton
@@ -859,7 +948,7 @@ const colors = {
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
@@ -872,7 +961,7 @@ const colors = {
       case 'number':
         return (
           <View key={field.id} style={[styles.fieldContainer, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
@@ -882,7 +971,7 @@ const colors = {
               value={value?.toString() || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder={field.title}
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               keyboardType="decimal-pad"
             />
           </View>
@@ -891,7 +980,7 @@ const colors = {
       case 'date':
         return (
           <View key={field.id} style={[styles.fieldContainer, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <TextInput
@@ -901,7 +990,7 @@ const colors = {
               value={value || ''}
               onChangeText={text => setFormFieldValues(prev => ({ ...prev, [field.id]: text }))}
               placeholder="DD/MM/YYYY"
-              placeholderTextColor={colors.secondary}
+              placeholderTextColor={k.faint}
               keyboardType="numbers-and-punctuation"
               autoCapitalize="none"
               autoCorrect={false}
@@ -912,7 +1001,7 @@ const colors = {
       case 'select':
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title}{field.required ? ' *' : ''}
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
@@ -924,13 +1013,13 @@ const colors = {
                     style={[
                       styles.chip,
                       {
-                        backgroundColor: selected ? colors.accent : colors.inputBg,
-                        borderColor: selected ? colors.accent : colors.border,
+                        backgroundColor: selected ? k.tint : k.surface,
+                        borderColor: selected ? k.accent : k.border,
                       },
                     ]}
                     onPress={() => setFormFieldValues(prev => ({ ...prev, [field.id]: opt.value }))}
                   >
-                    <Text style={[styles.chipText, { color: selected ? '#ffffff' : colors.text }]}>
+                    <Text style={[styles.chipText, { color: selected ? k.link : k.text }]}>
                       {opt.label}
                     </Text>
                   </TouchableOpacity>
@@ -943,35 +1032,36 @@ const colors = {
       case 'checkbox':
         return (
           <View key={field.id} style={[styles.fieldContainer, styles.switchRow, halfField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text, flex: 1, marginBottom: 0 }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary, flex: 1, marginBottom: 0 }]}>
               {field.title}
             </Text>
             <Switch
               value={!!value}
               onValueChange={val => setFormFieldValues(prev => ({ ...prev, [field.id]: val }))}
-              trackColor={{ false: colors.border, true: colors.accent }}
-              thumbColor="#ffffff"
+              trackColor={{ false: k.track, true: k.accent }}
+              thumbColor={k.surface}
+              ios_backgroundColor={k.track}
             />
           </View>
         );
 
       case 'photo-gallery':
-        const photos: string[] = Array.isArray(value) ? value : [];
+        const photos: unknown[] = Array.isArray(value) ? value : [];
         const maxPhotos = field.maxPhotos || 3;
         return (
           <View key={field.id} style={[styles.fieldContainer, fullField]}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>
               {field.title} ({photos.length}/{maxPhotos})
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
               {photos.map((uri, idx) => renderFormPhoto(field.id, uri, idx))}
               {photos.length < maxPhotos && (
                 <TouchableOpacity
-                  style={[styles.addPhotoBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                  style={[styles.addPhotoBtn, { backgroundColor: k.surface, borderColor: k.dashedBorder }]}
                   onPress={() => pickPhoto(field.id)}
                   disabled={submitting}
                 >
-                  <Ionicons name="camera-outline" size={28} color={colors.accent} />
+                  <Camera size={metrics.diary.addPhotoIcon} color={k.accent} strokeWidth={metrics.iconStroke} />
                   <Text style={[styles.addPhotoText, { color: colors.secondary }]}>Add</Text>
                 </TouchableOpacity>
               )}
@@ -984,59 +1074,38 @@ const colors = {
     }
   };
 
+  /** One content block: small muted label, then the value. Empty values hide. */
   const renderDetailFieldValue = (field: TemplateField, value: any) => {
     if (value === undefined || value === null || value === '') return null;
+    if (Array.isArray(value) && value.length === 0) return null;
 
-    switch (field.type) {
-      case 'checkbox':
-        return (
-          <View key={field.id} style={styles.detailField}>
-            <Text style={[styles.detailFieldLabel, { color: colors.secondary }]}>{field.title}</Text>
-            <View style={styles.checkboxDisplay}>
-              <Ionicons
-                name={value ? 'checkbox-outline' : 'square-outline'}
-                size={20}
-                color={value ? colors.success : colors.secondary}
-              />
-              <Text style={[styles.detailFieldValue, { color: colors.text, marginLeft: 6 }]}>
-                {value ? 'Yes' : 'No'}
-              </Text>
-            </View>
-          </View>
-        );
-
-      case 'photo-gallery':
-        if (!Array.isArray(value) || value.length === 0) return null;
-        return (
-          <View key={field.id} style={styles.detailField}>
-            <Text style={[styles.detailFieldLabel, { color: colors.secondary }]}>{field.title}</Text>
-            <DiaryPhotoGallery
-              uris={value}
-              getUrl={getPhotoUrl}
-              onOpen={index => setViewer({ uris: value, index })}
-              thumbStyle={styles.detailPhoto}
-              scrollStyle={styles.photoScroll}
-            />
-          </View>
-        );
-
-      case 'select':
-        const opt = field.options?.find(o => o.value === value);
-        return (
-          <View key={field.id} style={styles.detailField}>
-            <Text style={[styles.detailFieldLabel, { color: colors.secondary }]}>{field.title}</Text>
-            <Text style={[styles.detailFieldValue, { color: colors.text }]}>{opt?.label || value}</Text>
-          </View>
-        );
-
-      default:
-        return (
-          <View key={field.id} style={styles.detailField}>
-            <Text style={[styles.detailFieldLabel, { color: colors.secondary }]}>{field.title}</Text>
-            <Text style={[styles.detailFieldValue, { color: colors.text }]}>{String(value)}</Text>
-          </View>
-        );
+    if (field.type === 'photo-gallery') {
+      // Strings or web { objectPath } file objects → display paths.
+      const uris = diaryPhotoList(value);
+      if (uris.length === 0) return null;
+      return (
+        <View key={field.id} style={dd.block}>
+          <Text style={[type.caption, { color: k.muted }]}>{`${field.title} · ${uris.length}`}</Text>
+          <DiaryPhotoGallery
+            uris={uris}
+            onOpen={index => setViewer({ uris, index })}
+            thumbStyle={dd.photo}
+          />
+        </View>
+      );
     }
+    const text =
+      field.type === 'checkbox'
+        ? value ? 'Yes' : 'No'
+        : field.type === 'select'
+          ? field.options?.find(o => o.value === value)?.label || String(value)
+          : String(value);
+    return (
+      <View key={field.id} style={dd.block}>
+        <Text style={[type.caption, { color: k.muted }]}>{field.title}</Text>
+        <Text style={[type.bodyLong, { color: k.text }]}>{text}</Text>
+      </View>
+    );
   };
 
   // The open entry's body — shared by the phone's full-screen modal and the
@@ -1044,75 +1113,132 @@ const colors = {
   // width (no effect on a phone; it only bites in a wide full-screen view).
   const renderDetailBody = () => {
     if (!selectedEntry) return null;
-    return (
-      <ScrollView contentContainerStyle={[styles.detailContent, readableFrame]}>
-        {selectedEntry.id.startsWith('_offline_') && (
-          <View style={[styles.offlineDetailTag, { backgroundColor: theme.statusWarningBg, borderColor: theme.statusWarning }]}>
-            <Ionicons name="cloud-offline-outline" size={16} color={theme.statusWarning} />
-            <Text style={{ color: theme.statusWarning, marginLeft: 6, fontWeight: '500' }}>Pending sync</Text>
-          </View>
-        )}
-
-        <Text style={[styles.detailTitle, { color: colors.text }]}>{selectedEntry.title}</Text>
-        <Text style={[styles.detailDate, { color: colors.secondary }]}>
-          {formatDateTime(selectedEntry.entryDateTime)}
-        </Text>
-
-        {selectedEntry.createdByName && (
-          <View style={styles.detailMeta}>
-            <Ionicons name="person-outline" size={16} color={colors.secondary} />
-            <Text style={[styles.detailMetaText, { color: colors.secondary }]}>{selectedEntry.createdByName}</Text>
-          </View>
-        )}
-
-        {selectedEntry.weather && (selectedEntry.weather.condition || selectedEntry.weather.temp !== undefined) && (
-          <View style={[styles.weatherCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name={getWeatherIcon(selectedEntry.weather.condition) as any} size={24} color={colors.accent} />
-            <View style={styles.weatherCardInfo}>
-              {selectedEntry.weather.condition && (
-                <Text style={[styles.weatherCardText, { color: colors.text }]}>{selectedEntry.weather.condition}</Text>
-              )}
-              {selectedEntry.weather.temp !== undefined && (
-                <Text style={[styles.weatherCardTemp, { color: colors.secondary }]}>{selectedEntry.weather.temp}°C</Text>
-              )}
+    const d = new Date(selectedEntry.entryDateTime);
+    const tplName = selectedEntry.templateName || detailTemplate?.name;
+    const weather = selectedEntry.weather;
+    const W = weatherIcon(weather?.condition);
+    const hasWeather = !!weather && (!!weather.condition || weather.temp != null);
+    // D06: on the Duo unfolded the entry gets its own header row (date, Edit,
+    // More) and two columns — the content blocks, and a side column with the
+    // property card and the photo grid. The phone layout is unchanged.
+    const duo = isWide;
+    const pendingBadge = selectedEntry.id.startsWith('_offline_') ? (
+      <View style={dd.pending}>
+        <CloudOff size={size.icon.meta} color={k.status.pendingText} strokeWidth={metrics.iconStroke} />
+        <Text style={[type.caption, { color: k.status.pendingText }]}>Waiting to sync</Text>
+      </View>
+    ) : null;
+    const titleBlock = (
+      <View style={[dd.titleBlock, duo && dd.flex]}>
+        <Text style={[type.title, { color: k.text }]}>{dayLabel(d)}</Text>
+        <View style={dd.subLine}>
+          <Text style={[type.meta, { color: k.muted, flexShrink: 1 }]} numberOfLines={1}>
+            {[timeLabel(d), tplName].filter(Boolean).join(' · ')}
+            {projectName ? ' · ' : ''}
+          </Text>
+          {projectName ? (
+            <View style={dd.project}>
+              <ProjectSquare color={projectColor ?? null} fallbackKey={projectId} size="header" />
+              <Text style={[type.meta, { color: k.muted }]} numberOfLines={1}>{projectName}</Text>
             </View>
-          </View>
+          ) : null}
+        </View>
+        {/* Hide the auto title ("Project - Template - dd/mm"): it repeats the line above. */}
+        {!!selectedEntry.title && selectedEntry.title !== tplName && !isAutoTitle(selectedEntry.title, tplName) && (
+          <Text style={[type.body, { color: k.textPreview }]}>{selectedEntry.title}</Text>
         )}
+      </View>
+    );
+    const propLabel = duo ? DY.duoPropLabel : DY.propLabel;
+    const propsCard = (hasWeather || !!selectedEntry.createdByName) ? (
+      <Card variant="list">
+        {hasWeather ? (
+          <PropertyRow key="weather" label="Weather" labelWidth={propLabel}>
+            <W size={metrics.propertyRow.valueIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
+            <Text style={[type.body, { color: k.text }]}>
+              {[weather?.condition, weather?.temp != null ? `${weather?.temp}°` : null].filter(Boolean).join(', ')}
+            </Text>
+          </PropertyRow>
+        ) : null}
+        {selectedEntry.createdByName ? (
+          <PropertyRow key="by" label="Logged by" labelWidth={propLabel} value={selectedEntry.createdByName} />
+        ) : null}
+      </Card>
+    ) : null;
+    const blocks = detailTemplate && detailTemplate.fields.length > 0 ? (
+      <View style={dd.blocks}>
+        {[...detailTemplate.fields]
+          .sort((a, b) => a.order - b.order)
+          .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
+      </View>
+    ) : null;
+    const overallUris = diaryPhotoList(selectedEntry.overallPhotos);
+    const photos = overallUris.length > 0 ? (
+      <View style={dd.block}>
+        <Text style={[type.caption, { color: k.muted }]}>{`Photos · ${overallUris.length}`}</Text>
+        <DiaryPhotoGallery
+          uris={overallUris}
+          onOpen={index => setViewer({ uris: overallUris, index })}
+          thumbStyle={dd.photo}
+        />
+      </View>
+    ) : null;
 
-        {detailTemplate && detailTemplate.fields.length > 0 && (
-          <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
-            {[...detailTemplate.fields]
-              .sort((a, b) => a.order - b.order)
-              .map(field => renderDetailFieldValue(field, selectedEntry.fieldValues?.[field.id]))}
+    if (duo) {
+      const entry = selectedEntry;
+      return (
+        <ScrollView contentContainerStyle={[dd.contentDuo, { paddingTop: insets.top + metrics.schedule.top, paddingBottom: FAB_CLEARANCE + space.screenBottom }]}>
+          <View style={dd.duoHeader}>
+            {titleBlock}
+            <Pressable onPress={() => openEditModal(entry)} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Edit entry">
+              <Pencil size={DY.duoEditIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+            <Pressable onPress={entryActions} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Entry actions">
+              <Ellipsis size={DY.duoMoreIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
+            </Pressable>
+            <Pressable onPress={closeDetail} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Close entry">
+              <X size={DY.duoMoreIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
+            </Pressable>
           </View>
-        )}
+          {pendingBadge}
+          <View style={dd.duoCols}>
+            <View style={dd.flex}>{blocks}</View>
+            {propsCard || photos ? (
+              <View style={dd.duoSide}>
+                {propsCard}
+                {photos}
+              </View>
+            ) : null}
+          </View>
+        </ScrollView>
+      );
+    }
 
-        {selectedEntry.overallPhotos && selectedEntry.overallPhotos.length > 0 && (
-          <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
-            <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Photos</Text>
-            <DiaryPhotoGallery
-              uris={selectedEntry.overallPhotos}
-              getUrl={getPhotoUrl}
-              onOpen={index => setViewer({ uris: selectedEntry.overallPhotos || [], index })}
-              thumbStyle={styles.detailPhoto}
-              scrollStyle={styles.photoScroll}
-            />
-          </View>
-        )}
+    return (
+      <ScrollView contentContainerStyle={[dd.content, readableFrame, { paddingBottom: space.screenBottom + insets.bottom }]}>
+        <DetailHeader
+          onBack={closeDetail}
+          actions={[{ icon: Ellipsis, label: 'Entry actions', onPress: entryActions }]}
+        />
+        {pendingBadge}
+        {titleBlock}
+        {propsCard}
+        {blocks}
+        {photos}
       </ScrollView>
     );
   };
 
-  const renderDetailActions = () => (
-    <View style={styles.detailActions}>
-      <TouchableOpacity onPress={() => selectedEntry && openEditModal(selectedEntry)} style={styles.detailActionBtn}>
-        <Ionicons name="create-outline" size={22} color={colors.accent} />
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => selectedEntry && handleDeleteEntry(selectedEntry)} style={styles.detailActionBtn}>
-        <Ionicons name="trash-outline" size={22} color={colors.danger} />
-      </TouchableOpacity>
-    </View>
-  );
+  // ••• on an entry: Edit, Delete.
+  const entryActions = () => {
+    if (!selectedEntry) return;
+    const entry = selectedEntry;
+    Alert.alert(dayLabel(new Date(entry.entryDateTime)), undefined, [
+      { text: 'Edit', onPress: () => openEditModal(entry) },
+      { text: 'Delete', style: 'destructive', onPress: () => handleDeleteEntry(entry) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   // One viewer per place it can be presented from; `show` picks the one for
   // the current size, and the open photo + index live in `viewer` above.
@@ -1121,192 +1247,228 @@ const colors = {
       visible={show && !!viewer}
       uris={viewer?.uris ?? []}
       index={viewer?.index ?? 0}
-      getUrl={getPhotoUrl}
       onIndexChange={index => setViewer(v => (v ? { ...v, index } : v))}
       onClose={() => setViewer(null)}
     />
   );
 
+  // Quiet "All types" filter + search, both client-side over the loaded entries.
+  const q = search.trim().toLowerCase();
+  const visibleEntries = allEntries.filter(e => {
+    if (typeFilter && e.templateId !== typeFilter) return false;
+    if (!q) return true;
+    const hay = [e.title, e.templateName, ...Object.values(e.fieldValues || {}).filter(v => typeof v === 'string')]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return hay.includes(q);
+  });
+  const weeks = groupByWeek(visibleEntries);
+  const typeName = typeFilter ? allTemplates.find(t => t.id === typeFilter)?.name ?? 'Type' : 'All types';
+
+  const listHeader = (
+    <View style={dd.listHeader}>
+      <PageHeader
+        title="Site diary"
+        project={projectName ? { name: projectName, color: projectColor ?? null, id: projectId } : null}
+        onBack={() => goBackOrHome(navigation)}
+        actions={[
+          searchVisible
+            ? { icon: X, label: 'Close search', onPress: () => { setSearch(''); setSearchVisible(false); } }
+            : { icon: Search, label: 'Search diary', onPress: () => setSearchVisible(true) },
+        ]}
+        // One-page PDF of the day for the client (diary, photos, crew hours).
+        right={<DailyReportButton projectId={projectId} projectName={projectName} />}
+      />
+      {searchVisible && (
+        <View style={[dd.search, { backgroundColor: k.surface, borderColor: k.border }]}>
+          <Search size={metrics.projects.searchIcon} color={k.muted} strokeWidth={metrics.iconStroke} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search entries"
+            placeholderTextColor={k.faint}
+            autoFocus
+            style={[type.body, dd.searchInput, { color: k.text }]}
+          />
+        </View>
+      )}
+      {!networkOnline && (
+        <View style={dd.pending}>
+          <CloudOff size={size.icon.meta} color={k.status.pendingText} strokeWidth={metrics.iconStroke} />
+          <Text style={[type.caption, { color: k.status.pendingText }]}>You're offline. Changes sync when you reconnect.</Text>
+        </View>
+      )}
+      {/* Diary photos sitting in the offline queue, with Send now / Retry. */}
+      <PendingUploadsBanner projectId={projectId} types={[...DIARY_QUEUE_TYPES]} noun="diary upload" />
+      {offlineEntries.length > 0 && (
+        <Text style={[type.caption, { color: k.status.pendingText }]}>
+          {offlineEntries.length} {plural(offlineEntries.length, 'entry', 'entries')} waiting to sync
+        </Text>
+      )}
+      <View style={dd.countRow}>
+        <Text style={[type.meta, tabular, { color: k.muted }]}>
+          {visibleEntries.length} {plural(visibleEntries.length, 'entry', 'entries')}
+        </Text>
+        {allTemplates.length > 1 && (
+          <Pressable onPress={() => typeSheetRef.current?.present()} hitSlop={metrics.hitSlop} accessibilityRole="button" style={dd.typeFilter}>
+            <Text style={[type.meta, { color: typeFilter ? k.accent : k.muted }]}>{typeName}</Text>
+            <ChevronDown size={size.icon.caret} color={k.muted} strokeWidth={metrics.iconStrokeActive} />
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+
+  const renderEntryRow = (item: SiteDiaryEntry & { _isOffline?: boolean }) => {
+    const d = new Date(item.entryDateTime);
+    const tpl = allTemplates.find(t => t.id === item.templateId);
+    const tplName = item.templateName || tpl?.name;
+    const preview = previewOf(item, tpl ?? (item.templateId === template?.id ? template : null));
+    const photoCount = countPhotos(item);
+    const W = weatherIcon(item.weather?.condition);
+    const hasWeather = !!item.weather && (!!item.weather.condition || item.weather.temp != null);
+    // Wide only: tint the entry that's open in the right pane.
+    const isOpen = isWide && showDetailModal && selectedEntry?.id === item.id;
+    const metaIcon = { size: size.icon.meta, color: k.muted, strokeWidth: metrics.iconStroke };
+    return (
+      <Pressable
+        key={item.id}
+        onPress={() => openDetailModal(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`${dayLabel(d)}, ${tplName ?? 'entry'}`}
+        style={({ pressed }) => [dd.row, isOpen && [dd.rowSelected, { backgroundColor: k.tint }], pressed && { opacity: metrics.pressedOpacity }]}
+      >
+        <View style={dd.rowTop}>
+          <Text style={[type.rowTitle, { color: k.text }]}>{dayLabel(d)}</Text>
+          <Text style={[type.meta, tabular, { color: k.muted }]}>{timeLabel(d)}</Text>
+          <View style={{ flex: 1 }} />
+          {item._isOffline ? (
+            <Text style={[type.caption, { color: k.status.pendingText }]}>Offline</Text>
+          ) : null}
+          {tplName ? (
+            <Text style={[type.caption, { color: tpl?.isDefault === false ? k.accent : k.muted, flexShrink: 1 }]} numberOfLines={1}>{tplName}</Text>
+          ) : null}
+        </View>
+        {preview ? (
+          <Text style={[type.bodyPreview, { color: k.textPreview }]} numberOfLines={2}>{preview}</Text>
+        ) : null}
+        {(hasWeather || photoCount > 0) && (
+          <View style={dd.rowMeta}>
+            {hasWeather ? (
+              <View style={dd.metaItem}>
+                <W {...metaIcon} />
+                {item.weather?.temp != null ? <Text style={[type.caption, tabular, { color: k.muted }]}>{`${item.weather.temp}°`}</Text> : null}
+              </View>
+            ) : null}
+            {photoCount > 0 ? (
+              <View style={dd.metaItem}>
+                <Camera {...metaIcon} />
+                <Text style={[type.caption, tabular, { color: k.muted }]}>{photoCount}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
+      </Pressable>
+    );
+  };
+
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, { backgroundColor: k.bg, paddingTop: insets.top + metrics.schedule.top }]}>
+        <View style={dd.pad}>{listHeader}</View>
+        <SkeletonList />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {!networkOnline && (
-        <View style={[styles.offlineBanner, { backgroundColor: theme.statusWarning }]}>
-          <Ionicons name="cloud-offline-outline" size={16} color="#ffffff" />
-          <Text style={styles.offlineBannerText}>You are offline. Changes will sync when reconnected.</Text>
-        </View>
-      )}
-
-      {/* Diary photos sitting in the offline queue, with Send now / Retry. */}
-      <PendingUploadsBanner
-        projectId={projectId}
-        types={[...DIARY_QUEUE_TYPES]}
-        noun="diary upload"
-        style={styles.pendingBanner}
-      />
-
-      {offlineEntries.length > 0 && (
-        <View style={[styles.syncBanner, { backgroundColor: theme.statusInfoBg }]}>
-          <Ionicons name="sync-outline" size={16} color={colors.accent} />
-          <Text style={[styles.syncBannerText, { color: colors.accent }]}>
-            {offlineEntries.length} {plural(offlineEntries.length, 'entry', 'entries')} pending sync
-          </Text>
-        </View>
-      )}
-
+    <View style={[styles.container, { backgroundColor: k.bg }]}>
       {/* Entries on the left, the open entry on the right when wide. The list
           stays the first child at every size, so folding never remounts it. */}
       <TwoPane
-        emptyTitle="Select an entry"
-        emptyIcon="book-outline"
+        listWidth={size.listPane.diary}
+        empty={<EmptyState icon={BookOpen} title="Select an entry" />}
         detail={showDetailModal && selectedEntry ? (
-          <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
-            <View style={[styles.modalHeader, styles.paneHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-              <TouchableOpacity onPress={closeDetail} accessibilityLabel="Close entry">
-                <Ionicons name="close" size={24} color={colors.text} />
-              </TouchableOpacity>
-              <Text style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Entry Details</Text>
-              {renderDetailActions()}
-            </View>
+          <View style={[styles.modalContainer, { backgroundColor: k.bg }]}>
             {renderDetailBody()}
           </View>
         ) : null}
         list={
       <>
-      <View style={[styles.headerArea, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Site Diary</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <Text style={[styles.headerCount, { color: colors.secondary }]}>
-            {allEntries.length} {plural(allEntries.length, 'entry', 'entries')}
-          </Text>
-          {/* One-page PDF of the day for the client (diary, photos, crew hours). */}
-          <DailyReportButton projectId={projectId} projectName={projectName} />
-        </View>
-      </View>
-
-      {allEntries.length === 0 ? (
-        <ScrollView
-          contentContainerStyle={styles.emptyContainer}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        >
-          <Ionicons name="book-outline" size={64} color={colors.secondary} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No site diary entries yet</Text>
-          <Text style={[styles.emptySubtitle, { color: colors.secondary }]}>
-            Tap the + button to create your first entry
-          </Text>
-        </ScrollView>
-      ) : (
-        <FlatList
-          data={allEntries}
-          // Re-render rows when the entry open in the right pane changes (outline).
-          extraData={showDetailModal ? selectedEntry?.id : null}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-          renderItem={({ item }) => {
-            const photoCount = countPhotos(item as SiteDiaryEntry);
-            // Wide only: outline the entry that's open in the right pane.
-            const isOpen = isWide && showDetailModal && selectedEntry?.id === item.id;
-            return (
-              <TouchableOpacity
-                style={[styles.entryCard, { backgroundColor: colors.card, borderColor: isOpen ? colors.accent : colors.border }]}
-                onPress={() => openDetailModal(item as SiteDiaryEntry)}
-                activeOpacity={0.7}
-              >
-                {(item as any)._isOffline && (
-                  <View style={[styles.offlineTag, { backgroundColor: theme.statusWarningBg }]}>
-                    <Ionicons name="cloud-offline-outline" size={12} color={theme.statusWarning} />
-                    <Text style={[styles.offlineTagText, { color: theme.statusWarning }]}>Offline</Text>
-                  </View>
-                )}
-                <View style={styles.cardHeader}>
-                  <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
-                </View>
-                <Text style={[styles.cardDate, { color: colors.secondary }]}>
-                  {formatDateShort(item.entryDateTime)}
-                </Text>
-                <View style={styles.cardFooter}>
-                  {item.weather?.condition && (
-                    <View style={styles.cardMeta}>
-                      <Ionicons name={getWeatherIcon(item.weather.condition) as any} size={14} color={colors.secondary} />
-                      <Text style={[styles.cardMetaText, { color: colors.secondary }]}>
-                        {item.weather.condition}
-                        {item.weather.temp !== undefined ? ` ${item.weather.temp}°C` : ''}
-                      </Text>
-                    </View>
-                  )}
-                  {photoCount > 0 && (
-                    <View style={styles.cardMeta}>
-                      <Ionicons name="image-outline" size={14} color={colors.secondary} />
-                      <Text style={[styles.cardMetaText, { color: colors.secondary }]}>{photoCount}</Text>
-                    </View>
-                  )}
-                  {item.createdByName && (
-                    <View style={styles.cardMeta}>
-                      <Ionicons name="person-outline" size={14} color={colors.secondary} />
-                      <Text style={[styles.cardMetaText, { color: colors.secondary }]} numberOfLines={1}>
-                        {item.createdByName}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          }}
-        />
-      )}
-
-      <TouchableOpacity
-        style={[styles.fab, { backgroundColor: colors.accent }]}
-        onPress={() => openCreateModal()}
-        activeOpacity={0.8}
+      <ScrollView
+        contentContainerStyle={[dd.list, { paddingTop: insets.top + metrics.schedule.top, paddingBottom: FAB_CLEARANCE + space.screenBottom }]}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
       >
-        <Ionicons name="add" size={28} color="#ffffff" />
-      </TouchableOpacity>
+        {listHeader}
+        {allEntries.length === 0 ? (
+          <View style={dd.empty}>
+            <EmptyState icon={BookOpen} title="No diary entries yet" helper="Tap + to write today's entry." />
+          </View>
+        ) : weeks.length === 0 ? (
+          <Text style={[type.body, { color: k.muted }]}>Nothing matches</Text>
+        ) : (
+          weeks.map(week => {
+            const open = !collapsedWeeks.includes(week.key);
+            return (
+              <View key={week.key}>
+                <GroupHeader
+                  title={week.title}
+                  meta={[week.range, String(week.entries.length)]}
+                  open={open}
+                  onToggle={() => setCollapsedWeeks(open ? [...collapsedWeeks, week.key] : collapsedWeeks.filter(x => x !== week.key))}
+                />
+                {open ? <Card variant="list">{week.entries.map(renderEntryRow)}</Card> : null}
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
       </>
         }
       />
+
+      {/* Outside TwoPane so it sits bottom-right of the whole screen when wide. */}
+      <FAB onPress={() => openCreateModal()} label="New diary entry" />
+
+      <Sheet ref={typeSheetRef} title="Entry type">
+        <View style={dd.sheetBody}>
+          <Card variant="list">
+            <ListRow
+              key="all"
+              title="All types"
+              titleLines={1}
+              trailing={!typeFilter ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
+              onPress={() => { setTypeFilter(null); typeSheetRef.current?.dismiss(); }}
+            />
+            {[...allTemplates].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(t => (
+              <ListRow
+                key={t.id}
+                title={t.name}
+                titleLines={1}
+                trailing={typeFilter === t.id ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
+                onPress={() => { setTypeFilter(t.id); typeSheetRef.current?.dismiss(); }}
+              />
+            ))}
+          </Card>
+        </View>
+      </Sheet>
 
       <Modal visible={showEntryModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={cancelEntryModal}>
         <KeyboardAvoidingView
           style={[styles.modalContainer, { backgroundColor: colors.bg }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={cancelEntryModal}>
-              <Text style={[styles.modalHeaderBtn, { color: colors.secondary }]}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={[styles.modalHeaderTitle, { color: colors.text }]}>
-              {isEditMode ? 'Edit Entry' : 'New Entry'}
-            </Text>
-            <TouchableOpacity onPress={handleSaveEntry} disabled={submitting}>
-              {submitting ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <Text style={[styles.modalHeaderBtn, { color: colors.accent, fontWeight: '600' }]}>Save</Text>
-              )}
-            </TouchableOpacity>
+          <View style={[styles.formHeader, { paddingTop: insets.top }]}>
+            <SheetHeader
+              title={isEditMode ? 'Edit entry' : 'New entry'}
+              onCancel={cancelEntryModal}
+              doneLabel="Save"
+              onDone={handleSaveEntry}
+              doneLoading={submitting}
+            />
           </View>
-
-          {allTemplates.length > 1 && (
-            <TouchableOpacity
-              style={[styles.templateBar, { backgroundColor: theme.nav, borderBottomColor: colors.border }]}
-              onPress={() => setShowTemplatePicker(true)}
-            >
-              <Ionicons name="document-text-outline" size={16} color={colors.accent} />
-              <Text style={[styles.templateBarText, { color: colors.text }]} numberOfLines={1}>
-                {activeTemplate?.name || 'Default Template'}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-            </TouchableOpacity>
-          )}
 
           {/* readableFrame keeps the full-screen form to a sensible column on
               the Duo unfolded; a phone is narrower than its cap. */}
@@ -1315,7 +1477,7 @@ const colors = {
                 the same place in the tree folded or unfolded. */}
             <View style={isWide ? styles.fieldGrid : undefined}>
             <View style={[styles.fieldContainer, halfField]}>
-              <Text style={[styles.fieldLabel, { color: colors.text }]}>Title *</Text>
+              <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Title *</Text>
               <TextInput
                 ref={focusChain.ref('title')}
                 onFocus={entryKb.onInputFocus}
@@ -1323,7 +1485,7 @@ const colors = {
                 value={formTitle}
                 onChangeText={setFormTitle}
                 placeholder="Entry title"
-                placeholderTextColor={colors.secondary}
+                placeholderTextColor={k.faint}
                 autoCapitalize="sentences"
                 autoCorrect
                 returnKeyType={focusChain.isLast('title') ? 'done' : 'next'}
@@ -1333,17 +1495,25 @@ const colors = {
             </View>
 
             <View style={[styles.fieldContainer, halfField]}>
-              <Text style={[styles.fieldLabel, { color: colors.text }]}>Date / Time</Text>
-              <View style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, justifyContent: 'center' }]}>
-                <Text style={{ color: colors.text }}>{formatDateTime(formDateTime)}</Text>
-              </View>
+              <Card variant="list">
+                {allTemplates.length > 1 ? (
+                  <PropertyRow
+                    key="template"
+                    form
+                    label="Type"
+                    value={activeTemplate?.name || 'Default template'}
+                    onPress={() => setShowTemplatePicker(true)}
+                  />
+                ) : null}
+                <PropertyRow key="when" label="Date / time" value={formatDateTime(formDateTime)} />
+              </Card>
             </View>
             </View>
 
             {activeTemplate && activeTemplate.fields.length > 0 && (
               <>
                 <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                  <Text style={[styles.sectionTitle, { color: colors.secondary }]}>
                     {activeTemplate.name || 'Template Fields'}
                   </Text>
                 </View>
@@ -1356,17 +1526,17 @@ const colors = {
             )}
 
             <View style={[styles.sectionDivider, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Overall Photos</Text>
+              <Text style={[styles.sectionTitle, { color: colors.secondary }]}>Overall Photos</Text>
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
               {formOverallPhotos.map((uri, idx) => renderFormPhoto(null, uri, idx))}
               <TouchableOpacity
-                style={[styles.addPhotoBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                style={[styles.addPhotoBtn, { backgroundColor: k.surface, borderColor: k.dashedBorder }]}
                 onPress={() => pickPhoto()}
                 disabled={submitting}
               >
-                <Ionicons name="camera-outline" size={28} color={colors.accent} />
+                <Camera size={metrics.diary.addPhotoIcon} color={k.accent} strokeWidth={metrics.iconStroke} />
                 <Text style={[styles.addPhotoText, { color: colors.secondary }]}>Add</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -1388,16 +1558,8 @@ const colors = {
       </Modal>
 
       {/* Hidden while wide: the right pane shows the entry instead. */}
-      <Modal visible={showDetailModal && !isWide} animationType="slide" presentationStyle="fullScreen">
-        <View style={[styles.modalContainer, { backgroundColor: colors.bg }]}>
-          <View style={[styles.modalHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={closeDetail}>
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text style={[styles.modalHeaderTitle, { color: colors.text }]} numberOfLines={1}>Entry Details</Text>
-            {renderDetailActions()}
-          </View>
-
+      <Modal visible={showDetailModal && !isWide} animationType="slide" presentationStyle="fullScreen" onRequestClose={closeDetail}>
+        <View style={[styles.modalContainer, { backgroundColor: k.bg, paddingTop: insets.top }]}>
           {renderDetailBody()}
           {/* Phone-side copy of the viewer: iOS can't present a root-level
               modal over this one, so it lives inside. Wide uses the root copy. */}
@@ -1407,205 +1569,86 @@ const colors = {
 
       {renderViewer(isWide)}
 
-      <Modal visible={showTemplatePicker} transparent animationType="slide">
-        <View style={[styles.tpOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={[styles.tpSheet, sheetFrame, { backgroundColor: colors.card }]}>
-            <View style={[styles.tpHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.tpHeaderTitle, { color: colors.text }]}>
-                Select Template
-              </Text>
-              <TouchableOpacity onPress={() => setShowTemplatePicker(false)}>
-                <Ionicons name="close" size={24} color={colors.secondary} />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={[...allTemplates].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))}
-              keyExtractor={item => item.id}
-              contentContainerStyle={{ paddingBottom: 40 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.tpRow, { borderBottomColor: colors.border }]}
+      <ModalSheet visible={showTemplatePicker} onRequestClose={() => setShowTemplatePicker(false)} title="Entry type" doneLabel="Done" onDone={() => setShowTemplatePicker(false)}>
+        <ScrollView contentContainerStyle={styles.tpList}>
+          <Card variant="list">
+            {[...allTemplates].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(item => {
+              const active = activeTemplate?.id === item.id;
+              return (
+                <ListRow
+                  key={item.id}
+                  title={item.name}
+                  titleLines={1}
+                  subtitle={item.isDefault ? 'Default' : undefined}
+                  selected={active}
+                  trailing={active ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
                   onPress={() => switchTemplate(item)}
-                >
-                  <Ionicons name="document-text-outline" size={18} color={colors.accent} />
-                  <View style={styles.tpRowContent}>
-                    <Text style={[styles.tpRowName, { color: colors.text }]} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    {item.isDefault && (
-                      <Text style={[styles.tpRowBadge, { color: colors.accent }]}>Default</Text>
-                    )}
-                  </View>
-                  {activeTemplate?.id === item.id && (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
+                />
+              );
+            })}
+          </Card>
+        </ScrollView>
+      </ModalSheet>
     </View>
   );
 }
 
+const DY = metrics.diary;
+
+const dd = StyleSheet.create({
+  pad: { paddingHorizontal: space.screenX },
+  list: { paddingHorizontal: space.screenX, gap: metrics.scope.gap },
+  listHeader: { gap: metrics.scope.gap },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.inline,
+    minHeight: metrics.projects.searchHeight,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+    paddingHorizontal: metrics.projects.cardPad,
+  },
+  searchInput: { flex: 1, paddingVertical: 0 },
+  pending: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  typeFilter: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  row: { paddingVertical: metrics.listRow.padY, gap: space.inlineSm },
+  // Duo: the open entry is a tint block (radius 8) set in from the card edge, as in Tasks.
+  rowSelected: {
+    marginHorizontal: -(space.cardX - metrics.card.duoPad),
+    paddingHorizontal: space.cardX - metrics.card.duoPad,
+    borderRadius: radii.lg,
+  },
+  rowTop: { flexDirection: 'row', alignItems: 'baseline', gap: space.inline + 2 },
+  rowMeta: { flexDirection: 'row', alignItems: 'center', gap: space.rowGap, paddingTop: DY.metaTop },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: space.inlineSm },
+  empty: { minHeight: metrics.emptyState.circle * 6 },
+  sheetBody: { paddingHorizontal: space.screenX, paddingTop: space.inline },
+  // Entry view
+  content: { paddingHorizontal: space.screenX, paddingTop: space.screenTop, paddingBottom: space.screenBottom, gap: metrics.scope.gap },
+  titleBlock: { gap: space.inlineSm },
+  subLine: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  project: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  blocks: { gap: DY.blockGap },
+  block: { gap: DY.labelGap },
+  flex: { flex: 1 },
+  // D06 Duo entry pane
+  contentDuo: { paddingHorizontal: DY.duoPadX, gap: DY.duoGap },
+  duoHeader: { flexDirection: 'row', alignItems: 'center', gap: metrics.pageHeader.actionGap },
+  duoCols: { flexDirection: 'row', alignItems: 'flex-start', gap: DY.duoColGap },
+  duoSide: { width: DY.duoSide, gap: DY.duoGap },
+  photo: { width: metrics.thumb.diary, height: metrics.thumb.diary, borderRadius: radii.lg, marginRight: DY.photoGap },
+});
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { justifyContent: 'center', alignItems: 'center' },
-  offlineBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  offlineBannerText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  syncBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  syncBannerText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  headerArea: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  headerCount: {
-    fontSize: 14,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 120,
-    gap: 12,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-    paddingHorizontal: 40,
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 80,
-  },
-  entryCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 14,
-    marginBottom: 10,
-  },
-  offlineTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    gap: 4,
-    marginBottom: 8,
-  },
-  offlineTagText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
-  },
-  cardDate: {
-    fontSize: 13,
-    marginBottom: 8,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  cardMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  cardMetaText: {
-    fontSize: 12,
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
   modalContainer: {
     flex: 1,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 56 : 16,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  modalHeaderBtn: {
-    fontSize: 16,
-  },
-  // The right-pane copy of the detail header sits under the app header, not
-  // the status bar, so it doesn't need the modal's top inset.
-  paneHeader: {
-    paddingTop: 12,
-  },
-  modalHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'center',
-    marginHorizontal: 8,
-  },
-  formContent: {
-    padding: 16,
-  },
-  fieldContainer: {
-    marginBottom: 16,
-  },
+  formHeader: { paddingHorizontal: space.screenX },
+  tpList: { paddingHorizontal: space.screenX, paddingBottom: space.screenBottom },
+  formContent: { padding: space.screenX },
+  fieldContainer: { marginBottom: metrics.sheet.gap },
   // Duo unfolded only: short fields two per row. A short field followed by a
   // long one grows to the full row, so nothing is left half-empty.
   fieldGrid: {
@@ -1620,45 +1663,16 @@ const styles = StyleSheet.create({
   fullField: {
     width: '100%',
   },
-  fieldLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-    gap: 8,
-  },
   // Field label with the dictation mic on the right (#56).
   voiceLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 6,
-  },
-  input: {
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-  },
-  textArea: {
-    minHeight: 100,
-    paddingTop: 10,
-  },
+  fieldLabel: { ...type.meta, marginBottom: metrics.form.labelGap },
+  input: { ...type.rowTitle, borderRadius: radii.lg, borderWidth: size.border, paddingHorizontal: metrics.form.inputPadX, paddingVertical: metrics.form.inputPadY, minHeight: metrics.form.inputHeight },
+  textArea: { minHeight: metrics.form.multilineHeight, paddingTop: metrics.form.inputPadY },
   chipScroll: {
     flexDirection: 'row',
   },
-  chip: {
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1,
-    marginRight: 8,
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  chip: { borderRadius: radii.pill, paddingHorizontal: metrics.filterChip.padX, paddingVertical: metrics.filterChip.padY, borderWidth: size.border, marginRight: space.inline },
+  chipText: { ...type.meta },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1666,196 +1680,19 @@ const styles = StyleSheet.create({
   photoScroll: {
     marginTop: 4,
   },
-  photoThumbContainer: {
-    marginRight: 10,
-    position: 'relative',
-  },
-  photoThumb: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-  },
-  photoRemoveBtn: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-  },
-  pendingBanner: { marginHorizontal: 16, marginTop: 10, marginBottom: 0 },
   addPhotoBtn: {
     // Matches DiaryFormPhoto (thumbnail size, and its top room for the remove button).
     width: DIARY_FORM_THUMB,
     height: DIARY_FORM_THUMB,
     marginTop: 6,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 10,
   },
-  addPhotoText: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  sectionDivider: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingBottom: 8,
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  weatherRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  weatherField: {},
-  detailActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  detailActionBtn: {
-    padding: 4,
-  },
-  detailContent: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  detailTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  detailDate: {
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  detailMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 16,
-  },
-  detailMetaText: {
-    fontSize: 14,
-  },
-  offlineDetailTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  weatherCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 14,
-    gap: 12,
-    marginBottom: 16,
-  },
-  weatherCardInfo: {},
-  weatherCardText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  weatherCardTemp: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  detailSection: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 16,
-    marginTop: 8,
-  },
-  detailSectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  detailField: {
-    marginBottom: 14,
-  },
-  detailFieldLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  detailFieldValue: {
-    fontSize: 15,
-  },
-  checkboxDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  detailPhoto: {
-    width: 100,
-    height: 100,
-    borderRadius: 8,
-    marginRight: 10,
-  },
-  templateBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-    borderBottomWidth: 1,
-  },
-  templateBarText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  tpOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  tpSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '60%',
-    minHeight: 200,
-  },
-  tpHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-  },
-  tpHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  tpRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    gap: 12,
-  },
-  tpRowContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  tpRowName: {
-    fontSize: 15,
-    fontWeight: '500',
-    flexShrink: 1,
-  },
-  tpRowBadge: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  addPhotoText: { ...type.caption, marginTop: metrics.listRow.bodyGap },
+  sectionDivider: { paddingTop: space.inline, paddingBottom: metrics.form.labelGap },
+  sectionTitle: { ...type.meta },
 });

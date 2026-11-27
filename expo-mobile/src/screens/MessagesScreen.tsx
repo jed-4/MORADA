@@ -3,14 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  SectionList,
+  ScrollView,
   ActivityIndicator,
+  TextInput,
   RefreshControl,
-  Switch,
   Pressable,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch, apiRequest, ApiError } from '../services/api';
@@ -18,16 +16,23 @@ import { onSocketEvent, useSocketConnected } from '../services/socket';
 import { useAuth } from '../contexts/AuthContext';
 import { usePolling } from '../lib/usePolling';
 import { usePresence } from '../lib/usePresence';
-import { timeAgo, getInitials } from '../lib/format';
-import { haptic } from '../lib/haptics';
-import { PressableScale } from '../components/ui/PressableScale';
-import { PresenceDot } from '../components/messages/PresenceDot';
+import { shortWhen } from '../lib/format';
+import { usePersistedState } from '../lib/usePersistedState';
 import { ClientBadge } from '../components/messages/ClientBadge';
+import { MessageSearchResults, type MessageSearchHit } from '../components/messages/MessageSearchResults';
+import { Eye, Hash, Lock, MessagesSquare, Search, SquarePen, User, X } from 'lucide-react-native';
+import { Avatar, ButtonRow, Card, EmptyState, FieldHint, FieldLabel, GroupHeader, ListRow, PrimaryButton, ProjectSquare, RootTitle, SheetBody, TextField, ToggleRow, UnreadBadge } from '../components/kit';
+import { readableFrame } from '../components/ui/ReadableColumn';
+import { haptic } from '../lib/haptics';
+import { PresenceDot } from '../components/messages/PresenceDot';
 import { markupToDisplay } from '../components/messages/mentions';
-import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
-import { Skeleton, SkeletonRow } from '../components/ui/Skeleton';
+import { Sheet, type SheetRef } from '../components/ui/Sheet';
+import { TwoPane } from '../components/ui/TwoPane';
+import { useTwoPaneSelection } from '../lib/twoPane';
+import MessageThreadScreen from './MessageThreadScreen';
+import { SkeletonRow } from '../components/ui/Skeleton';
 import { useToast } from '../components/ui/Toast';
-import { useTheme, MAX_FONT_SCALE } from '../theme';
+import { useTheme, useColors, metrics, radii, size, space, tabular, type } from '../theme';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 interface Channel {
@@ -39,6 +44,8 @@ interface Channel {
   isPinned?: boolean;
   /** Clients can read this channel — drives the amber eye/CLIENT signals. */
   isClientFacing?: boolean;
+  /** Optional channel emoji, chosen on the web. */
+  emoji?: string | null;
   lastMessageAt?: string | null;
   lastMessageContent?: string | null;
   lastMessageSender?: string | null;
@@ -63,16 +70,6 @@ export default function MessagesScreen({ navigation, route }: Props) {
   const { user } = useAuth();
   const theme = useTheme();
   const toast = useToast();
-  const colors = {
-    bg: theme.background,
-    card: theme.card,
-    text: theme.textPrimary,
-    secondary: theme.textSecondary,
-    border: theme.border,
-    accent: theme.primary,
-    muted: theme.textMuted,
-    input: theme.background,
-  };
 
   const [channels, setChannels] = useState<Channel[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
@@ -80,12 +77,15 @@ export default function MessagesScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [seeding, setSeeding] = useState(false);
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
-
-  const toggleSection = useCallback((key: string) => {
-    haptic.select();
-    setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
-  }, []);
+  // Set when the channel list couldn't be fetched (offline, server error), so an
+  // empty list isn't mistaken for "no channels" — that offers to create samples.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [pinnedOpen, setPinnedOpen] = usePersistedState<boolean>('messages.pinnedOpen', true);
+  const [search, setSearch] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [projectsById, setProjectsById] = useState<Record<string, { color?: string | null }>>({});
+  const composeSheetRef = useRef<SheetRef>(null);
+  const k = useColors();
 
   const newChannelSheetRef = useRef<SheetRef>(null);
   const [newChannelName, setNewChannelName] = useState('');
@@ -95,6 +95,31 @@ export default function MessagesScreen({ navigation, route }: Props) {
   const newDmSheetRef = useRef<SheetRef>(null);
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
   const [creatingDm, setCreatingDm] = useState(false);
+
+  // D07: on the Duo unfolded the open conversation sits on the right; on a
+  // phone a tap still pushes MessageThread. Names are looked up through a ref
+  // so a just-created DM (not yet in `channels`) still gets its title.
+  const namesRef = useRef<Record<string, string>>({});
+  // Message search → open a thread at a message. The phone push reads the ref;
+  // the Duo pane reads `focus` (channel + message) for the embedded thread.
+  const focusRef = useRef<string | null>(null);
+  const [focus, setFocus] = useState<{ channelId: string; messageId: string } | null>(null);
+  const { selectedId, open: openThread, isWide, paneProps } = useTwoPaneSelection({
+    navigation,
+    route,
+    detailRoute: 'MessageThread',
+    paramsFor: (id: string) => ({
+      channelId: id,
+      channelName: namesRef.current[id] ?? '',
+      ...(focusRef.current ? { focusMessageId: focusRef.current } : {}),
+    }),
+  });
+
+  // A search jump belongs to one conversation: drop it once another is open,
+  // so coming back later doesn't jump (and tint) all over again.
+  useEffect(() => {
+    if (focus && selectedId !== focus.channelId) setFocus(null);
+  }, [focus, selectedId]);
 
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
@@ -109,11 +134,30 @@ export default function MessagesScreen({ navigation, route }: Props) {
       ]);
       setChannels(chs || []);
       setUnreadCounts(counts || {});
+      setLoadFailed(false);
     } catch {
-      // silently fail on poll
+      // Polls fail quietly; only an empty screen needs to say so.
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Duo two-pane: the open thread marks itself read on open and on leave, but
+  // that never reached this list, so a thread's badge came back once you left
+  // it. Zero it locally the moment the selection moves, and again when the
+  // thread's read POST lands. No list refetch here: mark-read also fires on
+  // every incoming message, and the socket already refreshes the list then.
+  const prevSelectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevSelectedRef.current;
+    prevSelectedRef.current = isWide ? selectedId : null;
+    const ids = [prev, isWide ? selectedId : null].filter((id): id is string => !!id);
+    if (!ids.length) return;
+    setUnreadCounts(c => (ids.every(id => !c[id]) ? c : { ...c, ...Object.fromEntries(ids.map(id => [id, 0])) }));
+  }, [isWide, selectedId]);
+  const handleMarkedRead = useCallback((id: string) => {
+    setUnreadCounts(c => (c[id] ? { ...c, [id]: 0 } : c));
   }, []);
 
   const fetchAssignableUsers = useCallback(async () => {
@@ -124,6 +168,15 @@ export default function MessagesScreen({ navigation, route }: Props) {
       setUsersById(byId);
     } catch {
       // non-critical: DM names fall back to channel-name parsing
+    }
+    try {
+      // Project threads lead with the project's colour square.
+      const projects = await apiFetch<{ id: string; color?: string | null }[]>('/api/projects');
+      const map: Record<string, { color?: string | null }> = {};
+      for (const pr of projects || []) map[pr.id] = { color: pr.color };
+      setProjectsById(map);
+    } catch {
+      // non-critical: squares fall back to the stable tint
     }
   }, []);
 
@@ -206,13 +259,14 @@ export default function MessagesScreen({ navigation, route }: Props) {
       toast.success('Conversation started');
       await fetchChannels();
       const displayName = getDmDisplayName(channel, user?.id);
-      navigation.navigate('MessageThread', { channelId: channel.id, channelName: displayName });
+      namesRef.current[channel.id] = displayName;
+      openThread(channel.id);
     } catch {
       toast.error('Could not start conversation.');
     } finally {
       setCreatingDm(false);
     }
-  }, [fetchChannels, navigation, user?.id, toast]);
+  }, [fetchChannels, openThread, user?.id, toast]);
 
   const loadTeamUsers = useCallback(async () => {
     try {
@@ -240,137 +294,150 @@ export default function MessagesScreen({ navigation, route }: Props) {
     return stripped.replace(/-/g, ' ');
   }
 
-  // GET /api/channels already returns isPinned (resolved per-user from
-  // channel_members) and pre-sorts pinned-first-then-recent. This re-sort keeps
-  // pinned at the top of each *section* regardless of payload order; Array.sort
-  // is stable, so the server's recency ordering survives within each group.
-  const pinnedFirst = (list: Channel[]) =>
-    [...list].sort((a, b) => (a.isPinned ? 0 : 1) - (b.isPinned ? 0 : 1));
+  const projectColor = (id?: string | null) => (id ? projectsById[id]?.color ?? null : null);
 
-  const channelList = pinnedFirst(channels.filter(c => c.type === 'channel'));
-  const dmList = pinnedFirst(channels.filter(c => c.type === 'dm'));
+  /** Preview prefixed with the sender's first name, or "You". */
+  const previewOf = (ch: Channel): string | null => {
+    if (!ch.lastMessageContent) return ch.description || null;
+    const body = markupToDisplay(ch.lastMessageContent);
+    const sender = ch.lastMessageSender?.trim();
+    if (!sender) return body;
+    const mine = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim();
+    const who = mine && sender === mine ? 'You' : sender.split(/\s+/)[0];
+    return `${who}: ${body}`;
+  };
 
-  // Direct messages first, then channels (which will grow large). Both headers
-  // collapse — collapsed sections keep their header (with count) but drop their
-  // rows. State is by section key, in-memory.
-  const sections: { key: string; title: string; count: number; data: Channel[] }[] = [
-    ...(dmList.length > 0
-      ? [{ key: 'dm', title: 'DIRECT MESSAGES', count: dmList.length, data: collapsedSections.dm ? [] : dmList }]
-      : []),
-    ...(channelList.length > 0
-      ? [{ key: 'channels', title: 'CHANNELS', count: channelList.length, data: collapsedSections.channels ? [] : channelList }]
-      : []),
-  ];
+  const nameOf = (ch: Channel) => (ch.type === 'dm' ? getDmDisplayName(ch, user?.id) : ch.name);
+  for (const ch of channels) namesRef.current[ch.id] = nameOf(ch);
+  // The open conversation is being read on the right: don't badge it.
+  const unreadOf = (id: string) => (isWide && selectedId === id ? 0 : unreadCounts[id] || 0);
+  const q = search.trim().toLowerCase();
+  const visible = q ? channels.filter(ch => nameOf(ch).toLowerCase().includes(q)) : channels;
+  const byRecent = (a: Channel, b: Channel) =>
+    (b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0) - (a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0);
+  // Only Pinned is grouped; everything else is one list, newest first.
+  const pinned = visible.filter(ch => ch.isPinned);
+  const recent = visible.filter(ch => !ch.isPinned).sort(byRecent);
+  const totalUnread = channels.reduce((sum, ch) => sum + unreadOf(ch.id), 0);
 
-  const renderChannelRow = ({ item, index }: { item: Channel; index: number }) => {
-    const unread = unreadCounts[item.id] || 0;
-    const displayName = item.type === 'dm' ? getDmDisplayName(item, user?.id) : item.name;
-    // Presence is only meaningful for a DM's counterpart — never for yourself,
-    // and never for a multi-member channel.
-    const dmOtherId =
-      item.type === 'dm'
-        ? (item.dmParticipants || []).find(id => id !== user?.id) || null
-        : null;
-    const dmOnline = !!dmOtherId && dmOtherId !== user?.id && onlineUserIds.has(dmOtherId);
+  const renderLead = (item: Channel, displayName: string) => {
+    if (item.type === 'dm' && !item.emoji) {
+      const otherId = (item.dmParticipants || []).find(id => id !== user?.id) || null;
+      const online = !!otherId && onlineUserIds.has(otherId);
+      return (
+        <View>
+          <Avatar name={displayName} />
+          {online ? <PresenceDot theme={theme} ringColor={k.surface} /> : null}
+        </View>
+      );
+    }
+    if (item.emoji) return <Text style={{ fontSize: M.emoji, lineHeight: M.lead }}>{item.emoji}</Text>;
+    if (item.projectId) return <ProjectSquare color={projectColor(item.projectId)} fallbackKey={item.projectId} />;
+    return <Text style={[type.price, { color: k.muted }]}>#</Text>;
+  };
+
+  // Message search hits reuse the list's own naming and lead icons.
+  const channelById = (id: string) => channels.find(ch => ch.id === id);
+  const hitName = (h: MessageSearchHit) => {
+    const ch = channelById(h.channelId);
+    if (ch) return nameOf(ch);
+    return h.channelType === 'dm' ? 'Direct message' : h.channelName || 'Channel';
+  };
+  const hitLead = (h: MessageSearchHit) => {
+    const ch = channelById(h.channelId);
+    if (ch) return renderLead(ch, nameOf(ch));
+    return h.channelEmoji ? <Text style={{ fontSize: M.emoji, lineHeight: M.lead }}>{h.channelEmoji}</Text> : <Text style={[type.price, { color: k.muted }]}>#</Text>;
+  };
+  const openHit = (h: MessageSearchHit) => {
+    focusRef.current = h.id;
+    setFocus({ channelId: h.channelId, messageId: h.id });
+    openThread(h.channelId);
+    focusRef.current = null;
+  };
+
+  const renderRow = (item: Channel) => {
+    const unread = unreadOf(item.id);
+    const displayName = nameOf(item);
+    const isOpen = isWide && selectedId === item.id;
+    const preview = previewOf(item);
     // Only channels can be client-facing; a DM is never one, whatever the row says.
     const clientFacing = item.type === 'channel' && !!item.isClientFacing;
     return (
-      <Animated.View entering={FadeInDown.duration(300).delay(Math.min(index * 40, 240))}>
-        <PressableScale
-          haptics
-          style={[styles.channelRow, { borderBottomColor: colors.border }]}
-          onPress={() => navigation.navigate('MessageThread', { channelId: item.id, channelName: displayName })}
-        >
-          <View style={styles.channelAvatarWrap}>
-            <View
-              style={[
-                styles.channelAvatar,
-                { backgroundColor: clientFacing ? theme.statusWarningBg : colors.accent + '30' },
-              ]}
-            >
-              {clientFacing ? (
-                <Ionicons name="eye" size={18} color={theme.statusWarning} />
-              ) : (
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelAvatarIcon, { color: colors.accent }]}>
-                  {item.type === 'channel' ? '#' : getInitials(displayName)}
-                </Text>
-              )}
-            </View>
-            {dmOnline && <PresenceDot theme={theme} ringColor={colors.bg} />}
+      <Pressable
+        key={item.id}
+        onPress={() => {
+          haptic.light();
+          namesRef.current[item.id] = displayName;
+          openThread(item.id);
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={`${displayName}${unread ? `, ${unread} unread` : ''}${clientFacing ? ', client can see this channel' : ''}`}
+        style={({ pressed }) => [mx.row, isOpen && [mx.rowSelected, { backgroundColor: k.tint }], { opacity: pressed ? metrics.pressedOpacity : 1 }]}
+      >
+        <View style={mx.lead}>{renderLead(item, displayName)}</View>
+        <View style={mx.body}>
+          <View style={mx.line}>
+            <Text style={[unread ? type.rowTitleStrong : type.rowTitle, mx.name, { color: k.text }]} numberOfLines={1}>
+              {displayName}
+            </Text>
+            {clientFacing ? <ClientBadge /> : null}
+            {item.lastMessageAt ? (
+              <Text style={[type.caption, tabular, mx.time, { color: unread ? k.accent : k.muted }]}>{shortWhen(item.lastMessageAt)}</Text>
+            ) : null}
           </View>
-          <View style={styles.channelInfo}>
-            <View style={styles.channelNameRow}>
-              {item.isPinned && (
-                <Ionicons name="pin" size={12} color={colors.muted} style={styles.pinIcon} />
-              )}
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelName, { color: colors.text }, unread > 0 && styles.channelNameBold]} numberOfLines={1}>
-                {displayName}
-              </Text>
-              {clientFacing && <ClientBadge theme={theme} />}
-              {item.lastMessageAt && (
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelTime, { color: colors.secondary }]}>
-                  {timeAgo(item.lastMessageAt)}
-                </Text>
-              )}
-            </View>
-            {item.lastMessageContent ? (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelDesc, { color: colors.secondary }, unread > 0 && styles.channelDescBold]} numberOfLines={1}>
-                {item.lastMessageSender
-                  ? `${item.lastMessageSender}: ${markupToDisplay(item.lastMessageContent)}`
-                  : markupToDisplay(item.lastMessageContent)}
-              </Text>
-            ) : item.description ? (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelDesc, { color: colors.secondary }]} numberOfLines={1}>
-                {item.description}
-              </Text>
-            ) : (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.channelDesc, { color: colors.muted }]} numberOfLines={1}>
-                No messages yet
-              </Text>
-            )}
+          <View style={mx.line}>
+            <Text style={[type.meta, mx.name, { color: k.muted }]} numberOfLines={1}>
+              {preview ?? 'No messages yet'}
+            </Text>
+            <UnreadBadge count={unread} />
           </View>
-          {unread > 0 && (
-            <View style={[styles.unreadBadge, { backgroundColor: colors.accent }]}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.unreadBadgeText}>{unread > 99 ? '99+' : unread}</Text>
-            </View>
-          )}
-        </PressableScale>
-      </Animated.View>
+        </View>
+      </Pressable>
     );
   };
 
   const header = (
-    <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.headerTitle, { color: colors.text }]}>Messages</Text>
-      <View style={styles.headerActions}>
-        <PressableScale
-          haptics
-          style={[styles.headerBtn, { backgroundColor: colors.input }]}
-          // 36pt circle + 4 each side = 44pt.
-          hitSlop={4}
-          onPress={() => { loadTeamUsers(); newDmSheetRef.current?.present(); }}
-        >
-          <Ionicons name="person-add-outline" size={18} color={colors.accent} />
-        </PressableScale>
-        <PressableScale
-          haptics
-          style={[styles.headerBtn, { backgroundColor: colors.input }]}
-          // 36pt circle + 4 each side = 44pt.
-          hitSlop={4}
-          onPress={() => newChannelSheetRef.current?.present()}
-        >
-          <Ionicons name="add" size={20} color={colors.accent} />
-        </PressableScale>
-      </View>
+    <View style={mx.top}>
+      <RootTitle
+        title="Messages"
+        count={totalUnread ? `${totalUnread} unread` : null}
+        countSize="small"
+        accentActions
+        actions={[
+          {
+            icon: searchVisible ? X : Search,
+            label: searchVisible ? 'Close search' : 'Search messages',
+            onPress: () => {
+              if (searchVisible) setSearch('');
+              setSearchVisible(v => !v);
+            },
+          },
+          { icon: SquarePen, label: 'New message or channel', onPress: () => composeSheetRef.current?.present() },
+        ]}
+      />
+      {searchVisible ? (
+        <View style={[mx.searchBar, { backgroundColor: k.surface, borderColor: k.border }]}>
+          <Search size={metrics.projects.searchIcon} color={k.muted} strokeWidth={metrics.iconStroke} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search messages"
+            placeholderTextColor={k.faint}
+            autoFocus
+            style={[type.body, mx.searchInput, { color: k.text }]}
+          />
+        </View>
+      ) : null}
     </View>
   );
 
+  const pad = { paddingTop: insets.top + metrics.messages.top };
+
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.bg }]}>
-        {header}
-        <View style={styles.skeletonList}>
-          <Skeleton width={90} height={12} style={{ marginBottom: 4 }} />
+      <View style={[styles.container, { backgroundColor: k.bg }]}>
+        <View style={[mx.frame, pad]}>{header}</View>
+        <View style={[mx.frame, mx.skeleton]}>
           {Array.from({ length: 7 }).map((_, i) => (
             <SkeletonRow key={i} />
           ))}
@@ -379,70 +446,119 @@ export default function MessagesScreen({ navigation, route }: Props) {
     );
   }
 
-  if (channels.length === 0) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.bg }]}>
-        {header}
-        <Animated.View entering={FadeInDown.duration(300)} style={styles.emptyState}>
-          <Ionicons name="chatbubbles-outline" size={56} color={colors.muted} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyTitle, { color: colors.text }]}>No channels yet</Text>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.emptyDesc, { color: colors.secondary }]}>
-            Set up your team channels to start communicating.
-          </Text>
-          <PressableScale
-            haptics
-            style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
-            onPress={handleSeedChannels}
-            disabled={seeding}
-          >
-            {seeding ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.emptyBtnText}>Set Up Channels</Text>
-            )}
-          </PressableScale>
-        </Animated.View>
-      </View>
-    );
-  }
-
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {header}
-
-      <SectionList
-        sections={sections}
-        keyExtractor={item => item.id}
-        renderItem={renderChannelRow}
-        renderSectionHeader={({ section }) => {
-          const isCollapsed = !!collapsedSections[(section as any).key];
-          return (
-            <Pressable
-              onPress={() => toggleSection((section as any).key)}
-              style={[styles.sectionHeader, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}
-            >
-              <Ionicons
-                name={isCollapsed ? 'chevron-forward' : 'chevron-down'}
-                size={13}
-                color={colors.secondary}
-              />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionTitle, { color: colors.secondary }]}>{section.title}</Text>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sectionCount, { color: colors.muted }]}>{(section as any).count}</Text>
-            </Pressable>
-          );
-        }}
-        stickySectionHeadersEnabled={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+    <View style={[styles.container, { backgroundColor: k.bg }]}>
+      <TwoPane
+        {...paneProps}
+        listWidth={size.listPane.messages}
+        empty={<EmptyState icon={MessagesSquare} title="Select a conversation" />}
+        detail={
+          selectedId ? (
+            <MessageThreadScreen
+              key={selectedId}
+              embedded
+              onChannelChanged={fetchChannels}
+              onMarkedRead={handleMarkedRead}
+              navigation={navigation}
+              route={{
+                params: {
+                  channelId: selectedId,
+                  channelName: namesRef.current[selectedId] ?? '',
+                  ...(focus?.channelId === selectedId ? { focusMessageId: focus.messageId } : {}),
+                },
+              }}
+            />
+          ) : null
         }
-        contentContainerStyle={{ flexGrow: 1 }}
-        style={{ flex: 1 }}
+        list={
+      <ScrollView
+        contentContainerStyle={[mx.frame, mx.list, pad, readableFrame]}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={k.accent} />}
+      >
+        {header}
+        {channels.length === 0 && loadFailed ? (
+          <View style={mx.empty}>
+            <EmptyState icon={MessagesSquare} title="Couldn't load messages" helper="Check your connection, then pull down to try again." />
+          </View>
+        ) : channels.length === 0 ? (
+          <View style={mx.empty}>
+            <EmptyState icon={MessagesSquare} title="No channels yet" helper="Set up your team channels to start communicating." />
+            <Pressable
+              onPress={handleSeedChannels}
+              disabled={seeding}
+              accessibilityRole="button"
+              style={({ pressed }) => [mx.seedBtn, { backgroundColor: k.accent, opacity: pressed ? metrics.solidPressedOpacity : 1 }]}
+            >
+              {seeding ? <ActivityIndicator color={k.onAccent} size="small" /> : <Text style={[type.rowTitleMedium, { color: k.onAccent }]}>Set up channels</Text>}
+            </Pressable>
+          </View>
+        ) : visible.length === 0 ? (
+          // 2+ characters: the Messages section below says whether anything matched.
+          q.length >= 2 ? null : <Text style={[type.body, { color: k.muted }]}>Nothing matches your search</Text>
+        ) : (
+          <>
+            {pinned.length > 0 ? (
+              <View>
+                <GroupHeader title="Pinned" meta={pinned.length} open={pinnedOpen} onToggle={() => setPinnedOpen(!pinnedOpen)} />
+                {pinnedOpen ? <Card variant="list">{pinned.map(renderRow)}</Card> : null}
+              </View>
+            ) : null}
+            {recent.length > 0 ? (
+              <View style={mx.recent}>
+                {pinned.length > 0 ? <Text style={[type.meta, { color: k.muted }]}>Recent</Text> : null}
+                <Card variant="list">{recent.map(renderRow)}</Card>
+              </View>
+            ) : null}
+          </>
+        )}
+        {searchVisible && channels.length > 0 ? (
+          <MessageSearchResults
+            query={search}
+            conversationName={hitName}
+            renderLead={hitLead}
+            onOpen={openHit}
+          />
+        ) : null}
+      </ScrollView>
+        }
       />
 
-      {/* New Channel Sheet */}
+      {/* Compose: choose a direct message or a new channel. */}
+      <Sheet ref={composeSheetRef} title="New">
+        <SheetBody>
+          <Card variant="list">
+            <ListRow
+              key="dm"
+              lead={<User size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />}
+              title="New message"
+              subtitle="Message someone on your team"
+              chevron
+              onPress={() => {
+                composeSheetRef.current?.dismiss();
+                loadTeamUsers();
+                setTimeout(() => newDmSheetRef.current?.present(), metrics.sheetSwapMs);
+              }}
+            />
+            <ListRow
+              key="channel"
+              lead={<Hash size={size.icon.row} color={k.icon} strokeWidth={metrics.iconStroke} />}
+              title="New channel"
+              subtitle="A shared thread for a topic or team"
+              chevron
+              onPress={() => {
+                composeSheetRef.current?.dismiss();
+                setTimeout(() => newChannelSheetRef.current?.present(), metrics.sheetSwapMs);
+              }}
+            />
+          </Card>
+        </SheetBody>
+      </Sheet>
+
+      {/* New channel */}
       <Sheet
         ref={newChannelSheetRef}
-        title="New Channel"
+        title="New channel"
         // Client-facing is a consequential default — never let it carry over
         // from a previous open. Covers both cancel and post-create dismiss.
         onDismiss={() => {
@@ -450,105 +566,70 @@ export default function MessagesScreen({ navigation, route }: Props) {
           setNewChannelClientFacing(false);
         }}
       >
-        <View style={styles.sheetBody}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sheetLabel, { color: colors.secondary }]}>Channel name</Text>
-          <SheetTextInput
-            style={[styles.sheetInput, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
-            placeholder="e.g. site-updates"
-            placeholderTextColor={colors.muted}
-            value={newChannelName}
-            returnKeyType="done"
-            onChangeText={setNewChannelName}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+        <SheetBody>
+          <View style={mx.field}>
+            <FieldLabel>Channel name</FieldLabel>
+            <TextField
+              inSheet
+              placeholder="e.g. site-updates"
+              value={newChannelName}
+              returnKeyType="done"
+              onChangeText={setNewChannelName}
+              autoCapitalize="none"
+              autoCorrect={false}
+              accessibilityLabel="Channel name"
+            />
+          </View>
 
-          {/* Client-facing toggle. Amber accent only when ON, so the row reads
-              as a consequence rather than a permanent warning. */}
-          <View
-            style={[
-              styles.clientToggleRow,
-              {
-                borderColor: newChannelClientFacing ? theme.statusWarning : colors.border,
-                backgroundColor: newChannelClientFacing ? theme.statusWarningBg : 'transparent',
-              },
-            ]}
-          >
-            <View style={styles.clientToggleTextWrap}>
-              <View style={styles.clientToggleTitleRow}>
-                <Ionicons
-                  name={newChannelClientFacing ? 'eye' : 'lock-closed'}
-                  size={14}
-                  color={newChannelClientFacing ? theme.statusWarning : colors.muted}
-                />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.clientToggleTitle, { color: colors.text }]}>
-                  Client-facing channel
-                </Text>
-              </View>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-                style={[
-                  styles.clientToggleHint,
-                  { color: newChannelClientFacing ? theme.statusWarning : colors.secondary },
-                ]}
-              >
-                {newChannelClientFacing
-                  ? 'The client can see this channel'
-                  : 'Only your team can see this channel'}
-              </Text>
-            </View>
-            <Switch
+          {/* Client-facing: a consequence, so its helper turns amber when on. */}
+          <Card variant="list">
+            <ToggleRow
+              key="client"
+              icon={newChannelClientFacing ? Eye : Lock}
+              label="Client-facing channel"
+              helper={newChannelClientFacing ? 'The client can see this channel' : 'Only your team can see this channel'}
               value={newChannelClientFacing}
               onValueChange={v => {
                 haptic.select();
                 setNewChannelClientFacing(v);
               }}
-              trackColor={{ false: colors.border, true: theme.statusWarning }}
-              thumbColor="#ffffff"
-              ios_backgroundColor={colors.border}
             />
-          </View>
+          </Card>
+          {newChannelClientFacing ? <FieldHint tone="warning">Anything posted here is visible to the client.</FieldHint> : null}
 
-          <PressableScale
-            style={[styles.sheetBtn, { backgroundColor: colors.accent, opacity: creatingChannel || !newChannelName.trim() ? 0.6 : 1 }]}
-            onPress={handleCreateChannel}
-            disabled={creatingChannel || !newChannelName.trim()}
-          >
-            {creatingChannel ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.sheetBtnText}>Create Channel</Text>
-            )}
-          </PressableScale>
-        </View>
+          <ButtonRow>
+            <PrimaryButton
+              label="Create channel"
+              onPress={handleCreateChannel}
+              loading={creatingChannel}
+              disabled={!newChannelName.trim()}
+            />
+          </ButtonRow>
+        </SheetBody>
       </Sheet>
 
-      {/* New DM Sheet */}
-      <Sheet ref={newDmSheetRef} title="New Message" scrollable>
-        <View style={styles.sheetBody}>
+      {/* New message: pick a team member */}
+      <Sheet ref={newDmSheetRef} title="New message" scrollable>
+        <SheetBody>
           {teamUsers.length === 0 ? (
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.noUsersText, { color: colors.secondary }]}>No other team members found.</Text>
+            <Text style={[type.body, mx.center, { color: k.muted }]}>No other team members found.</Text>
           ) : (
-            teamUsers.map(u => {
-              const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email;
-              return (
-                <PressableScale
-                  key={u.id}
-                  haptics
-                  style={[styles.dmUserRow, { borderBottomColor: colors.border }]}
-                  onPress={() => handleOpenDm(u.id)}
-                  disabled={creatingDm}
-                >
-                  <View style={[styles.dmUserAvatar, { backgroundColor: colors.accent + '30' }]}>
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dmUserInitials, { color: colors.accent }]}>
-                      {getInitials(name)}
-                    </Text>
-                  </View>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.dmUserName, { color: colors.text }]}>{name}</Text>
-                </PressableScale>
-              );
-            })
+            <Card variant="list">
+              {teamUsers.map(u => {
+                const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email;
+                return (
+                  <ListRow
+                    key={u.id}
+                    lead={<Avatar name={name} />}
+                    title={name}
+                    titleLines={1}
+                    onPress={creatingDm ? undefined : () => { haptic.light(); handleOpenDm(u.id); }}
+                  />
+                );
+              })}
+            </Card>
           )}
-        </View>
+        </SheetBody>
       </Sheet>
     </View>
   );
@@ -556,86 +637,40 @@ export default function MessagesScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
+});
+
+const M = metrics.messages;
+
+const mx = StyleSheet.create({
+  frame: { paddingHorizontal: space.screenX },
+  list: { gap: M.gap, paddingBottom: space.screenBottom },
+  top: { gap: M.topGap },
+  recent: { gap: space.groupHeaderToCard },
+  empty: { paddingTop: space.screenBottom, alignItems: 'center', gap: M.topGap },
+  seedBtn: { minHeight: metrics.minHit, paddingHorizontal: M.seedPadX, borderRadius: radii.lg, alignItems: 'center', justifyContent: 'center' },
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    gap: space.inline,
+    minHeight: metrics.projects.searchHeight,
+    borderRadius: radii.lg,
+    borderWidth: size.border,
+    paddingHorizontal: metrics.projects.cardPad,
   },
-  headerTitle: { fontSize: 22, fontWeight: '700' },
-  headerActions: { flexDirection: 'row', gap: 8 },
-  headerBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  skeletonList: { padding: 16, gap: 16 },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minHeight: 44,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
+  searchInput: { flex: 1, paddingVertical: 0 },
+  field: { gap: metrics.form.labelGap },
+  center: { textAlign: 'center', paddingVertical: space.screenBottom },
+  skeleton: { gap: M.gap, paddingTop: M.topGap },
+  // Duo: the open conversation is a tint block (radius 8) set in from the card edge.
+  rowSelected: {
+    marginHorizontal: -(space.cardX - metrics.card.duoPad),
+    paddingHorizontal: space.cardX - metrics.card.duoPad,
+    borderRadius: radii.lg,
   },
-  sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-  sectionCount: { fontSize: 11, fontWeight: '600' },
-  channelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 12,
-  },
-  channelAvatarWrap: { width: 40, height: 40, flexShrink: 0 },
-  channelAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  channelAvatarIcon: { fontSize: 18, fontWeight: '700' },
-  pinIcon: { marginRight: -2 },
-  channelInfo: { flex: 1, minWidth: 0 },
-  channelNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  // flex:1 (basis 0) lets a long name absorb the slack and ellipsise, so the
-  // CLIENT pill and the timestamp keep their natural width beside it.
-  channelName: { fontSize: 15, fontWeight: '500', flex: 1 },
-  channelNameBold: { fontWeight: '700' },
-  channelTime: { fontSize: 12, flexShrink: 0 },
-  channelDesc: { fontSize: 13, marginTop: 1 },
-  channelDescBold: { fontWeight: '600' },
-  unreadBadge: { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, minWidth: 20, alignItems: 'center' },
-  unreadBadgeText: { color: '#ffffff', fontSize: 11, fontWeight: '700' },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', marginTop: 8 },
-  emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-  emptyBtn: { marginTop: 8, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 8 },
-  emptyBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
-  sheetBody: { paddingHorizontal: 20, paddingTop: 4 },
-  sheetLabel: { fontSize: 13, marginBottom: 6 },
-  sheetInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, marginBottom: 16 },
-  clientToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 16,
-  },
-  clientToggleTextWrap: { flex: 1, gap: 2 },
-  clientToggleTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  clientToggleTitle: { fontSize: 14, fontWeight: '600' },
-  clientToggleHint: { fontSize: 12 },
-  sheetBtn: { paddingVertical: 13, borderRadius: 8, alignItems: 'center' },
-  sheetBtnText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
-  noUsersText: { textAlign: 'center', paddingVertical: 20, fontSize: 14 },
-  dmUserRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 12 },
-  dmUserAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  dmUserInitials: { fontSize: 14, fontWeight: '700' },
-  dmUserName: { fontSize: 15, fontWeight: '500' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: metrics.listRow.gap, paddingVertical: metrics.listRow.padY, minHeight: M.rowMin },
+  lead: { width: M.lead, alignItems: 'center', justifyContent: 'center' },
+  body: { flex: 1, minWidth: 0, gap: metrics.listRow.bodyGap },
+  line: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  name: { flex: 1 },
+  time: { flexShrink: 0 },
 });

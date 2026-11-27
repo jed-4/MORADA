@@ -27,7 +27,8 @@
         "EXPO_PUBLIC_API_URL": "https://buildpro4.replit.app",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "SENTRY_ORG": "buildpro-be",
-        "SENTRY_PROJECT": "react-native"
+        "SENTRY_PROJECT": "react-native",
+        "EXPO_PUBLIC_DESIGN_PREVIEW": "1"
       }
     },
     "preview": {

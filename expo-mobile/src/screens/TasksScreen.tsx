@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -12,25 +12,29 @@ import {
   SectionList,
   Platform,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
-import { dateStrOf, toLocalDateStr, fromLocalDateStr } from '../lib/dates';
+import { dateStrOf } from '../lib/dates';
 import { doneStatusKey, defaultStatusKey, isDoneStatus, type TaskStatusOption } from '../lib/taskStatus';
 import { TaskDetail, TaskDetailPane, stripHtml, getPriorityColor, PRIORITY_LABELS } from '../components/tasks/TaskDetail';
+import { TaskForm } from '../components/tasks/TaskForm';
+import { CalendarDays, Check, Flag, Folder, List as ListIcon, type LucideIcon } from 'lucide-react-native';
+import {
+  Card, Checkbox, FieldLabel, ListRow, PrimaryButton, ProjectSquare, SecondaryButton, SheetBody, SheetHeader, TextButton,
+} from '../components/kit';
 import { useTaskPane, confirmDiscard } from '../components/tasks/useTaskPane';
 import { TwoPane } from '../components/ui/TwoPane';
-import { Sheet, SheetTextInput, type SheetRef } from '../components/ui/Sheet';
+import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import { useToast } from '../components/ui/Toast';
 import { readableFrame } from '../components/ui/ReadableColumn';
 import { useLayout } from '../lib/useLayout';
 import { haptic } from '../lib/haptics';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, currentTheme, MAX_FONT_SCALE } from '../theme';
+import { useTheme, useColors, currentTheme, MAX_FONT_SCALE, metrics, size } from '../theme';
 import { goBackOrHome } from '../navigation/back';
 import { SwipeRow } from '../components/ui/SwipeRow';
 const TASKS_PREFS_KEY = '@buildpro_tasks_prefs';
@@ -157,8 +161,6 @@ export default function TasksScreen({ navigation, route }: Props) {
   const taskSheetRef = useRef<SheetRef>(null);
   // Edit form: Title → Next → Notes.
   const editDescRef = useRef<any>(null);
-  const statusSheetRef = useRef<SheetRef>(null);
-  const prioritySheetRef = useRef<SheetRef>(null);
   const filterSheetRef = useRef<SheetRef>(null);
 
   const [editTitle, setEditTitle] = useState('');
@@ -178,6 +180,7 @@ export default function TasksScreen({ navigation, route }: Props) {
   const [filters, setFilters] = useState<{statuses: string[]; priorities: string[]; projects: string[]}>({statuses: [], priorities: [], projects: []});
 
   const toast = useToast();
+  const k = useColors();
   const theme = useTheme();
   const { width: screenWidth, height: screenHeight } = useLayout();
   // Big screen, list view: tasks on the left, the open task on the right.
@@ -361,7 +364,7 @@ const colors = {
     }
 
     return groups.filter(g => g.tasks.length > 0);
-  }, [tasks, groupBy, getProjectName, getStatusColor, colors.accent, colors.muted, filters, statusOptions]);
+  }, [tasks, groupBy, getProjectName, getStatusColor, colors.accent, colors.muted, filters, statusOptions, datePreset]);
 
   const toggleSection = (key: string) => {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
@@ -508,12 +511,37 @@ const colors = {
     }
   };
 
-  const groupByOptions: { key: GroupBy; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-    { key: 'status', label: 'Status', icon: 'list-outline' },
-    { key: 'priority', label: 'Priority', icon: 'flag-outline' },
-    { key: 'project', label: 'Project', icon: 'briefcase-outline' },
-    { key: 'dueDate', label: 'Due Date', icon: 'calendar-outline' },
+  const groupByOptions: { key: GroupBy; label: string; icon: LucideIcon }[] = [
+    { key: 'status', label: 'Status', icon: ListIcon },
+    { key: 'priority', label: 'Priority', icon: Flag },
+    { key: 'project', label: 'Project', icon: Folder },
+    { key: 'dueDate', label: 'Due date', icon: CalendarDays },
   ];
+
+  // Every status the pickers and filters offer (the company's, or the defaults).
+  const ALL_STATUS = (statusOptions.length > 0
+    ? statusOptions
+    : STATUS_ORDER.map(st => ({ key: st, name: STATUS_LABELS[st] || st, color: getStatusColor(st), sortOrder: 0 })));
+
+  /** Filter row: ticked = shown. Lists hold what's EXCLUDED, so a tick means "not in the list". */
+  const tickRow = (key: string, label: string, on: boolean, toggle: () => void, dotColor?: string | null, lead?: ReactNode) => {
+    const press = () => { haptic.select(); toggle(); };
+    return (
+      <ListRow
+        key={key}
+        lead={
+          <View style={tx.lead}>
+            <Checkbox checked={on} onPress={press} accessibilityLabel={label} />
+            {lead}
+          </View>
+        }
+        title={label}
+        titleLines={1}
+        trailing={dotColor ? <View style={[tx.dot, { backgroundColor: dotColor }]} /> : undefined}
+        onPress={press}
+      />
+    );
+  };
 
   const renderTaskRow = (task: Task) => {
     const done = isTaskDone(task.status);
@@ -834,21 +862,25 @@ const colors = {
       )}
 
       <Sheet ref={groupBySheetRef} title="Group by">
-        <View style={styles.sheetBody}>
-          {groupByOptions.map(opt => (
-            <TouchableOpacity
-              key={opt.key}
-              style={[styles.groupByOption, groupBy === opt.key && { backgroundColor: colors.accent + '15' }]}
-              onPress={() => { haptic.select(); setGroupBy(opt.key); groupBySheetRef.current?.dismiss(); }}
-            >
-              <Ionicons name={opt.icon} size={20} color={groupBy === opt.key ? colors.accent : colors.secondary} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.groupByOptionText, { color: groupBy === opt.key ? colors.accent : colors.text }]}>
-                {opt.label}
-              </Text>
-              {groupBy === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-            </TouchableOpacity>
-          ))}
-        </View>
+        <SheetBody>
+          <Card variant="list">
+            {groupByOptions.map(opt => {
+              const active = groupBy === opt.key;
+              const Glyph = opt.icon;
+              return (
+                <ListRow
+                  key={opt.key}
+                  lead={<Glyph size={size.icon.row} color={active ? k.accent : k.icon} strokeWidth={metrics.iconStroke} />}
+                  title={opt.label}
+                  titleLines={1}
+                  selected={active}
+                  trailing={active ? <Check size={size.icon.row} color={k.accent} strokeWidth={metrics.iconStrokeActive} /> : undefined}
+                  onPress={() => { haptic.select(); setGroupBy(opt.key); groupBySheetRef.current?.dismiss(); }}
+                />
+              );
+            })}
+          </Card>
+        </SheetBody>
       </Sheet>
 
       <Sheet
@@ -860,54 +892,22 @@ const colors = {
         // keyboard (the header Save stays too).
         footer={isEditing ? (
           <>
-            <TouchableOpacity
-              style={[styles.editCancelBtn, { borderColor: colors.border }]}
-              onPress={handleCancelEdit}
-              accessibilityRole="button"
-            >
-              <Text style={[styles.editCancelText, { color: colors.secondary }]} maxFontSizeMultiplier={1.4}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.editSaveBtn, { backgroundColor: colors.accent, opacity: saving ? 0.7 : 1 }]}
-              onPress={handleSaveTask}
-              disabled={saving}
-              accessibilityRole="button"
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <Text style={styles.editSaveText} maxFontSizeMultiplier={1.4}>Save</Text>
-              )}
-            </TouchableOpacity>
+            <SecondaryButton label="Cancel" onPress={handleCancelEdit} />
+            <PrimaryButton label="Save" onPress={handleSaveTask} loading={saving} />
           </>
         ) : null}
       >
-        <View style={[styles.sheetHeaderRow, { borderBottomColor: colors.border }]}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sheetHeaderTitle, { color: colors.text }]}>
-            {isEditing ? 'Edit Task' : 'Task Details'}
-          </Text>
-          {!isEditing ? (
-            <TouchableOpacity onPress={handleEditTask} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontWeight: '600', fontSize: 15 }}>Edit</Text>
-            </TouchableOpacity>
-          ) : (
+        <SheetBody>
+          <SheetHeader
+            title={isEditing ? 'Edit task' : 'Task'}
+            onCancel={isEditing ? handleCancelEdit : undefined}
+            doneLabel={isEditing ? 'Save' : 'Edit'}
             // Also up here: the sheet lifts with the keyboard, so this Save
             // stays in view while typing in a field further down.
-            <TouchableOpacity
-              onPress={handleSaveTask}
-              disabled={saving}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              accessibilityRole="button"
-              accessibilityLabel="Save task"
-            >
-              {saving
-                ? <ActivityIndicator size="small" color={colors.accent} />
-                : <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontWeight: '600', fontSize: 15 }}>Save</Text>}
-            </TouchableOpacity>
-          )}
-        </View>
+            onDone={isEditing ? handleSaveTask : handleEditTask}
+            doneLoading={isEditing && saving}
+          />
 
-        <View style={styles.taskSheetBody}>
           {!isEditing && selectedTask && (
             <TaskDetail
               task={selectedTask}
@@ -923,242 +923,80 @@ const colors = {
           )}
 
           {isEditing && (
-            <>
-              <View style={styles.editField}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Title</Text>
-                <SheetTextInput
-                  style={[styles.editInput, { backgroundColor: theme.background, color: colors.text, borderColor: colors.border }]}
-                  value={editTitle}
-                  onChangeText={setEditTitle}
-                  placeholder="Task title"
-                  placeholderTextColor={colors.muted}
-                  autoCapitalize="sentences"
-                  returnKeyType="next"
-                  submitBehavior="submit"
-                  onSubmitEditing={() => editDescRef.current?.focus()}
-                />
-              </View>
+            <TaskForm
+              inSheet
+              isDark={isDark}
+              title={editTitle}
+              onTitle={setEditTitle}
+              status={editStatus}
+              statusOptions={ALL_STATUS}
+              onStatus={setEditStatus}
+              priority={editPriority}
+              onPriority={setEditPriority}
+              dueDate={editDueDate}
+              onDueDate={setEditDueDate}
+              description={editDescription}
+              onDescription={setEditDescription}
+              descriptionLabel="Notes"
+              descRef={editDescRef}
+            />
+          )}
+        </SheetBody>
+      </Sheet>
 
-              {/* Big screen: status + priority side by side. The wrapper is always
-                  rendered (only its style changes) so folding never remounts the form. */}
-              <View style={isWide ? styles.fieldPair : undefined}>
-                <View style={[styles.editField, isWide && styles.fieldHalf]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Status</Text>
-                  <TouchableOpacity
-                    style={[styles.editSelect, { backgroundColor: theme.background, borderColor: colors.border }]}
-                    onPress={() => statusSheetRef.current?.present()}
-                  >
-                    <View style={[styles.selectDot, { backgroundColor: getStatusColor(editStatus) }]} />
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: colors.text }]}>
-                      {getStatusLabel(editStatus)}
-                    </Text>
-                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={[styles.editField, isWide && styles.fieldHalf]}>
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Priority</Text>
-                  <TouchableOpacity
-                    style={[styles.editSelect, { backgroundColor: theme.background, borderColor: colors.border }]}
-                    onPress={() => prioritySheetRef.current?.present()}
-                  >
-                    <View style={[styles.selectDot, { backgroundColor: getPriorityColor(editPriority) }]} />
-                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: colors.text }]}>
-                      {PRIORITY_LABELS[editPriority] || editPriority}
-                    </Text>
-                    <Ionicons name="chevron-down" size={16} color={colors.secondary} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.editField}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Due Date</Text>
-                <TouchableOpacity
-                  style={[styles.editSelect, { backgroundColor: theme.background, borderColor: showEditDatePicker ? colors.accent : colors.border }]}
-                  onPress={() => setShowEditDatePicker(v => !v)}
-                >
-                  <Ionicons name="calendar-outline" size={16} color={colors.secondary} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editSelectText, { color: editDueDate ? colors.text : colors.muted }]}>
-                    {editDueDate ? fromLocalDateStr(editDueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'No due date'}
-                  </Text>
-                  {editDueDate ? (
-                    <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); setEditDueDate(''); setShowEditDatePicker(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Ionicons name="close-circle" size={16} color={colors.muted} />
-                    </TouchableOpacity>
-                  ) : (
-                    <Ionicons name={showEditDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.secondary} />
-                  )}
-                </TouchableOpacity>
-                {showEditDatePicker && (
-                  <DateTimePicker
-                    value={editDueDate ? fromLocalDateStr(editDueDate) : new Date()}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                    themeVariant={isDark ? 'dark' : 'light'}
-                    onChange={(_event, date) => {
-                      if (Platform.OS === 'android') setShowEditDatePicker(false);
-                      if (date) setEditDueDate(toLocalDateStr(date));
-                    }}
-                    style={{ marginTop: 4 }}
-                  />
+      <Sheet
+        ref={filterSheetRef}
+        title="Filters"
+        scrollable
+        footer={
+          <>
+            {hasActiveFilters ? (
+              <TextButton label="Show all" tone="muted" onPress={() => { haptic.select(); setFilters({ statuses: [], priorities: [], projects: [] }); }} />
+            ) : null}
+            <PrimaryButton label="Done" onPress={() => filterSheetRef.current?.dismiss()} />
+          </>
+        }
+      >
+        <SheetBody>
+          <View style={tx.group}>
+            <FieldLabel>Status</FieldLabel>
+            <Card variant="list">
+              {ALL_STATUS.map(opt =>
+                tickRow(`s:${opt.key}`, opt.name, !filters.statuses.includes(opt.key), () =>
+                  setFilters(prev => ({
+                    ...prev,
+                    statuses: prev.statuses.includes(opt.key) ? prev.statuses.filter(x => x !== opt.key) : [...prev.statuses, opt.key],
+                  })), opt.color),
+              )}
+            </Card>
+          </View>
+          <View style={tx.group}>
+            <FieldLabel>Priority</FieldLabel>
+            <Card variant="list">
+              {PRIORITY_ORDER.map(p =>
+                tickRow(`p:${p}`, PRIORITY_LABELS[p], !filters.priorities.includes(p), () =>
+                  setFilters(prev => ({
+                    ...prev,
+                    priorities: prev.priorities.includes(p) ? prev.priorities.filter(x => x !== p) : [...prev.priorities, p],
+                  }))),
+              )}
+            </Card>
+          </View>
+          {projects.length > 0 ? (
+            <View style={tx.group}>
+              <FieldLabel>Project</FieldLabel>
+              <Card variant="list">
+                {projects.map(proj =>
+                  tickRow(`j:${proj.id}`, proj.name, !filters.projects.includes(proj.id), () =>
+                    setFilters(prev => ({
+                      ...prev,
+                      projects: prev.projects.includes(proj.id) ? prev.projects.filter(x => x !== proj.id) : [...prev.projects, proj.id],
+                    })), undefined, <ProjectSquare color={proj.color} fallbackKey={proj.id} />),
                 )}
-              </View>
-
-              <View style={styles.editField}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.editLabel, { color: colors.secondary }]}>Notes</Text>
-                <SheetTextInput
-                  style={[styles.editTextArea, { backgroundColor: theme.background, color: colors.text, borderColor: colors.border }]}
-                  ref={editDescRef}
-                  autoCapitalize="sentences"
-                  value={editDescription}
-                  onChangeText={setEditDescription}
-                  placeholder="Add a description..."
-                  placeholderTextColor={colors.muted}
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
-              </View>
-
-            </>
-          )}
-        </View>
-      </Sheet>
-
-      <Sheet ref={statusSheetRef} title="Status" stackBehavior="push">
-        <View style={styles.sheetBody}>
-          {(statusOptions.length > 0 ? statusOptions : STATUS_ORDER.map(s => ({ key: s, name: STATUS_LABELS[s] || s, color: getStatusColor(s), sortOrder: 0 }))).map(opt => (
-            <TouchableOpacity
-              key={opt.key}
-              style={[styles.pickerOption, editStatus === opt.key && { backgroundColor: colors.accent + '15' }]}
-              onPress={() => { haptic.select(); setEditStatus(opt.key); statusSheetRef.current?.dismiss(); }}
-            >
-              <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerOptionText, { color: editStatus === opt.key ? colors.accent : colors.text }]}>
-                {opt.name}
-              </Text>
-              {editStatus === opt.key && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Sheet>
-
-      <Sheet ref={prioritySheetRef} title="Priority" stackBehavior="push">
-        <View style={styles.sheetBody}>
-          {PRIORITY_ORDER.map(p => (
-            <TouchableOpacity
-              key={p}
-              style={[styles.pickerOption, editPriority === p && { backgroundColor: colors.accent + '15' }]}
-              onPress={() => { haptic.select(); setEditPriority(p); prioritySheetRef.current?.dismiss(); }}
-            >
-              <View style={[styles.selectDot, { backgroundColor: getPriorityColor(p) }]} />
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.pickerOptionText, { color: editPriority === p ? colors.accent : colors.text }]}>
-                {PRIORITY_LABELS[p]}
-              </Text>
-              {editPriority === p && <Ionicons name="checkmark" size={20} color={colors.accent} />}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Sheet>
-
-      <Sheet ref={filterSheetRef} scrollable>
-        <View style={[styles.sheetHeaderRow, { borderBottomColor: colors.border }]}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.sheetHeaderTitle, { color: colors.text }]}>Filters</Text>
-          {hasActiveFilters && (
-            <TouchableOpacity
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              onPress={() => { haptic.select(); setFilters({ statuses: [], priorities: [], projects: [] }); }}
-            >
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={{ color: colors.accent, fontWeight: '600', fontSize: 14 }}>Show All</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={styles.taskSheetBody}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterSectionLabel, { color: colors.secondary }]}>Status</Text>
-          <View style={styles.filterChips}>
-            {(statusOptions.length > 0 ? statusOptions : STATUS_ORDER.map(s => ({ key: s, name: STATUS_LABELS[s] || s, color: getStatusColor(s), sortOrder: 0 }))).map(opt => {
-              const excluded = filters.statuses.includes(opt.key);
-              const chipColor = opt.color || colors.accent;
-              return (
-                <TouchableOpacity
-                  key={opt.key}
-                  style={[styles.filterChip, {
-                    borderColor: excluded ? colors.border : chipColor,
-                    backgroundColor: excluded ? 'transparent' : chipColor + '20',
-                    opacity: excluded ? 0.45 : 1,
-                  }]}
-                  onPress={() => {
-                    haptic.select();
-                    setFilters(prev => ({
-                      ...prev,
-                      statuses: excluded ? prev.statuses.filter(s => s !== opt.key) : [...prev.statuses, opt.key],
-                    }));
-                  }}
-                >
-                  <View style={[styles.selectDot, { backgroundColor: opt.color || '#94a3b8' }]} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{opt.name}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterSectionLabel, { color: colors.secondary }]}>Priority</Text>
-          <View style={styles.filterChips}>
-            {PRIORITY_ORDER.map(p => {
-              const excluded = filters.priorities.includes(p);
-              const chipColor = getPriorityColor(p);
-              return (
-                <TouchableOpacity
-                  key={p}
-                  style={[styles.filterChip, {
-                    borderColor: excluded ? colors.border : chipColor,
-                    backgroundColor: excluded ? 'transparent' : chipColor + '20',
-                    opacity: excluded ? 0.45 : 1,
-                  }]}
-                  onPress={() => {
-                    haptic.select();
-                    setFilters(prev => ({
-                      ...prev,
-                      priorities: excluded ? prev.priorities.filter(pr => pr !== p) : [...prev.priorities, p],
-                    }));
-                  }}
-                >
-                  <View style={[styles.selectDot, { backgroundColor: chipColor }]} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{PRIORITY_LABELS[p]}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterSectionLabel, { color: colors.secondary }]}>Project</Text>
-          <View style={styles.filterChips}>
-            {projects.map(proj => {
-              const excluded = filters.projects.includes(proj.id);
-              const chipColor = proj.color || colors.accent;
-              return (
-                <TouchableOpacity
-                  key={proj.id}
-                  style={[styles.filterChip, {
-                    borderColor: excluded ? colors.border : chipColor,
-                    backgroundColor: excluded ? 'transparent' : chipColor + '20',
-                    opacity: excluded ? 0.45 : 1,
-                  }]}
-                  onPress={() => {
-                    haptic.select();
-                    setFilters(prev => ({
-                      ...prev,
-                      projects: excluded ? prev.projects.filter(id => id !== proj.id) : [...prev.projects, proj.id],
-                    }));
-                  }}
-                >
-                  <View style={[styles.selectDot, { backgroundColor: chipColor }]} />
-                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.filterChipText, { color: excluded ? colors.secondary : chipColor }]}>{proj.name}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
+              </Card>
+            </View>
+          ) : null}
+        </SheetBody>
       </Sheet>
 
       <View style={[styles.bottomBar, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
@@ -1214,31 +1052,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  headerControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  segmentedControl: {
-    flexDirection: 'row',
-    borderRadius: 8,
-    borderWidth: 1,
-    overflow: 'hidden',
-    flex: 1,
-  },
-  segmentBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    gap: 4,
-    borderRadius: 7,
-  },
-  segmentText: {
-    fontSize: 13,
-    fontWeight: '600',
   },
   groupByBtn: {
     width: 40,
@@ -1453,134 +1266,6 @@ const styles = StyleSheet.create({
   boardEmptyText: {
     fontSize: 13,
   },
-  sheetHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 8,
-  },
-  sheetHeaderTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  // Option lists inside sheets: options carry 12px inner padding, +8 = 20 gutter.
-  sheetBody: {
-    paddingHorizontal: 8,
-  },
-  taskSheetBody: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  groupByOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginBottom: 2,
-  },
-  groupByOptionText: {
-    fontSize: 15,
-    fontWeight: '500',
-    flex: 1,
-  },
-  editField: {
-    marginBottom: 16,
-  },
-  fieldPair: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  fieldHalf: {
-    flex: 1,
-  },
-  editLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  editInput: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-  },
-  editSelect: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  selectDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  editSelectText: {
-    fontSize: 15,
-    flex: 1,
-  },
-  editTextArea: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    minHeight: 100,
-  },
-  editActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  editCancelBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 10,
-    minHeight: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editCancelText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  editSaveBtn: {
-    flex: 1,
-    borderRadius: 10,
-    minHeight: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editSaveText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  pickerOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginBottom: 2,
-  },
-  pickerOptionText: {
-    fontSize: 15,
-    fontWeight: '500',
-    flex: 1,
-  },
   filterDot: {
     position: 'absolute',
     top: 4,
@@ -1589,32 +1274,6 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#ef4444',
-  },
-  filterSectionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  filterChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  filterChipText: {
-    fontSize: 13,
-    fontWeight: '500',
   },
   bottomBar: {
     flexDirection: 'row',
@@ -1637,4 +1296,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+});
+
+const tx = StyleSheet.create({
+  group: { gap: metrics.form.labelGap },
+  lead: { flexDirection: 'row', alignItems: 'center', gap: metrics.listRow.gap },
+  dot: { width: size.statusDot, height: size.statusDot, borderRadius: size.statusDot / 2 },
 });

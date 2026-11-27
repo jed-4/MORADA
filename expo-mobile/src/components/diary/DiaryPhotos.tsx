@@ -1,3 +1,6 @@
+import { Camera } from 'lucide-react-native';
+import { metrics, radii } from '../../theme';
+import { SmartImage } from '../kit';
 import { useState } from 'react';
 import {
   Image,
@@ -14,6 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLayout } from '../../lib/useLayout';
+import { diaryPhotoSource } from './diaryPhotoPath';
 
 /**
  * Photos on a site diary entry (SiteDiaryScreen + SiteDiaryListScreen only).
@@ -29,15 +33,32 @@ import { useLayout } from '../../lib/useLayout';
  */
 const GRID_GAP = 8;
 
+/** A strip photo that shows the grey camera tile if it can't load (revamp v1). */
+function StripThumb({ uri, style }: { uri: string; style: StyleProp<ImageStyle> }) {
+  const flat = (StyleSheet.flatten(style) ?? {}) as ImageStyle;
+  const w = typeof flat.width === 'number' ? flat.width : metrics.thumb.diary;
+  const h = typeof flat.height === 'number' ? flat.height : metrics.thumb.diary;
+  const r = typeof flat.borderRadius === 'number' ? flat.borderRadius : radii.lg;
+  return (
+    <SmartImage
+      source={diaryPhotoSource(uri)}
+      width={w}
+      height={h}
+      radius={r}
+      fallbackIcon={Camera}
+      style={{ marginRight: flat.marginRight as number | undefined, marginLeft: flat.marginLeft as number | undefined }}
+    />
+  );
+}
+
 export function DiaryPhotoGallery({
   uris,
-  getUrl,
   onOpen,
   thumbStyle,
   scrollStyle,
 }: {
+  /** Display paths (see diaryPhotoList): object paths or local file URIs. */
   uris: string[];
-  getUrl: (path: string) => string;
   onOpen: (index: number) => void;
   /** The phone thumbnail style (unchanged from before). */
   thumbStyle: StyleProp<ImageStyle>;
@@ -63,7 +84,7 @@ export function DiaryPhotoGallery({
             accessibilityRole="imagebutton"
             accessibilityLabel={`Open photo ${idx + 1} of ${uris.length}`}
           >
-            <Image source={{ uri: getUrl(uri) }} style={thumbStyle} />
+            <StripThumb uri={uri} style={thumbStyle} />
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -76,7 +97,7 @@ export function DiaryPhotoGallery({
     <View style={[styles.grid, scrollStyle]} onLayout={e => setGridWidth(e.nativeEvent.layout.width)}>
       {uris.map((uri, idx) => (
         <TouchableOpacity key={idx} activeOpacity={0.8} onPress={() => onOpen(idx)}>
-          <Image source={{ uri: getUrl(uri) }} style={[styles.tile, { width: tile, height: tile }]} />
+          <Image source={diaryPhotoSource(uri)} style={[styles.tile, { width: tile, height: tile }]} />
         </TouchableOpacity>
       ))}
     </View>
@@ -96,14 +117,12 @@ export function DiaryPhotoViewer({
   visible,
   uris,
   index,
-  getUrl,
   onIndexChange,
   onClose,
 }: {
   visible: boolean;
   uris: string[];
   index: number;
-  getUrl: (path: string) => string;
   onIndexChange: (index: number) => void;
   onClose: () => void;
 }) {
@@ -132,7 +151,7 @@ export function DiaryPhotoViewer({
               showsVerticalScrollIndicator={false}
               centerContent
             >
-              <Image source={{ uri: getUrl(uri) }} style={{ width, height: height * 0.8 }} resizeMode="contain" />
+              <Image source={diaryPhotoSource(uri)} style={{ width, height: height * 0.8 }} resizeMode="contain" />
             </ScrollView>
           ))}
         </ScrollView>

@@ -6,7 +6,7 @@ import { apiFetch } from '../../services/api';
 import { useClientProject } from '../../contexts/ClientProjectContext';
 import { haptic } from '../../lib/haptics';
 import { formatMoney } from '../../lib/selections';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts } from '../../theme';
 import { formatDay, groupInvoices, invoiceStatus, outstandingBalance, type ClientInvoice } from '../../lib/clientPortal';
 import { PressableScale } from '../../components/ui/PressableScale';
 import { ClientEmpty, ClientLoading, ClientOfflineNote, ClientStatusPill } from '../../components/client/ClientUI';
@@ -117,11 +117,11 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 16, paddingBottom: 32 },
   summary: { fontSize: fontSize.bodySm, marginTop: 4, marginBottom: 4 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 16, marginBottom: 8 },
-  sectionTitle: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, letterSpacing: 0.6 },
+  sectionTitle: { fontSize: fontSize.xs, fontFamily: fonts.semibold, letterSpacing: 0.6 },
   sectionMeta: { fontSize: fontSize.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: radius.xl, padding: 14 },
   rowBody: { flex: 1, gap: 5 },
-  rowTitle: { fontSize: fontSize.bodyLg, fontWeight: fontWeight.medium },
+  rowTitle: { fontSize: fontSize.bodyLg, fontFamily: fonts.medium },
   rowMeta: { fontSize: fontSize.bodySm },
-  amount: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  amount: { fontSize: fontSize.sm, fontFamily: fonts.semibold },
 });

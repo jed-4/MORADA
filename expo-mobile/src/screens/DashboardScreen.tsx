@@ -6,45 +6,44 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
-  TouchableOpacity,
   ActivityIndicator,
-  FlatList,
   Pressable,
 } from 'react-native';
 import Animated, {
-  FadeIn,
   FadeInDown,
-  FadeOut,
   LinearTransition,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
-  withSequence,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch, apiRequest } from '../services/api';
 import { getCached, setCached, clearCache } from '../services/cache';
 import { Sheet, type SheetRef } from '../components/ui/Sheet';
 import { useToast } from '../components/ui/Toast';
 import { Skeleton, SkeletonRow } from '../components/ui/Skeleton';
-import { PressableScale } from '../components/ui/PressableScale';
-import { SectionHeader } from '../components/ui/SectionHeader';
-import { ProgressRing } from '../components/ui/ProgressRing';
 import { haptic } from '../lib/haptics';
 import { useLayout } from '../lib/useLayout';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePersistedState } from '../lib/usePersistedState';
 import { compareProjects } from '../lib/projects';
 import { SuggestionSheet } from '../components/more/SuggestionSheet';
 import { QuickCaptureRow } from '../components/home/QuickCaptureRow';
 import { clockedOutOnThisPhone } from '../services/liveActivity';
 import { refreshWidgetSnapshot } from '../services/widgetSnapshot';
-import { getInitials, timeAgo } from '../lib/format';
+import { getInitials, timeAgo, compactAgo } from '../lib/format';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useTheme, fontSize, fontWeight, radius, projectColors, typeColors, type Theme } from '../theme';
+import { useTheme, useColors, projectColors, metrics, radii, size, space, tabular, type, fonts } from '../theme';
+import {
+  Activity, AtSign, Bell, Building, ChevronDown, ChevronRight, CircleCheck, Clock, Folder, Lightbulb, LogOut, Pencil, RotateCcw, Settings,
+} from 'lucide-react-native';
+import {
+  Avatar, ButtonRow, Card, Checkbox, Divider, FieldLabel, ListRow, PrimaryButton, ProjectSquare, PropertyRow, SecondaryButton, SheetBody,
+  UnreadBadge, fallbackProjectColor, initialsOf,
+} from '../components/kit';
+import { AgendaRow, EmptyLine, MoreRow, ProjectLineRow, Rows, SubLabel, WorkspaceSection } from '../components/home/WorkspaceSections';
 
 interface Project {
   id: string;
@@ -154,16 +153,6 @@ interface CostCode {
   title: string;
 }
 
-interface SiteWeather {
-  tempMax: number;
-  tempMin: number;
-  description: string;
-  iconKey: string;
-  precipChance: number;
-  rainFromHour: number | null;
-  locationName: string;
-}
-
 interface MentionNotification {
   id: string;
   type: string;
@@ -213,28 +202,6 @@ function formatDateLabel(dateStr: string): string {
 
 const isComplete = (s?: string) => s === 'completed' || s === 'done';
 
-/** Server weather iconKey → Ionicons name. */
-const weatherIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
-  clear: 'sunny-outline',
-  'partly-cloudy': 'partly-sunny-outline',
-  cloudy: 'cloud-outline',
-  fog: 'cloud-outline',
-  rain: 'rainy-outline',
-  thunderstorm: 'thunderstorm-outline',
-  snow: 'snow-outline',
-};
-
-/** 0-23 → "12am" / "2pm". */
-function formatHour(hour: number): string {
-  if (hour === 0) return '12am';
-  if (hour < 12) return `${hour}am`;
-  if (hour === 12) return '12pm';
-  return `${hour - 12}pm`;
-}
-
-const PROJECT_CARD_WIDTH = 124;
-const H_CARD_WIDTH = 260;
-const CARD_GAP = 10;
 const BREAK_OPTIONS = [0, 15, 30, 45, 60, 90, 120];
 
 function breakLabel(mins: number): string {
@@ -243,56 +210,29 @@ function breakLabel(mins: number): string {
   return mins % 60 === 0 ? `${mins / 60}h` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-/** White pulsing dot on the live clocked-in card. */
+/** Accent pulsing dot on the live clocked-in card. */
 function PulsingDot() {
+  const c = useColors();
   const opacity = useSharedValue(1);
   useEffect(() => {
     opacity.value = withRepeat(withTiming(0.4, { duration: 1000 }), -1, true);
   }, [opacity]);
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  return <Animated.View style={[styles.pulsingDot, style]} />;
-}
-
-/** Circular checkbox with a spring scale pop on toggle. */
-function TaskCheckbox({ done, onToggle, theme }: { done: boolean; onToggle: () => void; theme: Theme }) {
-  const scale = useSharedValue(1);
-  const handlePress = () => {
-    scale.value = withSequence(
-      withSpring(0.8, { damping: 15, stiffness: 400 }),
-      withSpring(1, { damping: 15, stiffness: 400 }),
-    );
-    onToggle();
-  };
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  return (
-    <Pressable onPress={handlePress} hitSlop={10}>
-      <Animated.View
-        style={[
-          styles.taskCheckbox,
-          {
-            // Solid fill carries a white checkmark — must stay dark in both modes.
-            borderColor: done ? theme.statusSuccessSolid : theme.borderStrong,
-            backgroundColor: done ? theme.statusSuccessSolid : 'transparent',
-          },
-          animatedStyle,
-        ]}
-      >
-        {done && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
-      </Animated.View>
-    </Pressable>
-  );
+  return <Animated.View style={[styles.pulsingDot, { backgroundColor: c.accent }, style]} />;
 }
 
 export default function DashboardScreen({ navigation }: Props) {
   const { user, logout } = useAuth();
   const theme = useTheme();
+  const c = useColors();
+  const insets = useSafeAreaInsets();
   const toast = useToast();
   // Wide screen (Duo unfolded): widgets flow two to a row. Same children in the
   // same order with the same keys — only styles change, so a fold never
   // remounts a widget (horizontal list positions, expanded state survive).
   const { isWide } = useLayout();
-  const fullW = isWide && styles.sectionFull;
-  const halfW = isWide && styles.sectionHalf;
+  // Wide: sections fill their column; the columns set the widths.
+  const colW = null;
 
   const [projects, setProjects] = useState<Project[]>(() => getCached<Project[]>('projects') || []);
   const [costCodes, setCostCodes] = useState<CostCode[]>(() => getCached<CostCode[]>('costCodes') || []);
@@ -312,49 +252,22 @@ export default function DashboardScreen({ navigation }: Props) {
   const [breakMinutes, setBreakMinutes] = useState(0);
   const clockTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [, setTick] = useState(0);
-  const [completedExpanded, setCompletedExpanded] = useState(false);
-  const [activityCollapsed, setActivityCollapsed] = useState(false);
-  // Project row: same order as the Projects list, windowed 8 at a time.
-  const [projectRowLimit, setProjectRowLimit] = useState(8);
+  const [completedExpanded, setCompletedExpanded] = usePersistedState<boolean>('workspace.completedExpanded', false);
   // Mirror the Projects list: never show archived or business projects in the
   // Workspace project row (the dashboard endpoint returns them unfiltered).
   const sortedProjects = useMemo(
     () => projects.filter(p => !p.isArchived && !p.isBusiness).sort(compareProjects),
     [projects],
   );
-  const projectRowData = useMemo(
-    () => [...sortedProjects.slice(0, projectRowLimit), { id: '__all__' } as any],
-    [sortedProjects, projectRowLimit],
-  );
-  const loadMoreProjectCards = useCallback(() => {
-    setProjectRowLimit((limit) =>
-      limit < sortedProjects.length ? Math.min(limit + 8, sortedProjects.length) : limit,
-    );
-  }, [sortedProjects.length]);
   const [selectedTimesheetDetail, setSelectedTimesheetDetail] = useState<TimesheetEntry | null>(null);
   const [taskDetail, setTaskDetail] = useState<Task | null>(null);
   const [taskDetailLoading, setTaskDetailLoading] = useState(false);
   const [savingChecklist, setSavingChecklist] = useState(false);
   const [scheduleDetail, setScheduleDetail] = useState<ScheduleItem | null>(null);
-  const [weather, setWeather] = useState<SiteWeather | null>(null);
   const [mentions, setMentions] = useState<MentionNotification[]>([]);
   const [scheduleStatusOptions, setScheduleStatusOptions] = useState<{ key: string; name: string; color: string }[]>([]);
   const [phaseLabels, setPhaseLabels] = useState<Record<string, string>>({});
   const [subStatusLabels, setSubStatusLabels] = useState<Record<string, string>>({});
-
-  // Collapsed state for Recent Activity persists across sessions.
-  useEffect(() => {
-    AsyncStorage.getItem('@morada_home_activity_collapsed')
-      .then((v) => { if (v === '1') setActivityCollapsed(true); })
-      .catch(() => {});
-  }, []);
-  const toggleActivityCollapsed = () => {
-    haptic.select();
-    setActivityCollapsed((prev) => {
-      AsyncStorage.setItem('@morada_home_activity_collapsed', prev ? '0' : '1').catch(() => {});
-      return !prev;
-    });
-  };
 
   const clockOutSheetRef = useRef<SheetRef>(null);
   const suggestionSheetRef = useRef<SheetRef>(null);
@@ -458,32 +371,6 @@ export default function DashboardScreen({ navigation }: Props) {
       fetchMentions();
     }, [fetchMentions])
   );
-
-  // Site weather for the active (clocked-in) project, else the first project.
-  // Weather is garnish — any failure just means no weather line.
-  const weatherProjectId = activeTimesheet?.projectId || projects[0]?.id;
-  useEffect(() => {
-    if (!weatherProjectId) {
-      setWeather(null);
-      return;
-    }
-    const cacheKey = `weather:${weatherProjectId}`;
-    const cached = getCached<SiteWeather>(cacheKey);
-    if (cached) {
-      setWeather(cached);
-      return;
-    }
-    let cancelled = false;
-    apiFetch<SiteWeather>(`/api/weather?projectId=${weatherProjectId}`)
-      .then(data => {
-        setCached(cacheKey, data);
-        if (!cancelled) setWeather(data);
-      })
-      .catch(() => {
-        if (!cancelled) setWeather(null);
-      });
-    return () => { cancelled = true; };
-  }, [weatherProjectId]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -626,24 +513,24 @@ export default function DashboardScreen({ navigation }: Props) {
   const incompleteTasks = todayTasks.filter(t => !isComplete(t.status));
   const completedTasks = todayTasks.filter(t => isComplete(t.status));
 
-  const getProjectName = (pid?: string) => {
+  const getProjectName = (pid?: string, known?: string | null) => {
     if (!pid) return 'No project';
     const p = projects.find(pr => pr.id === pid);
-    if (!p) return 'Unknown';
+    if (!p) return known || 'Project';
     return p.projectNumber ? `${p.projectNumber} - ${p.name}` : p.name;
   };
 
   const getCostCodeLabel = (ccId: string) => {
     const cc = costCodes.find(c => c.id === ccId);
-    return cc ? `${cc.code} - ${cc.title}` : 'Unknown';
+    return cc ? `${cc.code} - ${cc.title}` : null;
   };
 
   const getProjectColor = (projectId?: string): string => {
-    const fallback = companySettings?.brandColor || projectColors[0];
-    if (!projectId) return fallback;
+    // Same fallback as Projects and Project detail, so a project without a
+    // colour gets one consistent square everywhere.
+    if (!projectId) return companySettings?.brandColor || projectColors[0];
     const project = projects.find(p => p.id === projectId);
-    if (project?.color) return project.color;
-    return fallback;
+    return project?.color || fallbackProjectColor(projectId);
   };
 
   const now = new Date();
@@ -660,64 +547,15 @@ export default function DashboardScreen({ navigation }: Props) {
   const prettify = (k: string | undefined, map: Record<string, string>) =>
     k ? map[k] || k.replace(/_/g, ' ') : '';
 
-  // ── Section renderers ────────────────────────────────────────────────────
+  // ── Derived data for the section cards ──────────────────────────────────
 
-  const renderProjectCard = ({ item }: { item: Project | { id: '__all__' } }) => {
-    if (item.id === '__all__') {
-      return (
-        <PressableScale
-          haptics
-          onPress={() => navigation.getParent()?.navigate('Projects')}
-          style={[styles.projectCard, styles.allProjectsCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-        >
-          <Text style={[styles.allProjectsText, { color: theme.textSecondary }]}>All projects</Text>
-          <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-        </PressableScale>
-      );
-    }
-    const p = item as Project;
-    const color = p.color || getProjectColor(p.id);
-    const phase = prettify(p.projectSubStatus, subStatusLabels) || prettify(p.currentSystemPhase, phaseLabels) || '';
-    return (
-      <PressableScale
-        haptics
-        onPress={() => navigation.getParent()?.navigate('Projects', {
-          screen: 'ProjectDetail',
-          params: { projectId: p.id, projectName: p.name },
-        })}
-        style={[styles.projectCard, { backgroundColor: theme.card, borderColor: color + '55', borderWidth: 1 }]}
-      >
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: color + '33' }]} />
-        <View style={styles.projectCardTop}>
-          <View style={[styles.projectDot, { backgroundColor: color }]} />
-        </View>
-        <Text style={[styles.projectName, { color: theme.textPrimary }]} numberOfLines={2}>{p.name}</Text>
-        {!!phase && (
-          <View style={[styles.phaseChip, { backgroundColor: theme.background }]}>
-            <Text style={[styles.phaseChipText, { color: theme.textSecondary }]} numberOfLines={1}>{phase}</Text>
-          </View>
-        )}
-      </PressableScale>
-    );
-  };
-
-  const renderTaskRow = (task: Task, index: number) => {
-    const done = isComplete(task.status);
-    return (
-      <View
-        key={task.id}
-        style={[styles.taskRow, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border }]}
-      >
-        <TaskCheckbox done={done} onToggle={() => toggleTaskComplete(task.id, task.status)} theme={theme} />
-        <Pressable style={styles.taskRowBody} onPress={() => openTaskSheet(task)}>
-          <Text style={[styles.taskRowTitle, { color: done ? theme.textMuted : theme.textPrimary }]} numberOfLines={2}>
-            {task.title}
-          </Text>
-        </Pressable>
-        <View style={[styles.taskRowDot, { backgroundColor: getProjectColor(task.projectId) }]} />
-      </View>
-    );
-  };
+  // Pinned (favourite) projects first, then the usual Projects-list order.
+  const workspaceProjects = useMemo(
+    () => [...sortedProjects].sort((a, b) => Number(!!b.isFavourite) - Number(!!a.isFavourite)),
+    [sortedProjects],
+  );
+  const projectStage = (p: Project) =>
+    [prettify(p.currentSystemPhase, phaseLabels), prettify(p.projectSubStatus, subStatusLabels)].filter(Boolean).join(' · ');
 
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
@@ -731,407 +569,382 @@ export default function DashboardScreen({ navigation }: Props) {
   ];
 
   const activeCostCode = activeTimesheet?.costCodeId
-    ? costCodes.find(c => c.id === activeTimesheet.costCodeId)
+    ? costCodes.find(cc => cc.id === activeTimesheet.costCodeId)
     : undefined;
 
-  return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={[styles.headerContext, { color: theme.textSecondary }]} numberOfLines={1}>
-            {contextLine}
-          </Text>
-          <Text style={[styles.headerName, { color: theme.textPrimary }]} numberOfLines={1}>
-            {firstName || fullDisplayName}
-          </Text>
-          {weather && (
-            <View style={styles.weatherRow}>
-              <Ionicons
-                name={weatherIcons[weather.iconKey] || 'partly-sunny-outline'}
-                size={13}
-                color={theme.textSecondary}
-              />
-              <Text style={[styles.weatherText, { color: theme.textSecondary }]} numberOfLines={1}>
-                {weather.tempMax}° · {weather.description} at{' '}
-                {projects.find(p => p.id === weatherProjectId)?.name || weather.locationName}
-                {weather.rainFromHour !== null ? ` · rain from ${formatHour(weather.rainFromHour)}` : ''}
-              </Text>
+  const tabNav = navigation.getParent<NativeStackNavigationProp<any>>() ?? navigation;
+  const ws = metrics.workspace;
+
+  const renderTaskRow = (task: Task) => {
+    const done = isComplete(task.status);
+    return (
+      <AgendaRow
+        key={task.id}
+        lead={<Checkbox round checked={done} onPress={() => toggleTaskComplete(task.id, task.status)} accessibilityLabel={`Complete ${task.title}`} />}
+        title={task.title}
+        meta={task.projectId ? getProjectName(task.projectId) : null}
+        onPress={() => openTaskSheet(task)}
+      />
+    );
+  };
+
+  // Greeting header. It scrolls away with the content (design rule: no sticky headers).
+  const greetingHeader = (
+    <View style={styles.header}>
+      <View style={styles.headerLeft}>
+        <Text style={[type.metaMedium, { color: c.mutedStrong }]} numberOfLines={1}>
+          {contextLine}
+        </Text>
+        <Text style={[isWide ? type.displayDuo : type.display, { color: c.text }]} numberOfLines={1}>
+          {firstName || fullDisplayName}
+        </Text>
+      </View>
+      <View style={styles.headerRight}>
+        <Pressable
+          onPress={() => navigation.navigate('Notifications')}
+          hitSlop={metrics.hitSlop}
+          accessibilityRole="button"
+          accessibilityLabel={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+        >
+          <Bell size={ws.headerIcon} color={c.icon} strokeWidth={metrics.iconStroke} />
+          {unreadCount > 0 && (
+            <View style={styles.bellBadge}>
+              <UnreadBadge count={unreadCount} />
             </View>
           )}
-        </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Notifications')}
-            style={styles.headerIconBtn}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="notifications-outline" size={22} color={theme.textPrimary} />
-            {unreadCount > 0 && (
-              <View style={[styles.bellBadge, { backgroundColor: theme.statusDangerSolid }]}>
-                <Text style={styles.bellBadgeText}>
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setShowUserMenu(v => !v)}
-            style={[styles.headerAvatar, { backgroundColor: theme.primary }]}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.headerAvatarText}>{getInitials(fullDisplayName)}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {showUserMenu && (
-        <Pressable style={styles.userMenuBackdrop} onPress={() => setShowUserMenu(false)} />
-      )}
-      {showUserMenu && (
-        <View style={[styles.userMenuDropdown, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <TouchableOpacity
-            style={[styles.userMenuItem, { borderBottomColor: theme.border }]}
-            onPress={() => { setShowUserMenu(false); navigation.navigate('BusinessDashboard'); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="business-outline" size={18} color={theme.textSecondary} />
-            <Text style={[styles.userMenuText, { color: theme.textPrimary }]}>Company Dashboard</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.userMenuItem, { borderBottomColor: theme.border }]}
-            onPress={() => { setShowUserMenu(false); navigation.getParent()?.navigate('More', { screen: 'Settings' }); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="settings-outline" size={18} color={theme.textSecondary} />
-            <Text style={[styles.userMenuText, { color: theme.textPrimary }]}>Settings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.userMenuItem, { borderBottomColor: theme.border }]}
-            onPress={() => { setShowUserMenu(false); suggestionSheetRef.current?.present(); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="bulb-outline" size={18} color={theme.textSecondary} />
-            <Text style={[styles.userMenuText, { color: theme.textPrimary }]}>Suggest an Idea</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.userMenuItem}
-            onPress={() => { setShowUserMenu(false); logout(); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="log-out-outline" size={18} color={theme.statusDanger} />
-            <Text style={[styles.userMenuText, { color: theme.statusDanger }]}>Log Out</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {isFirstLoad ? (
-        /* First-ever load (no cached data): skeleton layout */
-        <View style={styles.skeletonBody}>
-          <View style={styles.skeletonCardRow}>
-            <Skeleton width={PROJECT_CARD_WIDTH} height={148} borderRadius={radius.xxl} />
-            <Skeleton width={PROJECT_CARD_WIDTH} height={148} borderRadius={radius.xxl} />
-            <Skeleton width={PROJECT_CARD_WIDTH} height={148} borderRadius={radius.xxl} />
-          </View>
-          <Skeleton width={120} height={14} style={styles.skeletonHeader} />
-          <View style={[styles.skeletonGroupCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <SkeletonRow />
-            <SkeletonRow />
-            <SkeletonRow />
-            <SkeletonRow />
-          </View>
-        </View>
-      ) : (
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, isWide && styles.scrollContentWide]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
+        </Pressable>
+        <Pressable
+          onPress={() => setShowUserMenu(v => !v)}
+          hitSlop={metrics.hitSlop}
+          accessibilityRole="button"
+          accessibilityLabel="Account menu"
         >
-          {/* Live clocked-in timer card */}
+          <Avatar name={fullDisplayName} size={isWide ? 'duo' : 'row'} />
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  // Workspace sections, laid out as one column on a phone or two on the Duo (D01).
+  const sec_clock = (
+    <>
+          {/* Live clocked-in card */}
           {activeTimesheet && (
-            <Animated.View entering={FadeInDown.duration(300)} style={[styles.section, fullW]}>
-              <View style={[styles.timerCard, { backgroundColor: theme.primary }]}>
-                <View style={styles.timerCardLeft}>
-                  <View style={styles.timerLabelRow}>
-                    <PulsingDot />
-                    <Text style={styles.timerLabel}>CLOCKED IN</Text>
-                  </View>
-                  <Text style={styles.timerElapsed}>{formatTimeSince(activeTimesheet.clockInTime)}</Text>
-                  <Text style={styles.timerMeta} numberOfLines={1}>
-                    {activeTimesheet.projectName || getProjectName(activeTimesheet.projectId)}
-                  </Text>
-                  {!!activeCostCode && (
-                    <Text style={styles.timerMeta} numberOfLines={1}>
-                      {activeCostCode.code} - {activeCostCode.title}
+            <Animated.View entering={FadeInDown.duration(300)} style={[styles.section, colW]}>
+              <Card variant="padded">
+                <View style={styles.clockRow}>
+                  <View style={styles.clockBody}>
+                    <View style={styles.clockLabelRow}>
+                      <PulsingDot />
+                      <Text style={[type.metaMedium, { color: c.accent }]}>Clocked in</Text>
+                    </View>
+                    <Text style={[type.heading, tabular, { color: c.text }]}>{formatTimeSince(activeTimesheet.clockInTime)}</Text>
+                    <Text style={[type.meta, { color: c.mutedStrong }]} numberOfLines={1}>
+                      {[activeTimesheet.projectName || getProjectName(activeTimesheet.projectId), activeCostCode ? `${activeCostCode.code} · ${activeCostCode.title}` : null]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </Text>
-                  )}
+                  </View>
+                  <Pressable
+                    onPress={openClockOutSheet}
+                    disabled={clockingOut}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [styles.clockOutBtn, { backgroundColor: c.tint, opacity: pressed ? metrics.pressedOpacity : 1 }]}
+                  >
+                    <Text style={[type.metaSemi, { color: c.link }]}>Clock out</Text>
+                  </Pressable>
                 </View>
-                <PressableScale
-                  haptics
-                  onPress={openClockOutSheet}
-                  disabled={clockingOut}
-                  style={styles.clockOutPill}
-                >
-                  <Text style={[styles.clockOutPillText, { color: theme.primary }]}>Clock Out</Text>
-                </PressableScale>
-              </View>
+              </Card>
             </Animated.View>
           )}
-
+    </>
+  );
+  const sec_capture = (
+    <>
           {/* Quick capture: photo to diary, receipt, defect, clock in */}
-          <Animated.View entering={FadeInDown.duration(300).delay(30)} style={[styles.section, fullW]}>
+          <Animated.View entering={FadeInDown.duration(300).delay(30)} style={[styles.section, colW]}>
             <QuickCaptureRow
               projects={sortedProjects}
               navigation={navigation}
               isClockedIn={!!activeTimesheet}
             />
           </Animated.View>
-
-          {/* Projects */}
-          {projects.length > 0 && (
-            <Animated.View entering={FadeInDown.duration(300).delay(60)} style={[styles.section, fullW]}>
-              <SectionHeader
-                title="Projects"
-                count={projects.length}
-                onPress={() => navigation.getParent()?.navigate('Projects')}
-              />
-              <FlatList
-                horizontal
-                data={projectRowData}
-                keyExtractor={item => item.id}
-                renderItem={renderProjectCard}
-                showsHorizontalScrollIndicator={false}
-                snapToInterval={PROJECT_CARD_WIDTH + CARD_GAP}
-                decelerationRate="fast"
-                contentContainerStyle={styles.hListContent}
-                onEndReached={loadMoreProjectCards}
-                onEndReachedThreshold={0.5}
-              />
+    </>
+  );
+  const sec_mentions = (
+    <>
+          {/* Unread mentions (not in the design; shown only when there are some) */}
+          {mentions.length > 0 && (
+            <Animated.View entering={FadeInDown.duration(300).delay(45)} style={[styles.section, colW]}>
+              <Card variant="list">
+                <ListRow
+                  onPress={openMentions}
+                  lead={<AtSign size={size.icon.row} color={c.accent} strokeWidth={metrics.iconStroke} />}
+                  title={mentions[0].title.replace(/#/g, '')}
+                  titleLines={1}
+                  trailing={mentions.length > 1 ? `+${mentions.length - 1}` : undefined}
+                  chevron
+                />
+              </Card>
             </Animated.View>
           )}
-
-          {/* Today's Tasks */}
-          <Animated.View entering={FadeInDown.duration(300).delay(120)} style={[styles.section, halfW]} layout={LinearTransition.duration(200)}>
-            <SectionHeader
-              title="Today's Tasks"
-              right={todayTasks.length > 0 ? (
-                <View style={styles.taskProgressWrap}>
-                  <ProgressRing progress={completedTasks.length / todayTasks.length} />
-                  <Text style={[styles.taskProgressText, { color: theme.textSecondary }]}>
-                    {completedTasks.length}/{todayTasks.length}
-                  </Text>
-                </View>
-              ) : undefined}
-            />
-            {todayTasks.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Ionicons name="checkmark-circle-outline" size={22} color={theme.textMuted} />
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No tasks due today</Text>
-              </View>
-            ) : (
-              <Animated.View
-                layout={LinearTransition.duration(200)}
-                style={[styles.groupCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-              >
-                {incompleteTasks.map((task, i) => renderTaskRow(task, i))}
-                {completedTasks.length > 0 && (
-                  <>
+    </>
+  );
+  const sec_today = (
+    <>
+          {/* Today: tasks due today + schedule today/tomorrow */}
+          <Animated.View entering={FadeInDown.duration(300).delay(60)} style={[styles.section, colW]} layout={LinearTransition.duration(200)}>
+            <WorkspaceSection
+              id="today"
+              icon={CircleCheck}
+              title="Today"
+              count={incompleteTasks.length + upcomingSchedule.length}
+              onOpen={() => tabNav.navigate('Calendar')}
+            >
+              <SubLabel>{incompleteTasks.length > 0 ? `Tasks · ${incompleteTasks.length}` : 'Tasks'}</SubLabel>
+              {todayTasks.length === 0 ? (
+                <EmptyLine>Nothing due today</EmptyLine>
+              ) : (
+                <Rows>
+                  {incompleteTasks.map(renderTaskRow)}
+                  {completedTasks.length > 0 ? (
                     <Pressable
-                      onPress={() => { haptic.select(); setCompletedExpanded(v => !v); }}
-                      style={[
-                        styles.completedToggleRow,
-                        incompleteTasks.length > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border },
-                      ]}
+                      key="__completed"
+                      onPress={() => { haptic.select(); setCompletedExpanded(!completedExpanded); }}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: completedExpanded }}
+                      style={styles.completedToggle}
                     >
-                      <Text style={[styles.completedToggleText, { color: theme.textSecondary }]}>
-                        Completed ({completedTasks.length})
-                      </Text>
-                      <Ionicons
-                        name={completedExpanded ? 'chevron-up' : 'chevron-down'}
-                        size={14}
-                        color={theme.textMuted}
-                      />
+                      <Text style={[type.metaMedium, tabular, { color: c.muted }]}>{`Completed · ${completedTasks.length}`}</Text>
+                      {completedExpanded
+                        ? <ChevronDown size={size.icon.caret} color={c.muted} strokeWidth={metrics.iconStrokeActive} />
+                        : <ChevronRight size={size.icon.caret} color={c.muted} strokeWidth={metrics.iconStrokeActive} />}
                     </Pressable>
-                    {completedExpanded && (
-                      <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(100)}>
-                        {completedTasks.map(task => renderTaskRow(task, 1))}
-                      </Animated.View>
-                    )}
-                  </>
-                )}
-              </Animated.View>
-            )}
+                  ) : null}
+                  {completedExpanded ? completedTasks.map(renderTaskRow) : null}
+                </Rows>
+              )}
+              <Divider />
+              <SubLabel>{upcomingSchedule.length > 0 ? `Schedule · ${upcomingSchedule.length}` : 'Schedule'}</SubLabel>
+              {upcomingSchedule.length === 0 ? (
+                <EmptyLine>Nothing scheduled</EmptyLine>
+              ) : (
+                <Rows>
+                  {upcomingSchedule.map(({ item, isTomorrow }) => (
+                    <AgendaRow
+                      key={item.id}
+                      color={getProjectColor(item.projectId)}
+                      title={item.name}
+                      meta={item.projectName || null}
+                      right={`${isTomorrow ? 'Tomorrow' : 'Today'}${item.startTime ? ` · ${item.startTime.slice(0, 5)}` : ''}`}
+                      onPress={() => openScheduleSheet(item)}
+                    />
+                  ))}
+                </Rows>
+              )}
+            </WorkspaceSection>
           </Animated.View>
-
+    </>
+  );
+  const sec_projects = (
+    <>
+          {/* Projects: pinned first, capped at 5 */}
+          {(
+            <Animated.View entering={FadeInDown.duration(300).delay(120)} style={[styles.section, colW]}>
+              <WorkspaceSection
+                id="projects"
+                icon={Folder}
+                title="Projects"
+                count={workspaceProjects.length}
+                onOpen={() => tabNav.navigate('Projects')}
+              >
+                {workspaceProjects.length === 0 ? (
+                  <EmptyLine>No projects yet</EmptyLine>
+                ) : (
+                <Rows>
+                  {workspaceProjects.slice(0, ws.maxProjects).map(p => (
+                    <ProjectLineRow
+                      key={p.id}
+                      id={p.id}
+                      name={p.name}
+                      color={p.color || getProjectColor(p.id)}
+                      pinned={p.isFavourite}
+                      stage={projectStage(p)}
+                      onPress={() => tabNav.navigate('Projects', {
+                        screen: 'ProjectDetail',
+                        params: { projectId: p.id, projectName: p.name },
+                      })}
+                    />
+                  ))}
+                  {workspaceProjects.length > ws.maxProjects ? (
+                    <MoreRow key="__more" count={workspaceProjects.length - ws.maxProjects} onPress={() => tabNav.navigate('Projects')} />
+                  ) : null}
+                </Rows>
+                )}
+              </WorkspaceSection>
+            </Animated.View>
+          )}
+    </>
+  );
+  const sec_timesheets = (
+    <>
           {/* Timesheets */}
-          <Animated.View entering={FadeInDown.duration(300).delay(180)} style={[styles.section, halfW]}>
-            <SectionHeader
+          <Animated.View entering={FadeInDown.duration(300).delay(180)} style={[styles.section, colW]}>
+            <WorkspaceSection
+              id="timesheets"
+              icon={Clock}
               title="Timesheets"
               count={recentTimesheets.length}
-              onPress={() => navigation.navigate('More', { screen: 'Timesheets' })}
-            />
-            {recentTimesheets.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Ionicons name="time-outline" size={22} color={theme.textMuted} />
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No recent timesheets</Text>
-              </View>
-            ) : (
-              <FlatList
-                horizontal
-                data={recentTimesheets}
-                keyExtractor={ts => ts.id}
-                showsHorizontalScrollIndicator={false}
-                snapToInterval={H_CARD_WIDTH + CARD_GAP}
-                decelerationRate="fast"
-                contentContainerStyle={styles.hListContent}
-                renderItem={({ item: ts }) => {
-                  const ccId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
-                  return (
-                    <PressableScale
-                      haptics
-                      onPress={() => openTimesheetSheet(ts)}
-                      style={[styles.hCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-                    >
-                      <View style={[styles.accentBar, { backgroundColor: theme.amber }]} />
-                      <View style={styles.hCardBody}>
-                        <Text style={[styles.hCardTitle, { color: theme.textPrimary }]} numberOfLines={1}>
-                          {getProjectName(ts.projectId)}
-                        </Text>
-                        <Text style={[styles.hCardSub, { color: theme.textSecondary }]} numberOfLines={1}>
-                          {ccId ? getCostCodeLabel(ccId) : '—'}
-                        </Text>
-                        <Text style={[styles.hCardMeta, { color: theme.textMuted }]}>
-                          {formatDateLabel(ts.date)}
-                        </Text>
-                      </View>
-                      <View style={[styles.hoursPill, { backgroundColor: theme.primaryLight }]}>
-                        <Text style={[styles.hoursPillText, { color: theme.primary }]}>
-                          {parseFloat(ts.duration).toFixed(1)}h
-                        </Text>
-                      </View>
-                    </PressableScale>
-                  );
-                }}
-              />
-            )}
+              onOpen={() => navigation.navigate('More', { screen: 'Timesheets' })}
+            >
+              {recentTimesheets.length === 0 ? (
+                <EmptyLine>No recent timesheets</EmptyLine>
+              ) : (
+                <Rows>
+                  {recentTimesheets.slice(0, ws.maxTimesheets).map(ts => {
+                    const ccId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
+                    const hours = parseFloat(ts.duration);
+                    return (
+                      <AgendaRow
+                        key={ts.id}
+                        color={getProjectColor(ts.projectId)}
+                        title={getProjectName(ts.projectId, ts.projectName)}
+                        meta={[ccId ? getCostCodeLabel(ccId) : null, formatDateLabel(ts.date)].filter(Boolean).join(' · ')}
+                        right={Number.isFinite(hours) ? `${hours.toFixed(1)}h` : null}
+                        rightStrong
+                        onPress={() => openTimesheetSheet(ts)}
+                      />
+                    );
+                  })}
+                  {recentTimesheets.length > ws.maxTimesheets ? (
+                    <MoreRow
+                      key="__more"
+                      count={recentTimesheets.length - ws.maxTimesheets}
+                      onPress={() => navigation.navigate('More', { screen: 'Timesheets' })}
+                    />
+                  ) : null}
+                </Rows>
+              )}
+            </WorkspaceSection>
           </Animated.View>
-
-          {/* Schedule */}
-          <Animated.View entering={FadeInDown.duration(300).delay(240)} style={[styles.section, halfW]}>
-            <SectionHeader
-              title="Schedule"
-              count={upcomingSchedule.length}
-              onPress={() => (navigation.getParent<NativeStackNavigationProp<any>>() ?? navigation).navigate('More', { screen: 'Schedule' })}
-            />
-            {upcomingSchedule.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Ionicons name="calendar-outline" size={22} color={theme.textMuted} />
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No upcoming schedule items</Text>
-              </View>
-            ) : (
-              <FlatList
-                horizontal
-                data={upcomingSchedule}
-                keyExtractor={({ item }) => item.id}
-                showsHorizontalScrollIndicator={false}
-                snapToInterval={H_CARD_WIDTH + CARD_GAP}
-                decelerationRate="fast"
-                contentContainerStyle={styles.hListContent}
-                renderItem={({ item: { item, isTomorrow } }) => (
-                  <PressableScale
-                    haptics
-                    onPress={() => openScheduleSheet(item)}
-                    style={[styles.hCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-                  >
-                    <View style={[styles.accentBar, { backgroundColor: typeColors[item.type as keyof typeof typeColors] || theme.primary }]} />
-                    <View style={styles.hCardBody}>
-                      <Text style={[styles.hCardTitle, { color: theme.textPrimary }]} numberOfLines={1}>{item.name}</Text>
-                      {!!item.projectName && (
-                        <Text style={[styles.hCardSub, { color: theme.textSecondary }]} numberOfLines={1}>{item.projectName}</Text>
-                      )}
-                      <Text style={[styles.hCardMeta, { color: theme.textMuted }]}>
-                        {isTomorrow ? 'Tomorrow' : 'Today'}
-                        {item.startTime ? ` · ${item.startTime.slice(0, 5)}` : ''}
-                      </Text>
-                    </View>
-                  </PressableScale>
-                )}
-              />
-            )}
+    </>
+  );
+  const sec_activity = (
+    <>
+          {/* Recent activity */}
+          <Animated.View entering={FadeInDown.duration(300).delay(240)} style={[styles.section, colW]}>
+            <WorkspaceSection id="activity" icon={Activity} title="Recent activity" count={recentActivities.length} onOpen={() => navigation.navigate('Activity')}>
+              {recentActivities.length === 0 ? (
+                <EmptyLine>No recent activity</EmptyLine>
+              ) : (
+                <Rows>
+                  {recentActivities.map(activity => {
+                    const userName = activity.userName || 'System';
+                    return (
+                      <View key={activity.id} style={styles.activityRow}>
+                        <Avatar size="activity" name={userName} color={activity.projectId ? getProjectColor(activity.projectId) : null} />
+                        <Text style={[type.body, { color: c.text, flex: 1 }]} numberOfLines={2}>
+                          <Text style={{ fontFamily: fonts.semibold }}>{userName}</Text>
+                          {` ${activity.description}`}
+                        </Text>
+                        <Text style={[type.meta, tabular, { color: c.mutedStrong }]}>{compactAgo(activity.createdAt)}</Text>
+                      </View>
+                    );
+                  })}
+                </Rows>
+              )}
+            </WorkspaceSection>
           </Animated.View>
+    </>
+  );
 
-          {/* Unread mentions digest */}
-          {mentions.length > 0 && (
-            <Animated.View entering={FadeInDown.duration(300).delay(270)} style={[styles.section, halfW]}>
-              <PressableScale
-                haptics
-                onPress={openMentions}
-                style={[styles.mentionCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-              >
-                <View style={[styles.mentionIconCircle, { backgroundColor: theme.primaryLight }]}>
-                  <Ionicons name="at" size={16} color={theme.primary} />
-                </View>
-                <Text style={[styles.mentionText, { color: theme.textPrimary }]} numberOfLines={1}>
-                  {mentions[0].title.replace(/#/g, '')}
-                  {mentions.length > 1 && (
-                    <Text style={{ color: theme.textSecondary }}> · {mentions.length - 1} more</Text>
-                  )}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-              </PressableScale>
-            </Animated.View>
+  return (
+    <View style={[styles.container, { backgroundColor: c.bg }]}>
+      {showUserMenu && (
+        <Pressable style={styles.userMenuBackdrop} onPress={() => setShowUserMenu(false)} />
+      )}
+      {showUserMenu && (
+        <View style={[styles.userMenuDropdown, { top: insets.top + metrics.workspace.menuTop }]}>
+          <Card variant="list">
+            <ListRow
+              lead={<Building size={ws.menuIcon} color={c.icon} strokeWidth={metrics.iconStroke} />}
+              title="Company dashboard"
+              titleLines={1}
+              onPress={() => { setShowUserMenu(false); navigation.navigate('BusinessDashboard'); }}
+            />
+            <ListRow
+              lead={<Settings size={ws.menuIcon} color={c.icon} strokeWidth={metrics.iconStroke} />}
+              title="Settings"
+              titleLines={1}
+              onPress={() => { setShowUserMenu(false); navigation.getParent()?.navigate('More', { screen: 'Settings' }); }}
+            />
+            <ListRow
+              lead={<Lightbulb size={ws.menuIcon} color={c.icon} strokeWidth={metrics.iconStroke} />}
+              title="Suggest an idea"
+              titleLines={1}
+              onPress={() => { setShowUserMenu(false); suggestionSheetRef.current?.present(); }}
+            />
+            <ListRow
+              lead={<LogOut size={ws.menuIcon} color={c.danger} strokeWidth={metrics.iconStroke} />}
+              title="Log out"
+              titleLines={1}
+              onPress={() => { setShowUserMenu(false); logout(); }}
+            />
+          </Card>
+        </View>
+      )}
+
+      {isFirstLoad ? (
+        /* First-ever load (no cached data): skeleton in the card layout */
+        <View style={{ paddingTop: insets.top, paddingHorizontal: space.screenX }}>
+        {greetingHeader}
+        <View style={styles.skeletonBody}>
+          <Skeleton width="40%" height={14} />
+          <View style={styles.skeletonChips}>
+            <Skeleton width="23%" height={metrics.captureChip.workspace.height} borderRadius={radii.card} />
+            <Skeleton width="23%" height={metrics.captureChip.workspace.height} borderRadius={radii.card} />
+            <Skeleton width="23%" height={metrics.captureChip.workspace.height} borderRadius={radii.card} />
+            <Skeleton width="23%" height={metrics.captureChip.workspace.height} borderRadius={radii.card} />
+          </View>
+          <Card variant="section">
+            <SkeletonRow />
+            <SkeletonRow />
+            <SkeletonRow />
+          </Card>
+        </View>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top }, isWide && styles.scrollContentWide]}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.accent} />}
+        >
+          <View style={styles.headerWrap}>{greetingHeader}</View>
+          {isWide ? (
+            <View style={styles.duoCols}>
+              <View style={styles.duoLeft}>
+                {sec_clock}
+                {sec_capture}
+                {sec_mentions}
+                {sec_today}
+                {sec_timesheets}
+              </View>
+              <View style={styles.duoRight}>
+                {sec_projects}
+                {sec_activity}
+              </View>
+            </View>
+          ) : (
+            <>
+              {sec_clock}
+              {sec_capture}
+              {sec_mentions}
+              {sec_today}
+              {sec_projects}
+              {sec_timesheets}
+              {sec_activity}
+            </>
           )}
-
-          {/* Recent Activity */}
-          <Animated.View entering={FadeInDown.duration(300).delay(300)} style={[styles.section, halfW]}>
-            <SectionHeader
-              title="Recent Activity"
-              count={recentActivities.length}
-              right={
-                <Pressable hitSlop={10} onPress={toggleActivityCollapsed}>
-                  <Ionicons
-                    name={activityCollapsed ? 'chevron-down' : 'chevron-up'}
-                    size={16}
-                    color={theme.textMuted}
-                  />
-                </Pressable>
-              }
-            />
-            {activityCollapsed ? null : recentActivities.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Ionicons name="pulse-outline" size={22} color={theme.textMuted} />
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No recent activity</Text>
-              </View>
-            ) : (
-              <View style={[styles.groupCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                {recentActivities.map((activity, i) => {
-                  const projColor = activity.projectId ? getProjectColor(activity.projectId) : theme.primary;
-                  const userName = activity.userName || 'System';
-                  return (
-                    <View
-                      key={activity.id}
-                      style={[styles.activityRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border }]}
-                    >
-                      <View style={[styles.activityAvatar, { backgroundColor: projColor }]}>
-                        <Text style={styles.activityAvatarText}>{getInitials(userName)}</Text>
-                      </View>
-                      <View style={styles.activityBody}>
-                        <Text style={[styles.activityName, { color: theme.textPrimary }]} numberOfLines={1}>
-                          {userName}
-                        </Text>
-                        <Text style={[styles.activityDesc, { color: theme.textSecondary }]} numberOfLines={2}>
-                          {activity.description}
-                        </Text>
-                      </View>
-                      <Text style={[styles.activityTime, { color: theme.textMuted }]}>
-                        {timeAgo(activity.createdAt)}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </Animated.View>
         </ScrollView>
       )}
 
@@ -1139,988 +952,276 @@ export default function DashboardScreen({ navigation }: Props) {
       <SuggestionSheet ref={suggestionSheetRef} sourcePage="dashboard-menu" />
 
       <Sheet ref={clockOutSheetRef} title="Clock out?">
-        <View style={styles.sheetBody}>
-          {activeTimesheet && (
-            <View style={[styles.clockOutSummary, { backgroundColor: theme.background }]}>
-              <Text style={[styles.clockOutProject, { color: theme.textPrimary }]}>
-                {activeTimesheet.projectName || getProjectName(activeTimesheet.projectId)}
-              </Text>
-              <Text style={[styles.clockOutElapsed, { color: theme.textSecondary }]}>
-                Clocked in for {formatTimeSince(activeTimesheet.clockInTime)}
-              </Text>
+        <SheetBody>
+          {activeTimesheet ? (
+            <Card variant="list">
+              <PropertyRow key="project" label="Project" value={activeTimesheet.projectName || getProjectName(activeTimesheet.projectId)} />
+              <PropertyRow key="since" label="Clocked in" value={`for ${formatTimeSince(activeTimesheet.clockInTime)}`} />
+            </Card>
+          ) : null}
+          <View style={wx.group}>
+            <FieldLabel>Break</FieldLabel>
+            <View style={wx.chips}>
+              {BREAK_OPTIONS.map(mins => {
+                const selected = breakMinutes === mins;
+                return (
+                  <Pressable
+                    key={mins}
+                    onPress={() => { haptic.select(); setBreakMinutes(mins); }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    style={({ pressed }) => [
+                      wx.chip,
+                      { backgroundColor: selected ? c.tint : c.surface, borderColor: selected ? c.accent : c.border, opacity: pressed ? metrics.pressedOpacity : 1 },
+                    ]}
+                  >
+                    <Text style={[type.meta, tabular, { color: selected ? c.link : c.text }]}>{breakLabel(mins)}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
-          )}
-          <Text style={[styles.sheetLabel, { color: theme.textSecondary }]}>Break</Text>
-          <View style={styles.breakChipsRow}>
-            {BREAK_OPTIONS.map(mins => {
-              const selected = breakMinutes === mins;
-              return (
-                <Pressable
-                  key={mins}
-                  onPress={() => { haptic.select(); setBreakMinutes(mins); }}
-                  style={[
-                    styles.breakChip,
-                    {
-                      backgroundColor: selected ? theme.primaryLight : theme.card,
-                      borderColor: selected ? theme.primary : theme.border,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.breakChipText, { color: selected ? theme.primary : theme.textSecondary }]}>
-                    {breakLabel(mins)}
-                  </Text>
-                </Pressable>
-              );
-            })}
           </View>
-          <TouchableOpacity
-            style={[styles.destructiveBtn, { backgroundColor: theme.statusDangerSolid }]}
-            onPress={confirmClockOut}
-            disabled={clockingOut}
-            activeOpacity={0.8}
-          >
-            {clockingOut
-              ? <ActivityIndicator size="small" color="#FFFFFF" />
-              : <Text style={styles.destructiveBtnText}>Clock Out</Text>}
-          </TouchableOpacity>
-        </View>
+          <ButtonRow>
+            <PrimaryButton label="Clock out" onPress={confirmClockOut} loading={clockingOut} />
+          </ButtonRow>
+        </SheetBody>
       </Sheet>
 
       {/* Timesheet detail sheet */}
       <Sheet ref={timesheetSheetRef} title="Timesheet" onDismiss={() => setSelectedTimesheetDetail(null)}>
-        {selectedTimesheetDetail && (
-          <View style={styles.sheetBody}>
-            <View style={[styles.detailRow, { borderColor: theme.border }]}>
-              <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
-              <View style={styles.detailBody}>
-                <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Date</Text>
-                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
-                  {formatDateLabel(selectedTimesheetDetail.date)}
-                </Text>
-              </View>
-            </View>
-            <View style={[styles.detailRow, { borderColor: theme.border }]}>
-              <Ionicons name="briefcase-outline" size={16} color={theme.textSecondary} />
-              <View style={styles.detailBody}>
-                <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Project</Text>
-                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
-                  {getProjectName(selectedTimesheetDetail.projectId)}
-                </Text>
-              </View>
-            </View>
-            <View style={[styles.detailRow, { borderColor: theme.border }]}>
-              <Ionicons name="time-outline" size={16} color={theme.textSecondary} />
-              <View style={styles.detailBody}>
-                <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Duration</Text>
-                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
-                  {parseFloat(selectedTimesheetDetail.duration).toFixed(2)}h
-                  {selectedTimesheetDetail.startTime && selectedTimesheetDetail.endTime
-                    ? `  ·  ${selectedTimesheetDetail.startTime} – ${selectedTimesheetDetail.endTime}`
-                    : ''}
-                </Text>
-              </View>
-            </View>
-            {(() => {
-              const ccId = selectedTimesheetDetail.costCodeId || selectedTimesheetDetail.costCodeSplits?.[0]?.costCodeId;
-              return ccId ? (
-                <View style={[styles.detailRow, { borderColor: theme.border }]}>
-                  <Ionicons name="pricetag-outline" size={16} color={theme.textSecondary} />
-                  <View style={styles.detailBody}>
-                    <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Cost Code</Text>
-                    <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{getCostCodeLabel(ccId)}</Text>
+        {selectedTimesheetDetail ? (() => {
+          const ts = selectedTimesheetDetail;
+          const ccId = ts.costCodeId || ts.costCodeSplits?.[0]?.costCodeId;
+          const cc = ccId ? getCostCodeLabel(ccId) : null;
+          const st = ts.status;
+          const dotColor = st === 'approved' ? c.status.done : st === 'submitted' ? c.status.sent : st === 'rejected' ? c.danger : c.status.upcoming;
+          return (
+            <SheetBody>
+              <Card variant="list">
+                <PropertyRow key="date" label="Date" value={formatDateLabel(ts.date)} />
+                <PropertyRow key="project" label="Project" value={getProjectName(ts.projectId, ts.projectName)} />
+                <PropertyRow key="hours" label="Hours">
+                  <Text style={[type.body, tabular, { color: c.text }]}>
+                    {`${parseFloat(ts.duration).toFixed(2)}h${ts.startTime && ts.endTime ? `  ·  ${ts.startTime} – ${ts.endTime}` : ''}`}
+                  </Text>
+                </PropertyRow>
+                {cc ? <PropertyRow key="cc" label="Cost code" value={cc} /> : null}
+                <PropertyRow key="status" label="Status">
+                  <View style={wx.status}>
+                    <View style={[wx.dot, { backgroundColor: dotColor }]} />
+                    <Text style={[type.body, { color: st === 'rejected' ? c.danger : c.text }]}>{st.charAt(0).toUpperCase() + st.slice(1)}</Text>
                   </View>
-                </View>
-              ) : null;
-            })()}
-            <View style={styles.statusRow}>
-              <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Status</Text>
-              <View style={[styles.statusBadge, {
-                backgroundColor:
-                  selectedTimesheetDetail.status === 'approved' ? theme.statusSuccessBg :
-                  selectedTimesheetDetail.status === 'submitted' ? theme.statusInfoBg :
-                  selectedTimesheetDetail.status === 'rejected' ? theme.statusDangerBg : theme.primaryLight,
-              }]}>
-                <Text style={[styles.statusBadgeText, {
-                  color:
-                    selectedTimesheetDetail.status === 'approved' ? theme.statusSuccess :
-                    selectedTimesheetDetail.status === 'submitted' ? theme.statusInfo :
-                    selectedTimesheetDetail.status === 'rejected' ? theme.statusDanger : theme.primary,
-                }]}>
-                  {selectedTimesheetDetail.status.charAt(0).toUpperCase() + selectedTimesheetDetail.status.slice(1)}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={[styles.sheetPrimaryBtn, { backgroundColor: theme.primary }]}
-              onPress={() => {
-                timesheetSheetRef.current?.dismiss();
-                navigation.navigate('More', { screen: 'Timesheets' });
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="open-outline" size={16} color="#FFFFFF" style={styles.btnIcon} />
-              <Text style={styles.sheetPrimaryBtnText}>View in Timesheets</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+                </PropertyRow>
+              </Card>
+              <ButtonRow>
+                <SecondaryButton
+                  label="View in Timesheets"
+                  onPress={() => {
+                    timesheetSheetRef.current?.dismiss();
+                    navigation.navigate('More', { screen: 'Timesheets' });
+                  }}
+                />
+              </ButtonRow>
+            </SheetBody>
+          );
+        })() : null}
       </Sheet>
 
       {/* Task detail sheet */}
-      <Sheet
-        ref={taskSheetRef}
-        title={taskDetail?.title}
-        scrollable
-        onDismiss={() => setTaskDetail(null)}
-      >
+      <Sheet ref={taskSheetRef} scrollable onDismiss={() => setTaskDetail(null)}>
         {taskDetailLoading ? (
-          <View style={styles.sheetLoading}>
-            <ActivityIndicator size="large" color={theme.primary} />
+          <View style={wx.loading}>
+            <ActivityIndicator size="large" color={c.accent} />
           </View>
-        ) : (
-          <View style={styles.sheetBody}>
-            {/* Meta row: project + due date + priority */}
-            <View style={styles.taskMetaRow}>
-              {taskDetail?.projectId && (
-                <View style={[styles.taskMetaBadge, { backgroundColor: getProjectColor(taskDetail.projectId) + '25', borderColor: getProjectColor(taskDetail.projectId) + '50' }]}>
-                  <View style={[styles.taskMetaDot, { backgroundColor: getProjectColor(taskDetail.projectId) }]} />
-                  <Text style={[styles.taskMetaBadgeText, { color: theme.textPrimary }]} numberOfLines={1}>
+        ) : taskDetail ? (
+          <SheetBody>
+            <View style={wx.titleBlock}>
+              {taskDetail.projectId ? (
+                <View style={wx.kind}>
+                  <ProjectSquare color={getProjectColor(taskDetail.projectId)} fallbackKey={taskDetail.projectId} size="header" />
+                  <Text style={[type.meta, wx.shrink, { color: c.muted }]} numberOfLines={1}>
                     {projects.find(p => p.id === taskDetail.projectId)?.name || 'Project'}
                   </Text>
                 </View>
-              )}
-              {taskDetail?.dueDate && (
-                <View style={[styles.taskMetaBadge, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                  <Ionicons name="calendar-outline" size={12} color={theme.textSecondary} style={styles.taskMetaIcon} />
-                  <Text style={[styles.taskMetaBadgeText, { color: theme.textSecondary }]}>
-                    {formatDateLabel(taskDetail.dueDate)}
-                  </Text>
-                </View>
-              )}
-              {taskDetail?.priority && taskDetail.priority !== 'low' && (
-                <View style={[styles.taskMetaBadge, {
-                  backgroundColor: taskDetail.priority === 'high' || taskDetail.priority === 'urgent' ? theme.statusDangerBg : taskDetail.priority === 'medium' ? theme.statusWarningBg : theme.card,
-                  borderColor: taskDetail.priority === 'high' || taskDetail.priority === 'urgent' ? theme.statusDanger + '50' : taskDetail.priority === 'medium' ? theme.statusWarning + '50' : theme.border,
-                }]}>
-                  <Text style={[styles.taskMetaBadgeText, styles.capitalize, {
-                    color: taskDetail.priority === 'high' || taskDetail.priority === 'urgent' ? theme.statusDanger : taskDetail.priority === 'medium' ? theme.statusWarning : theme.textSecondary,
-                  }]}>
-                    {taskDetail.priority}
-                  </Text>
-                </View>
-              )}
+              ) : null}
+              <Text style={[type.headingSemi, { color: c.text }]}>{taskDetail.title}</Text>
+              {(taskDetail.dueDate || (taskDetail.priority && taskDetail.priority !== 'low')) ? (
+                <Text style={[type.meta, { color: c.muted }]}>
+                  {[
+                    taskDetail.dueDate ? `Due ${formatDateLabel(taskDetail.dueDate)}` : null,
+                    taskDetail.priority && taskDetail.priority !== 'low'
+                      ? `${taskDetail.priority.charAt(0).toUpperCase()}${taskDetail.priority.slice(1)} priority`
+                      : null,
+                  ].filter(Boolean).join(' · ')}
+                </Text>
+              ) : null}
             </View>
 
-            {/* Notes */}
-            {stripHtml(taskDetail?.contentText || taskDetail?.content) ? (
-              <View style={styles.sheetBlock}>
-                <Text style={[styles.sheetLabel, { color: theme.textSecondary }]}>Notes</Text>
-                <Text style={[styles.taskDescText, { color: theme.textPrimary, backgroundColor: theme.background, borderColor: theme.border }]}>
-                  {stripHtml(taskDetail?.contentText || taskDetail?.content)}
-                </Text>
+            {stripHtml(taskDetail.contentText || taskDetail.content) ? (
+              <View style={wx.group}>
+                <FieldLabel>Notes</FieldLabel>
+                <Card variant="notes">
+                  <Text style={[type.bodyRead, { color: c.textLong }]}>{stripHtml(taskDetail.contentText || taskDetail.content)}</Text>
+                </Card>
               </View>
             ) : null}
 
-            {/* Checklist items */}
-            {taskDetail?.checklist && taskDetail.checklist.length > 0 ? (
-              <View style={styles.sheetBlock}>
-                <View style={styles.checklistHeader}>
-                  <Text style={[styles.sheetLabel, { color: theme.textSecondary }]}>Checklist</Text>
-                  <Text style={[styles.taskMetaBadgeText, { color: theme.textSecondary }]}>
-                    {taskDetail.checklist.filter(i => i.completed).length}/{taskDetail.checklist.length}
+            {taskDetail.checklist && taskDetail.checklist.length > 0 ? (
+              <View style={wx.group}>
+                <View style={wx.labelRow}>
+                  <FieldLabel>Checklist</FieldLabel>
+                  <Text style={[type.meta, tabular, { color: c.muted }]}>
+                    {`${taskDetail.checklist.filter(i => i.completed).length}/${taskDetail.checklist.length}`}
                   </Text>
                 </View>
-                {taskDetail.checklist.map((item, idx) => (
-                  <Pressable
-                    key={item.id || idx}
-                    style={[styles.checklistRow, { borderColor: theme.border, backgroundColor: theme.background }]}
-                    onPress={() => handleChecklistItemToggle(idx)}
-                  >
-                    <View style={[styles.checklistBox, {
-                      borderColor: item.completed ? theme.primary : theme.textMuted,
-                      backgroundColor: item.completed ? theme.primary : 'transparent',
-                    }]}>
-                      {item.completed && <Ionicons name="checkmark" size={11} color="#FFFFFF" />}
-                    </View>
-                    <Text style={[styles.checklistItemText, {
-                      color: item.completed ? theme.textMuted : theme.textPrimary,
-                    }]}>
-                      {item.text}
-                    </Text>
-                    {item.assigneeName ? (
-                      <Text style={[styles.taskMetaBadgeText, styles.checklistAssignee, { color: theme.textSecondary }]} numberOfLines={1}>
-                        {item.assigneeName.split(' ')[0]}
-                      </Text>
-                    ) : null}
-                  </Pressable>
-                ))}
+                <Card variant="list">
+                  {taskDetail.checklist.map((item, idx) => (
+                    <Pressable
+                      key={item.id || idx}
+                      style={({ pressed }) => [wx.itemRow, { opacity: pressed ? metrics.pressedOpacity : 1 }]}
+                      onPress={() => handleChecklistItemToggle(idx)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: !!item.completed }}
+                    >
+                      <Checkbox checked={!!item.completed} accessibilityLabel={item.text} />
+                      <Text style={[type.rowTitle, wx.flex, { color: item.completed ? c.muted : c.text }, item.completed && wx.strike]}>{item.text}</Text>
+                      {item.assigneeName ? (
+                        <Text style={[type.caption, { color: c.muted }]}>{initialsOf(item.assigneeName)}</Text>
+                      ) : null}
+                    </Pressable>
+                  ))}
+                </Card>
               </View>
             ) : null}
 
-            {/* Linked checklist instance */}
-            {taskDetail?.checklistInstanceName ? (
-              <View style={styles.sheetBlock}>
-                <Text style={[styles.sheetLabel, { color: theme.textSecondary }]}>Linked Checklist</Text>
-                <View style={[styles.checklistRow, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                  <Ionicons name="list-outline" size={16} color={theme.primary} style={styles.btnIcon} />
-                  <Text style={[styles.checklistItemText, { color: theme.textPrimary }]}>{taskDetail.checklistInstanceName}</Text>
-                </View>
-              </View>
+            {taskDetail.checklistInstanceName ? (
+              <Card variant="list">
+                <PropertyRow key="linked" label="Checklist" value={taskDetail.checklistInstanceName} />
+              </Card>
             ) : null}
 
-            {/* Actions */}
-            <View style={styles.sheetActionsRow}>
-              <TouchableOpacity
-                style={[styles.sheetSecondaryBtn, {
-                  backgroundColor: isComplete(taskDetail?.status) ? theme.card : theme.primaryLight,
-                  borderColor: isComplete(taskDetail?.status) ? theme.border : theme.primary + '60',
-                }]}
+            <ButtonRow>
+              <SecondaryButton
+                label={isComplete(taskDetail.status) ? 'Mark incomplete' : 'Mark complete'}
+                icon={isComplete(taskDetail.status) ? RotateCcw : CircleCheck}
                 onPress={handleTaskSheetToggleComplete}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={isComplete(taskDetail?.status) ? 'refresh-outline' : 'checkmark-circle-outline'}
-                  size={15}
-                  color={isComplete(taskDetail?.status) ? theme.textSecondary : theme.primary}
-                  style={styles.btnIcon}
-                />
-                <Text style={[styles.sheetSecondaryBtnText, { color: isComplete(taskDetail?.status) ? theme.textSecondary : theme.primary }]}>
-                  {isComplete(taskDetail?.status) ? 'Mark Incomplete' : 'Mark Complete'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.sheetPrimaryBtn, styles.sheetActionBtn, { backgroundColor: theme.primary }]}
+              />
+              <PrimaryButton
+                label="Edit"
+                icon={Pencil}
                 onPress={() => {
                   taskSheetRef.current?.dismiss();
                   const tabNav = navigation.getParent<NativeStackNavigationProp<any>>();
-                  (tabNav ?? navigation).navigate('More', { screen: 'Tasks', params: { openTaskId: taskDetail?.id } });
+                  (tabNav ?? navigation).navigate('More', { screen: 'Tasks', params: { openTaskId: taskDetail.id } });
                 }}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="create-outline" size={15} color="#FFFFFF" style={styles.btnIcon} />
-                <Text style={styles.sheetPrimaryBtnText}>Edit</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+              />
+            </ButtonRow>
+          </SheetBody>
+        ) : null}
       </Sheet>
 
       {/* Schedule item detail sheet */}
-      <Sheet
-        ref={scheduleSheetRef}
-        title={scheduleDetail?.name}
-        onDismiss={() => setScheduleDetail(null)}
-      >
-        {scheduleDetail && (
-          <View style={styles.sheetBody}>
-            {/* Meta badges row */}
-            <View style={styles.taskMetaRow}>
-              {scheduleDetail.projectName && (
-                <View style={[styles.taskMetaBadge, {
-                  backgroundColor: getProjectColor(scheduleDetail.projectId) + '25',
-                  borderColor: getProjectColor(scheduleDetail.projectId) + '50',
-                }]}>
-                  <View style={[styles.taskMetaDot, { backgroundColor: getProjectColor(scheduleDetail.projectId) }]} />
-                  <Text style={[styles.taskMetaBadgeText, { color: theme.textPrimary }]} numberOfLines={1}>
-                    {scheduleDetail.projectName}
-                  </Text>
+      <Sheet ref={scheduleSheetRef} onDismiss={() => setScheduleDetail(null)}>
+        {scheduleDetail ? (() => {
+          const opt = scheduleStatusOptions.find(o => o.key === scheduleDetail.status);
+          const dates = `${formatDateLabel(scheduleDetail.startDate)}${scheduleDetail.startDate !== scheduleDetail.endDate ? ` – ${formatDateLabel(scheduleDetail.endDate)}` : ''}`;
+          const times = [scheduleDetail.startTime?.slice(0, 5), scheduleDetail.endTime?.slice(0, 5)].filter(Boolean).join(' – ');
+          return (
+            <SheetBody>
+              <View style={wx.titleBlock}>
+                <View style={wx.kind}>
+                  {scheduleDetail.type ? (
+                    <Text style={[type.meta, { color: c.muted }]}>{scheduleDetail.type.charAt(0).toUpperCase() + scheduleDetail.type.slice(1)}</Text>
+                  ) : null}
+                  {scheduleDetail.projectName ? (
+                    <>
+                      {scheduleDetail.type ? <Text style={[type.meta, { color: c.faint }]}>·</Text> : null}
+                      <ProjectSquare color={getProjectColor(scheduleDetail.projectId)} fallbackKey={scheduleDetail.projectId} size="header" />
+                      <Text style={[type.meta, wx.shrink, { color: c.muted }]} numberOfLines={1}>{scheduleDetail.projectName}</Text>
+                    </>
+                  ) : null}
                 </View>
-              )}
-              {scheduleDetail.type && (
-                <View style={[styles.taskMetaBadge, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                  <Text style={[styles.taskMetaBadgeText, styles.capitalize, { color: theme.textSecondary }]}>
-                    {scheduleDetail.type}
-                  </Text>
-                </View>
-              )}
-              {scheduleDetail.status && (() => {
-                const opt = scheduleStatusOptions.find(o => o.key === scheduleDetail.status);
-                const sc = opt?.color || theme.textMuted;
-                const label = opt?.name || scheduleDetail.status;
-                return (
-                  <View style={[styles.taskMetaBadge, { backgroundColor: sc + '25', borderColor: sc + '60' }]}>
-                    <View style={[styles.taskMetaDot, { backgroundColor: sc }]} />
-                    <Text style={[styles.taskMetaBadgeText, { color: sc }]}>{label}</Text>
+                <Text style={[type.headingSemi, { color: c.text }]}>{scheduleDetail.name}</Text>
+                {scheduleDetail.status ? (
+                  <View style={wx.status}>
+                    <View style={[wx.dot, { backgroundColor: opt?.color || c.status.upcoming }]} />
+                    <Text style={[type.meta, { color: c.muted }]}>{opt?.name || scheduleDetail.status}</Text>
                   </View>
-                );
-              })()}
-            </View>
-
-            {/* Date / Time */}
-            <View style={[styles.detailRow, { borderColor: theme.border }]}>
-              <Ionicons name="calendar-outline" size={16} color={theme.primary} />
-              <View style={styles.detailBody}>
-                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
-                  {formatDateLabel(scheduleDetail.startDate)}
-                  {scheduleDetail.startDate !== scheduleDetail.endDate
-                    ? ` → ${formatDateLabel(scheduleDetail.endDate)}`
-                    : ''}
-                </Text>
-                {(scheduleDetail.startTime || scheduleDetail.endTime) && (
-                  <Text style={[styles.detailSubtext, { color: theme.textSecondary }]}>
-                    {scheduleDetail.startTime ? scheduleDetail.startTime.slice(0, 5) : ''}
-                    {scheduleDetail.startTime && scheduleDetail.endTime ? ' – ' : ''}
-                    {scheduleDetail.endTime ? scheduleDetail.endTime.slice(0, 5) : ''}
-                  </Text>
-                )}
+                ) : null}
               </View>
-            </View>
-
-            {/* Assigned To */}
-            {scheduleDetail.assignedToName && (
-              <View style={[styles.detailRow, { borderColor: theme.border }]}>
-                <Ionicons name="person-outline" size={16} color={theme.primary} />
-                <View style={styles.detailBody}>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
-                    {scheduleDetail.assignedToName}
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.sheetPrimaryBtn, { backgroundColor: theme.primary }]}
-              onPress={() => {
-                scheduleSheetRef.current?.dismiss();
-                const tabNav = navigation.getParent<NativeStackNavigationProp<any>>();
-                (tabNav ?? navigation).navigate('More', {
-                  screen: 'Schedule',
-                  params: { projectId: scheduleDetail.projectId },
-                });
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="calendar-outline" size={15} color="#FFFFFF" style={styles.btnIcon} />
-              <Text style={styles.sheetPrimaryBtnText}>View in Schedule</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+              <Card variant="list">
+                <PropertyRow key="dates" label="Dates" value={dates} />
+                {times ? <PropertyRow key="times" label="Time" value={times} /> : null}
+                {scheduleDetail.assignedToName ? <PropertyRow key="assigned" label="Assigned" value={scheduleDetail.assignedToName} /> : null}
+              </Card>
+              <ButtonRow>
+                <SecondaryButton
+                  label="View in Schedule"
+                  onPress={() => {
+                    scheduleSheetRef.current?.dismiss();
+                    const tabNav = navigation.getParent<NativeStackNavigationProp<any>>();
+                    (tabNav ?? navigation).navigate('More', { screen: 'Schedule', params: { projectId: scheduleDetail.projectId } });
+                  }}
+                />
+              </ButtonRow>
+            </SheetBody>
+          );
+        })() : null}
       </Sheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  // Header
+  container: { flex: 1 },
+  // Greeting header
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingTop: 56,
-    paddingBottom: 14,
-    paddingHorizontal: 20,
+    alignItems: 'flex-start',
+    paddingTop: metrics.workspace.contentTop,
+    gap: space.rowGap,
   },
-  headerLeft: {
-    flex: 1,
-    minWidth: 0,
-  },
-  headerContext: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
-    letterSpacing: 0.2,
-    marginBottom: 2,
-  },
-  headerName: {
-    fontSize: fontSize.display,
-    fontWeight: fontWeight.bold,
-  },
-  weatherRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 6,
-  },
-  weatherText: {
-    flexShrink: 1,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingBottom: 4,
-  },
-  headerIconBtn: {
-    padding: 4,
-    position: 'relative',
-  },
-  bellBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -4,
-    borderRadius: radius.full,
-    minWidth: 18,
-    height: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-  },
-  bellBadgeText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.data,
-    fontWeight: fontWeight.bold,
-  },
-  headerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerAvatarText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
-  },
-  userMenuBackdrop: {
-    ...StyleSheet.absoluteFill,
-    zIndex: 99,
-    elevation: 9,
-  },
-  userMenuDropdown: {
-    position: 'absolute',
-    top: 108,
-    right: 20,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    zIndex: 100,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    minWidth: 180,
-  },
-  userMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    gap: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  userMenuText: {
-    fontSize: fontSize.bodyLg,
-    fontWeight: fontWeight.medium,
-  },
-  // Skeleton first load
-  skeletonBody: {
-    paddingTop: 8,
-  },
-  skeletonCardRow: {
-    flexDirection: 'row',
-    gap: CARD_GAP,
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  skeletonHeader: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-  },
-  skeletonGroupCard: {
-    marginHorizontal: 20,
-    borderRadius: radius.xxl,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 14,
-    gap: 18,
-  },
-  // Scroll layout
-  scroll: {
-    flex: 1,
-  },
+  headerWrap: { marginBottom: metrics.workspace.sectionGap },
+  headerLeft: { flex: 1, gap: metrics.workspace.headerGap },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: metrics.pageHeader.actionGap, paddingTop: metrics.workspace.headerGap },
+  bellBadge: { position: 'absolute', left: metrics.tabBar.icon - metrics.tabBar.badgeOffsetX, top: metrics.tabBar.badgeOffsetY },
+  userMenuBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 9 },
+  userMenuDropdown: { position: 'absolute', right: space.screenX, top: metrics.workspace.menuTop, width: metrics.workspace.menuWidth, zIndex: 10 },
+  // Body
+  skeletonBody: { paddingTop: metrics.workspace.sectionGap, gap: metrics.workspace.captureGap },
+  skeletonChips: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: metrics.workspace.sectionGap },
+  scroll: { flex: 1 },
   scrollContent: {
-    paddingTop: 8,
-    paddingBottom: 32,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  // Wide-only: row-wrap container; every child needs an explicit width or it
-  // would shrink to its content.
-  scrollContentWide: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'flex-start',
-  },
-  sectionFull: { width: '100%' },
-  sectionHalf: { width: '50%' },
-  hListContent: {
-    paddingHorizontal: 20,
-    gap: CARD_GAP,
-  },
-  emptyCard: {
-    marginHorizontal: 20,
-    borderRadius: radius.xxl,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 24,
-    alignItems: 'center',
-    gap: 8,
-  },
-  emptyText: {
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.medium,
-  },
-  // Live clocked-in timer card
-  timerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    borderRadius: radius.xxl,
-    padding: 16,
-    gap: 12,
-  },
-  timerCardLeft: {
-    flex: 1,
-    minWidth: 0,
-  },
-  timerLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  pulsingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#FFFFFF',
-  },
-  timerLabel: {
-    fontSize: fontSize.label,
-    fontWeight: fontWeight.bold,
-    letterSpacing: 1,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  timerElapsed: {
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  timerMeta: {
-    fontSize: fontSize.xs,
-    color: 'rgba(255,255,255,0.85)',
-    marginTop: 1,
-  },
-  clockOutPill: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: radius.full,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  clockOutPillText: {
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-  },
-  // Project cards
-  projectCard: {
-    width: PROJECT_CARD_WIDTH,
-    height: 108,
-    borderRadius: radius.xxl,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 10,
-    overflow: 'hidden',
-  },
-  projectCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  projectDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  projectName: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    lineHeight: 19,
-  },
-  phaseChip: {
-    alignSelf: 'flex-start',
-    borderRadius: radius.full,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    marginTop: 'auto',
-  },
-  phaseChipText: {
-    fontSize: fontSize.xxs,
-    fontWeight: fontWeight.semibold,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  allProjectsCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 4,
-  },
-  allProjectsText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-  },
-  // Today's tasks grouped card
-  taskProgressWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  taskProgressText: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-  },
-  groupCard: {
-    marginHorizontal: 20,
-    borderRadius: radius.xxl,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-  },
-  taskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    gap: 12,
-  },
-  taskCheckbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  taskRowBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  taskRowTitle: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
-  },
-  taskRowDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  completedToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  completedToggleText: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-  },
-  // Horizontal cards (timesheets + schedule)
-  hCard: {
-    width: H_CARD_WIDTH,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderRadius: radius.xxl,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 14,
-    overflow: 'hidden',
-  },
-  accentBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 3,
-  },
-  hCardBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  hCardTitle: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-  },
-  hCardSub: {
-    fontSize: fontSize.xs,
-    marginTop: 2,
-  },
-  hCardMeta: {
-    fontSize: fontSize.xs,
-    marginTop: 4,
-  },
-  hoursPill: {
-    borderRadius: radius.full,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  hoursPillText: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
-  },
-  // Mentions digest card
-  mentionCard: {
-    marginHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: radius.xxl,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 14,
-  },
-  mentionIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mentionText: {
-    flex: 1,
-    minWidth: 0,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
-  },
-  // Recent activity
-  activityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    gap: 10,
-  },
-  activityAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activityAvatarText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.table,
-    fontWeight: fontWeight.bold,
-  },
-  activityBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  activityName: {
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.bold,
-  },
-  activityDesc: {
-    fontSize: fontSize.xs,
-    marginTop: 2,
-  },
-  activityTime: {
-    fontSize: fontSize.data,
-    fontWeight: fontWeight.medium,
-  },
-  // Sheets
-  sheetBody: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    gap: 12,
-  },
-  sheetLoading: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  sheetBlock: {
-    gap: 6,
-  },
-  sheetLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  clockOutSummary: {
-    borderRadius: radius.xl,
-    padding: 14,
-    gap: 2,
-  },
-  clockOutProject: {
-    fontSize: fontSize.bodyLg,
-    fontWeight: fontWeight.semibold,
-  },
-  clockOutElapsed: {
-    fontSize: fontSize.bodySm,
-  },
-  breakChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  breakChip: {
-    borderRadius: radius.full,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  breakChipText: {
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-  },
-  destructiveBtn: {
-    height: 48,
-    borderRadius: radius.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  destructiveBtnText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.bodyLg,
-    fontWeight: fontWeight.semibold,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  detailBody: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  detailLabel: {
-    fontSize: fontSize.table,
-    marginBottom: 2,
-  },
-  detailValue: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
-  },
-  detailSubtext: {
-    fontSize: fontSize.xs,
-    marginTop: 2,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 4,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-  },
-  statusBadgeText: {
-    fontSize: fontSize.table,
-    fontWeight: fontWeight.semibold,
-  },
-  sheetPrimaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 44,
-    borderRadius: radius.xl,
-    marginTop: 4,
-  },
-  sheetPrimaryBtnText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-  },
-  sheetSecondaryBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 44,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-  },
-  sheetSecondaryBtnText: {
-    fontSize: fontSize.bodySm,
-    fontWeight: fontWeight.semibold,
-  },
-  sheetActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  sheetActionBtn: {
-    flex: 1,
-    marginTop: 0,
-  },
-  btnIcon: {
-    marginRight: 6,
-  },
-  // Task sheet meta
-  taskMetaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  taskMetaBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    borderWidth: 1,
-  },
-  taskMetaDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 5,
-  },
-  taskMetaIcon: {
-    marginRight: 4,
-  },
-  taskMetaBadgeText: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
-  },
-  capitalize: {
-    textTransform: 'capitalize',
-  },
-  taskDescText: {
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-    padding: 12,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  checklistHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  checklistRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 6,
-  },
-  checklistBox: {
-    width: 18,
-    height: 18,
-    borderRadius: radius.sm,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-    flexShrink: 0,
-  },
-  checklistItemText: {
-    flex: 1,
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-  },
-  checklistAssignee: {
-    marginLeft: 8,
-  },
+    paddingHorizontal: space.screenX,
+    paddingBottom: space.screenBottom,
+  },
+  section: { marginBottom: metrics.workspace.sectionGap },
+  // Duo (D01): padding 10/28, two columns (left 420, right fills), gap 28.
+  scrollContentWide: { paddingHorizontal: metrics.workspace.duoPadX, paddingTop: metrics.workspace.duoPadTop },
+  duoCols: { flexDirection: 'row', alignItems: 'flex-start', gap: metrics.workspace.duoColGap },
+  duoLeft: { width: metrics.workspace.duoLeft },
+  duoRight: { flex: 1, minWidth: 0 },
+  clockRow: { flexDirection: 'row', alignItems: 'center', gap: metrics.workspace.clockGap },
+  clockBody: { flex: 1, gap: metrics.listRow.bodyGap },
+  clockLabelRow: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  pulsingDot: { width: size.statusDot, height: size.statusDot, borderRadius: size.statusDot / 2 },
+  clockOutBtn: { borderRadius: radii.lg, paddingHorizontal: space.cardX, minHeight: metrics.actionBar.buttonHeight, justifyContent: 'center' },
+  completedToggle: { flexDirection: 'row', alignItems: 'center', gap: metrics.groupHeader.toggleGap, paddingVertical: metrics.workspace.row.padY },
+  activityRow: { flexDirection: 'row', alignItems: 'center', gap: metrics.workspace.activityRow.gap, paddingVertical: metrics.workspace.activityRow.padY },
+});
+
+const wx = StyleSheet.create({
+  flex: { flex: 1 },
+  shrink: { flexShrink: 1 },
+  loading: { paddingVertical: space.screenBottom * 2, alignItems: 'center' },
+  group: { gap: metrics.form.labelGap },
+  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  titleBlock: { gap: metrics.form.labelGap },
+  kind: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  status: { flexDirection: 'row', alignItems: 'center', gap: metrics.statusDot.gap },
+  dot: { width: size.statusDot, height: size.statusDot, borderRadius: size.statusDot / 2 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.inline },
+  chip: { paddingHorizontal: metrics.filterChip.padX, paddingVertical: metrics.filterChip.padY, borderRadius: radii.pill, borderWidth: size.border },
+  itemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.rowGap, paddingVertical: metrics.listRow.padY },
+  strike: { textDecorationLine: 'line-through' },
 });

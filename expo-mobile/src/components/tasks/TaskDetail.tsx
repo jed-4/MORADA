@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ellipsis, Pencil } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TaskComments from '../TaskComments';
 import { useTwoPaneDetail } from '../ui/TwoPane';
 import { readableFrame } from '../ui/ReadableColumn';
-import { currentTheme, MAX_FONT_SCALE } from '../../theme';
+import { currentTheme, metrics, radii, size, space, tabular, type, useColors } from '../../theme';
+import { Avatar, Card, Checkbox, FieldLabel, ProjectSquare, PropertyRow } from '../kit';
 
 /**
  * One task's read-only view: title, status/priority, due date, project,
@@ -95,6 +96,11 @@ interface TaskDetailProps {
   inSheet?: boolean;
   /** Extra content after the comments (e.g. a delete button). */
   footer?: ReactNode;
+  /** Project square colour for the Project row. */
+  projectColor?: string | null;
+  projectId?: string | null;
+  /** Duo pane (D03): status + priority live in the properties card, not under the title. */
+  pane?: boolean;
 }
 
 export function TaskDetail({
@@ -109,124 +115,120 @@ export function TaskDetail({
   currentUserId,
   inSheet,
   footer,
+  projectColor,
+  projectId,
+  pane,
 }: TaskDetailProps) {
+  const c = useColors();
   const description = stripHtml(task.contentText || task.content);
   const checklist = task.checklist || [];
   const assignees = task.assigneeNames || [];
   const tags = task.tags || [];
-  const priorityColor = getPriorityColor(task.priority);
+  const due = task.dueDate
+    ? new Date(task.dueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+    : null;
 
   return (
-    <>
-      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewTitle, { color: colors.text }]}>{task.title}</Text>
-
-      <View style={styles.viewBadgeRow}>
-        <View style={[styles.viewBadge, { backgroundColor: statusColor + '20' }]}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewBadgeText, { color: statusColor }]}>{statusLabel}</Text>
-        </View>
-        <View style={[styles.viewBadge, { backgroundColor: priorityColor + '20' }]}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewBadgeText, { color: priorityColor }]}>
-            {PRIORITY_LABELS[task.priority || 'low'] || 'Low'}
-          </Text>
-        </View>
+    <View style={dx.wrap}>
+      <View style={dx.titleBlock}>
+        <Text style={[type.headingSemi, { color: c.text }]}>{task.title}</Text>
+        {/* Status as dot + word; priority as a plain word (no coloured pills). */}
+        {pane ? null : <View style={dx.statusLine}>
+          <View style={[dx.dot, { backgroundColor: statusColor || c.status.upcoming }]} />
+          <Text style={[type.meta, { color: c.text }]}>{statusLabel}</Text>
+          <Text style={[type.meta, { color: c.muted }]}>{`· ${PRIORITY_LABELS[task.priority || 'low'] || 'Low'} priority`}</Text>
+        </View>}
       </View>
 
-      {task.dueDate ? (
-        <View style={styles.viewField}>
-          <Ionicons name="calendar-outline" size={18} color={colors.secondary} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewFieldText, { color: colors.text }]}>
-            {new Date(task.dueDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-          </Text>
-        </View>
-      ) : null}
-
-      {projectName ? (
-        <View style={styles.viewField}>
-          <Ionicons name="briefcase-outline" size={18} color={colors.secondary} />
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewFieldText, { color: colors.text }]}>{projectName}</Text>
-        </View>
-      ) : null}
+      <Card variant="list">
+        {pane ? (
+          <PropertyRow key="status" label="Status" labelWidth={metrics.tasksPane.propLabel}>
+            <View style={dx.statusLine}>
+              <View style={[dx.dot, { backgroundColor: statusColor || c.status.upcoming }]} />
+              <Text style={[type.body, { color: c.text }]}>{statusLabel}</Text>
+            </View>
+          </PropertyRow>
+        ) : null}
+        {pane ? (
+          <PropertyRow key="priority" label="Priority" labelWidth={metrics.tasksPane.propLabel} value={PRIORITY_LABELS[task.priority || 'low'] || 'Low'} />
+        ) : null}
+        <PropertyRow key="due" label="Due date" labelWidth={pane ? metrics.tasksPane.propLabel : undefined} value={due} placeholder="No due date" />
+        {projectName ? (
+          <PropertyRow key="project" label="Project" labelWidth={pane ? metrics.tasksPane.propLabel : undefined}>
+            <View style={dx.person}>
+              <ProjectSquare color={projectColor ?? null} fallbackKey={projectId ?? projectName} />
+              <Text style={[type.body, { color: c.text }]} numberOfLines={1}>{projectName}</Text>
+            </View>
+          </PropertyRow>
+        ) : null}
+        {assignees.length > 0 ? (
+          <PropertyRow key="assignees" label={assignees.length > 1 ? 'Assignees' : 'Assignee'} labelWidth={pane ? metrics.tasksPane.propLabel : undefined}>
+            <View style={dx.people}>
+              {assignees.map((name, idx) => (
+                <View key={idx} style={dx.person}>
+                  <Avatar name={name} size="chip" />
+                  <Text style={[type.body, { color: c.text }]} numberOfLines={1}>{name}</Text>
+                </View>
+              ))}
+            </View>
+          </PropertyRow>
+        ) : null}
+      </Card>
 
       {description ? (
-        <View style={styles.viewSection}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewSectionLabel, { color: colors.secondary }]}>{descriptionLabel}</Text>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewDescription, { color: colors.text }]}>{description}</Text>
-        </View>
-      ) : null}
-
-      {assignees.length > 0 ? (
-        <View style={styles.viewSection}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewSectionLabel, { color: colors.secondary }]}>Assignees</Text>
-          {assignees.map((name, idx) => (
-            <View key={idx} style={styles.assigneeRow}>
-              <View style={[styles.assigneeAvatar, { backgroundColor: colors.accent }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.assigneeAvatarText}>
-                  {(name || '').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-                </Text>
-              </View>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.assigneeName, { color: colors.text }]}>{name}</Text>
-            </View>
-          ))}
+        <View style={dx.group}>
+          <FieldLabel>{descriptionLabel}</FieldLabel>
+          <Card variant="notes">
+            <Text style={[type.bodyRead, { color: c.textLong }]}>{description}</Text>
+          </Card>
         </View>
       ) : null}
 
       {checklist.length > 0 ? (
-        <View style={styles.viewSection}>
-          <View style={styles.checklistHeader}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewSectionLabel, { color: colors.secondary, marginBottom: 0 }]}>Checklist</Text>
-            {onToggleChecklistItem ? (
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.checklistProgress, { color: colors.muted }]}>
-                {checklist.filter(i => i.completed).length}/{checklist.length}
-              </Text>
-            ) : null}
+        <View style={dx.group}>
+          <View style={dx.labelRow}>
+            <FieldLabel>Checklist</FieldLabel>
+            <Text style={[type.meta, tabular, { color: c.muted }]}>
+              {`${checklist.filter(i => i.completed).length}/${checklist.length}`}
+            </Text>
           </View>
-          {checklist.map(item => {
-            const body = (
-              <>
-                <Ionicons
-                  name={item.completed ? 'checkbox' : 'square-outline'}
-                  size={22}
-                  color={item.completed ? currentTheme().statusSuccess : colors.muted}
-                />
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE}
-                  style={[
-                    styles.checklistText,
-                    { color: item.completed ? colors.muted : colors.text },
-                    item.completed && styles.strikethrough,
-                  ]}
+          <Card variant="list">
+            {checklist.map(item => {
+              const body = (
+                <>
+                  <Checkbox checked={item.completed} accessibilityLabel={item.text} />
+                  <Text
+                    style={[type.rowTitle, dx.itemText, { color: item.completed ? c.muted : c.text }, item.completed && dx.strike]}
+                  >
+                    {item.text}
+                  </Text>
+                </>
+              );
+              return onToggleChecklistItem ? (
+                <Pressable
+                  key={item.id}
+                  style={({ pressed }) => [dx.itemRow, { opacity: pressed ? metrics.pressedOpacity : 1 }]}
+                  onPress={() => onToggleChecklistItem(item.id)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: item.completed }}
                 >
-                  {item.text}
-                </Text>
-              </>
-            );
-            return onToggleChecklistItem ? (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.checklistRow}
-                onPress={() => onToggleChecklistItem(item.id)}
-                activeOpacity={0.6}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: item.completed }}
-              >
-                {body}
-              </TouchableOpacity>
-            ) : (
-              <View key={item.id} style={styles.checklistRow}>{body}</View>
-            );
-          })}
+                  {body}
+                </Pressable>
+              ) : (
+                <View key={item.id} style={dx.itemRow}>{body}</View>
+              );
+            })}
+          </Card>
         </View>
       ) : null}
 
       {tags.length > 0 ? (
-        <View style={styles.viewSection}>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.viewSectionLabel, { color: colors.secondary }]}>Tags</Text>
-          <View style={styles.tagsRow}>
-            {tags.map((tag, idx) => (
-              <View key={idx} style={[styles.tagBadge, { backgroundColor: colors.accent + '15' }]}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.tagText, { color: colors.accent }]}>{tag}</Text>
-              </View>
-            ))}
-          </View>
+        <View style={dx.tags}>
+          {tags.map((tag, idx) => (
+            <View key={idx} style={[dx.tag, { backgroundColor: c.tint }]}>
+              <Text style={[type.caption, { color: c.link }]}>{tag}</Text>
+            </View>
+          ))}
         </View>
       ) : null}
 
@@ -239,12 +241,16 @@ export function TaskDetail({
       />
 
       {footer}
-    </>
+    </View>
   );
 }
 
-interface TaskDetailPaneProps extends Omit<TaskDetailProps, 'inSheet'> {
+interface TaskDetailPaneProps extends Omit<TaskDetailProps, 'inSheet' | 'pane'> {
   onEdit: () => void;
+  /** Offered in the More menu (red), never as a button in the page. */
+  onDelete?: () => void;
+  /** Muted line top-left, e.g. "Capture · created by Jed Smith, 18 Nov". */
+  metaLine?: string;
 }
 
 /**
@@ -253,86 +259,80 @@ interface TaskDetailPaneProps extends Omit<TaskDetailProps, 'inSheet'> {
  * When the phone folds with this open, TwoPane keeps it mounted full width
  * with a floating back button top-left — the header leaves room for it.
  */
-export function TaskDetailPane({ onEdit, ...detail }: TaskDetailPaneProps) {
+export function TaskDetailPane({ onEdit, onDelete, metaLine, ...detail }: TaskDetailPaneProps) {
   const { heldOnFold } = useTwoPaneDetail();
   const insets = useSafeAreaInsets();
-  const { colors } = detail;
+  const k = useColors();
+  const more = () =>
+    Alert.alert(detail.task.title, undefined, [
+      { text: 'Edit', onPress: onEdit },
+      ...(onDelete ? [{ text: 'Delete task', style: 'destructive' as const, onPress: onDelete }] : []),
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
   return (
     <View style={styles.pane}>
+      {/* D03: muted context line · Edit · More (Delete lives in More). */}
       <View
         style={[
           styles.paneHeader,
-          { borderBottomColor: colors.border, backgroundColor: colors.card },
           // Room for TwoPane's floating back button when held after a fold:
           // it sits at left 12, top insets.top + 6 (36pt), so line the
           // header row up beside it rather than under it.
-          heldOnFold && { paddingLeft: 60, paddingTop: insets.top + 14 },
+          heldOnFold && { paddingLeft: metrics.tasksPane.heldPadLeft, paddingTop: insets.top + metrics.tasksPane.heldPadTop },
         ]}
       >
-        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.paneHeaderTitle, { color: colors.text }]}>Task Details</Text>
-        <TouchableOpacity
-          onPress={onEdit}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          accessibilityRole="button"
-          accessibilityLabel="Edit task"
-        >
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.paneEdit, { color: colors.accent }]}>Edit</Text>
-        </TouchableOpacity>
+        <Text style={[type.meta, styles.flex, { color: k.muted }]} numberOfLines={1}>
+          {metaLine ?? detail.statusLabel}
+        </Text>
+        <Pressable onPress={onEdit} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="Edit task">
+          <Pencil size={metrics.tasksPane.editIcon} color={k.icon} strokeWidth={metrics.iconStroke} />
+        </Pressable>
+        <Pressable onPress={more} hitSlop={metrics.hitSlop} accessibilityRole="button" accessibilityLabel="More task actions">
+          <Ellipsis size={size.icon.header} color={k.icon} strokeWidth={metrics.iconStroke} />
+        </Pressable>
       </View>
       <ScrollView
         style={styles.pane}
-        contentContainerStyle={[styles.paneContent, readableFrame]}
+        contentContainerStyle={styles.paneContent}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         automaticallyAdjustKeyboardInsets
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
       >
-        <TaskDetail {...detail} />
+        <TaskDetail {...detail} pane />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  viewTitle: { fontSize: 22, fontWeight: '700', marginBottom: 12 },
-  viewBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  viewBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 },
-  viewBadgeText: { fontSize: 13, fontWeight: '600' },
-  viewField: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  viewFieldText: { fontSize: 14, flexShrink: 1 },
-  viewSection: { marginTop: 16 },
-  viewSectionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  viewDescription: { fontSize: 14, lineHeight: 22 },
-  assigneeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  assigneeAvatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  assigneeAvatarText: { color: '#ffffff', fontSize: 11, fontWeight: '600' },
-  assigneeName: { fontSize: 14 },
-  checklistHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  checklistProgress: { fontSize: 12, fontWeight: '600' },
-  // 44pt rows: the whole row is the tap target for a tappable checklist.
-  checklistRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 },
-  checklistText: { fontSize: 14, flex: 1 },
-  strikethrough: { textDecorationLine: 'line-through' },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  tagBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  tagText: { fontSize: 12, fontWeight: '500' },
   pane: { flex: 1 },
+  flex: { flex: 1 },
+  // D03 detail pane: padding 12/24/16/24.
   paneHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: metrics.pageHeader.actionGap,
+    paddingHorizontal: metrics.tasksPane.padX,
+    paddingTop: metrics.tasksPane.padTop,
+    paddingBottom: space.inline,
   },
-  paneHeaderTitle: { fontSize: 16, fontWeight: '700' },
-  paneEdit: { fontSize: 15, fontWeight: '600' },
-  paneContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
+  paneContent: { paddingHorizontal: metrics.tasksPane.padX, paddingBottom: space.screenBottom },
+});
+
+const dx = StyleSheet.create({
+  wrap: { gap: metrics.sheet.gap },
+  titleBlock: { gap: metrics.form.labelGap },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: metrics.statusDot.gap, flexWrap: 'wrap' },
+  dot: { width: size.statusDot, height: size.statusDot, borderRadius: size.statusDot / 2 },
+  people: { gap: space.inline, flexShrink: 1 },
+  person: { flexDirection: 'row', alignItems: 'center', gap: space.inline },
+  group: { gap: metrics.form.labelGap },
+  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  itemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.rowGap, paddingVertical: metrics.listRow.padY },
+  itemText: { flex: 1 },
+  strike: { textDecorationLine: 'line-through' },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: space.inline },
+  tag: { paddingHorizontal: metrics.filterChip.padX, paddingVertical: metrics.filterChip.padY, borderRadius: radii.pill },
 });

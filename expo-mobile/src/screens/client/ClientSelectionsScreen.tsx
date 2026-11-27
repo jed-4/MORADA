@@ -5,7 +5,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { apiFetch } from '../../services/api';
 import { useClientProject } from '../../contexts/ClientProjectContext';
 import { haptic } from '../../lib/haptics';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts, colors as palette } from '../../theme';
 import { firstImage, getChosenOption, type Selection } from '../../lib/selections';
 import {
   buildSelectionGallery,
@@ -218,18 +218,18 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: fontSize.sm },
   chips: { gap: 8, paddingVertical: 10, alignItems: 'center' },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: radius.full, paddingHorizontal: 12, paddingVertical: 6 },
-  chipText: { fontSize: fontSize.bodySm, fontWeight: fontWeight.medium },
+  chipText: { fontSize: fontSize.bodySm, fontFamily: fonts.medium },
   chipDivider: { width: 1, height: 20 },
   groupHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 12, marginBottom: 8 },
-  groupTitle: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, letterSpacing: 0.6 },
+  groupTitle: { fontSize: fontSize.xs, fontFamily: fonts.semibold, letterSpacing: 0.6 },
   groupMeta: { fontSize: fontSize.xs },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   card: { borderWidth: 1, borderRadius: radius.xl, overflow: 'hidden' },
   photo: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   pillOver: { position: 'absolute', top: 8, left: 8 },
-  countOver: { position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2 },
-  countText: { color: '#FFFFFF', fontSize: 10, fontWeight: fontWeight.semibold },
+  countOver: { position: 'absolute', bottom: 8, right: 8, backgroundColor: palette.photoBadge, borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2 },
+  countText: { color: palette.onAccent, fontSize: 10, fontFamily: fonts.semibold },
   cardBody: { padding: 10, gap: 4 },
-  cardTitle: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  cardTitle: { fontSize: fontSize.sm, fontFamily: fonts.semibold },
   cardMeta: { fontSize: fontSize.xs },
 });

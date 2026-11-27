@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePermission } from '../../lib/usePermission';
 import { haptic } from '../../lib/haptics';
 import { PORTAL_KEYS } from '../../lib/clientPortal';
-import { useTheme, fontSize, fontWeight, radius } from '../../theme';
+import { useTheme, fontSize, fontWeight, radius, fonts } from '../../theme';
 import { useClientProject } from '../../contexts/ClientProjectContext';
 import { ClientHeader } from '../../components/client/ClientUI';
 import ClientVariationsList from './ClientVariationsList';
@@ -56,5 +56,5 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   segment: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 4, padding: 3, borderRadius: radius.lg },
   segmentItem: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: radius.md },
-  segmentText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  segmentText: { fontSize: fontSize.sm, fontFamily: fonts.semibold },
 });

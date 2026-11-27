@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
-import type { Theme } from '../../theme';
+import { space, type, useColors, type Theme } from '../../theme';
 
 // "Sarah is typing…" row. Rendered as an absolutely-positioned overlay pinned to
 // the bottom of the list area (see MessageThreadScreen) so that showing it never
@@ -22,20 +22,22 @@ interface TypingIndicatorProps {
 }
 
 export function TypingIndicator({ names, theme }: TypingIndicatorProps) {
+  const c = useColors();
+  void theme;
   if (names.length === 0) return null;
   return (
     <Animated.View
       entering={FadeIn.duration(150)}
       exiting={FadeOut.duration(150)}
       pointerEvents="none"
-      style={[styles.wrap, { backgroundColor: theme.background }]}
+      style={[styles.wrap, { backgroundColor: c.bg }]}
     >
       <View style={styles.dots}>
         {[0, 1, 2].map(i => (
-          <View key={i} style={[styles.dot, { backgroundColor: theme.textMuted }]} />
+          <View key={i} style={[styles.dot, { backgroundColor: c.faint }]} />
         ))}
       </View>
-      <Text style={[styles.text, { color: theme.textSecondary }]} numberOfLines={1}>
+      <Text style={[type.caption, styles.text, { color: c.muted }]} numberOfLines={1}>
         {formatTypingLabel(names)}
       </Text>
     </Animated.View>
@@ -50,11 +52,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 5,
+    gap: space.inline,
+    paddingHorizontal: space.screenX,
+    paddingVertical: space.inlineSm,
   },
-  dots: { flexDirection: 'row', gap: 3 },
-  dot: { width: 4, height: 4, borderRadius: 2 },
-  text: { fontSize: 12, fontStyle: 'italic', flexShrink: 1 },
+  dots: { flexDirection: 'row', gap: space.inlineSm / 2 + 1 },
+  dot: { width: space.inlineSm, height: space.inlineSm, borderRadius: space.inlineSm / 2 },
+  text: { flexShrink: 1 },
 });

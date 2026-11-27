@@ -1,8 +1,8 @@
 import { Text, StyleSheet } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
-import { PressableScale } from '../ui/PressableScale';
-import type { Theme } from '../../theme';
+import { ArrowDown } from 'lucide-react-native';
+import { Pressable } from 'react-native';
+import { metrics, radii, shadow, size, space, type, useColors, type Theme } from '../../theme';
 
 // Floating "jump to newest" pill. Appears once the user scrolls away from the
 // newest message; upgrades to a highlighted "New messages" state when messages
@@ -26,6 +26,8 @@ export function ScrollToBottomPill({
   onPress,
   bottomOffset,
 }: ScrollToBottomPillProps) {
+  const c = useColors();
+  void theme;
   if (!visible) return null;
   return (
     <Animated.View
@@ -33,42 +35,33 @@ export function ScrollToBottomPill({
       exiting={FadeOutDown.duration(150)}
       style={[styles.wrap, { bottom: bottomOffset }]}
     >
-      <PressableScale
+      <Pressable
         onPress={onPress}
-        style={[
+        accessibilityRole="button"
+        accessibilityLabel={hasNew ? 'New messages, scroll to newest' : 'Scroll to newest'}
+        style={({ pressed }) => [
           styles.pill,
-          hasNew
-            ? { backgroundColor: theme.primary, borderColor: theme.primary }
-            : { backgroundColor: theme.card, borderColor: theme.border },
+          { backgroundColor: hasNew ? c.accent : c.surface, borderColor: hasNew ? c.accent : c.border, opacity: pressed ? metrics.pressedOpacity : 1 },
         ]}
       >
-        {hasNew && <Text style={styles.pillTextNew}>New messages</Text>}
-        <Ionicons
-          name="arrow-down"
-          size={15}
-          color={hasNew ? '#FFFFFF' : theme.textSecondary}
-        />
-      </PressableScale>
+        {hasNew ? <Text style={[type.metaSemi, { color: c.onAccent }]}>New messages</Text> : null}
+        <ArrowDown size={size.icon.row} color={hasNew ? c.onAccent : c.icon} strokeWidth={metrics.iconStroke} />
+      </Pressable>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', alignSelf: 'center' },
+  // Floats over the list like the FAB, so it carries the sheet shadow.
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    // Keeps the pill legible over message bubbles on both themes.
-    shadowColor: '#000000',
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
+    gap: space.inline,
+    paddingHorizontal: space.rowGap,
+    paddingVertical: space.inline,
+    borderRadius: radii.pill,
+    borderWidth: size.border,
+    ...shadow.sheet,
   },
-  pillTextNew: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 });
