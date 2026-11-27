@@ -1,4 +1,4 @@
-import { Fragment, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -804,53 +804,27 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
           })}
         </div>
 
-        {/* Row 3 — Lilac summary strip: every status's total, then the lot.
-            Amounts are inc GST; rejected is shown but left out of the total. */}
-        <div className="bg-primary/10 flex items-center px-4 py-2 gap-x-5 gap-y-1 text-xs flex-wrap">
-          {STATUS_OPTIONS.slice(1).map((status, i) => (
-            <Fragment key={status.key}>
-              {i > 0 && <div className="w-px h-3.5 bg-primary/40" />}
-              <div className="flex items-center gap-1.5" data-testid={`text-total-${status.key}`}>
-                <span className="text-muted-foreground">
-                  {status.label}
-                  <span className="text-muted-foreground/70"> ({statusCounts[status.key as keyof typeof statusCounts]})</span>
-                </span>
-                <span
-                  className={cn(
-                    "font-semibold tabular-nums",
-                    status.key === "approved" && "text-status-success",
-                    status.key === "rejected" && "text-muted-foreground line-through decoration-muted-foreground/50",
-                  )}
-                >
-                  {formatCurrency(statusTotals[status.key] ?? 0)}
-                </span>
-              </div>
-            </Fragment>
-          ))}
-          <div className="w-px h-3.5 bg-primary/40" />
-          <div className="flex items-center gap-1.5" data-testid="text-total-all">
-            <span className="text-muted-foreground">Total excl. rejected</span>
+        {/* Row 3 — Lilac summary strip. The tabs above already carry each
+            status's count and total, so the strip holds only the money
+            position: total (rejected left out), paid, still owed. Inc GST. */}
+        <div className="bg-primary/10 flex items-center justify-end px-4 py-2 gap-x-5 gap-y-1 text-xs flex-wrap">
+          <div className="flex items-center gap-1.5" title="All variations except rejected" data-testid="text-total-all">
+            <span className="text-muted-foreground">Total</span>
             <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.all)}</span>
           </div>
-          {/* Right: where the money's up to. */}
-          <div className="ml-auto flex items-center gap-x-5">
-            <div className="flex items-center gap-1.5" data-testid="text-total-paid">
-              <span className="text-muted-foreground">Paid</span>
-              <span className="font-semibold tabular-nums text-status-success">{formatCurrency(paymentTotals.paid)}</span>
-            </div>
-            <div className="w-px h-3.5 bg-primary/40" />
-            <div
-              className="flex items-center gap-1.5"
-              title="Approved variations not yet paid"
-              data-testid="text-total-balance-due"
-            >
-              <span className="text-muted-foreground">Balance due</span>
-              <span className={cn("font-semibold tabular-nums", paymentTotals.due > 0 && "text-destructive")}>
-                {formatCurrency(paymentTotals.due)}
-              </span>
-            </div>
-            <span className="text-muted-foreground/70">inc GST</span>
+          <div className="w-px h-3.5 bg-primary/40" />
+          <div className="flex items-center gap-1.5" data-testid="text-total-paid">
+            <span className="text-muted-foreground">Paid</span>
+            <span className="font-semibold tabular-nums text-status-success">{formatCurrency(paymentTotals.paid)}</span>
           </div>
+          <div className="w-px h-3.5 bg-primary/40" />
+          <div className="flex items-center gap-1.5" title="Approved variations not yet paid" data-testid="text-total-balance-due">
+            <span className="text-muted-foreground">Balance due</span>
+            <span className={cn("font-semibold tabular-nums", paymentTotals.due > 0 && "text-destructive")}>
+              {formatCurrency(paymentTotals.due)}
+            </span>
+          </div>
+          <span className="text-muted-foreground/70">inc GST</span>
         </div>
 
       </div>{/* end header card */}
