@@ -27,6 +27,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   Select,
@@ -56,6 +59,8 @@ import {
   Save,
   Loader2,
   Crosshair,
+  CopyPlus,
+  FolderInput,
 } from "lucide-react";
 import { FocalPointPicker, saveFocalPoint } from "@/components/FocalPointPicker";
 import { Label } from "@/components/ui/label";
@@ -914,6 +919,18 @@ export default function EstimateEnotes({ estimateId }: Props) {
 
   // ── Derived data ───────────────────────────────────────────────────────────
   const categoryNames = useMemo(() => [...new Set(enotes.map(r => r.groupName))], [enotes]);
+
+  /** Row menu → Duplicate: same answers, new custom row in the same category. */
+  const duplicateRow = useCallback((row: EnoteRow) => {
+    const { id: _id, estimateId: _e, sortOrder: _s, createdAt: _c, updatedAt: _u, ...fields } = row as any;
+    createMutation.mutate({ ...fields, completed: false, isCustom: true });
+  }, [createMutation]);
+
+  /** Row menu → Move to category. */
+  const moveRow = useCallback((row: EnoteRow, groupName: string) => {
+    update(row.id, { groupName });
+    toast({ title: `Moved to ${groupName}` });
+  }, [update, toast]);
   const effectiveCategory = selectedCategory || categoryNames[0] || "";
 
   const categoryItems = useMemo(() => {
@@ -1390,6 +1407,40 @@ export default function EstimateEnotes({ estimateId }: Props) {
                                 <span className="ml-auto text-data text-muted-foreground">{attCount}</span>
                               )}
                             </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {/* Copy lands at the bottom of this category, as a
+                                custom row (so it can be deleted). Attachments
+                                stay with the original. */}
+                            <DropdownMenuItem
+                              className="flex items-center gap-2 text-xs"
+                              onSelect={() => duplicateRow(row)}
+                              data-testid={`menu-duplicate-enote-${row.id}`}
+                            >
+                              <CopyPlus className="w-3.5 h-3.5" />
+                              Duplicate
+                            </DropdownMenuItem>
+                            {categoryNames.length > 1 && (
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger
+                                  className="flex items-center gap-2 text-xs"
+                                  data-testid={`menu-move-enote-${row.id}`}
+                                >
+                                  <FolderInput className="w-3.5 h-3.5" />
+                                  Move to category
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="max-h-72 overflow-y-auto w-52">
+                                  {categoryNames.filter(c => c !== row.groupName).map(c => (
+                                    <DropdownMenuItem
+                                      key={c}
+                                      className="text-xs truncate"
+                                      onSelect={() => moveRow(row, c)}
+                                    >
+                                      {c}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            )}
                             {row.isCustom && (
                               <>
                                 <DropdownMenuSeparator />
