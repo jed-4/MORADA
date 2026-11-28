@@ -1,4 +1,4 @@
-import { Fragment, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -369,6 +369,12 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
     return t;
   }, [variations]);
 
+  // Only an APPROVED variation is owed — a draft or pending one hasn't been
+  // agreed, so its "balance" is just its price, not money outstanding.
+  const owedOn = (v: Variation) => (v.status === "approved" ? Math.max(0, v.balanceAmount || 0) : 0);
+  const balanceLabel = (v: Variation) =>
+    owedOn(v) > 0 ? formatCurrency(owedOn(v)) : v.paidAmount > 0 ? "Paid" : "-";
+
   // Money in vs still owed, from the client invoices that claim each
   // variation (variations.paid_amount / balance_amount, kept in step by the
   // invoice payment sync). Balance due counts APPROVED variations only — a
@@ -378,7 +384,7 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
     let due = 0;
     for (const v of variations) {
       paid += v.paidAmount || 0;
-      if (v.status === "approved" && v.balanceAmount > 0) due += v.balanceAmount;
+      due += owedOn(v);
     }
     return { paid, due };
   }, [variations]);
@@ -517,7 +523,7 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
           <span
             className={cn(
               "text-xs font-medium tabular-nums",
-              row.original.balanceAmount > 0
+              owedOn(row.original) > 0
                 ? "text-destructive"
                 : row.original.paidAmount > 0
                   ? "text-status-success"
@@ -527,11 +533,7 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
           >
             {/* Fully paid reads "Paid"; nothing owed and nothing paid (a $0
                 variation) is a dash rather than a green $0. */}
-            {row.original.balanceAmount > 0
-              ? formatCurrency(row.original.balanceAmount)
-              : row.original.paidAmount > 0
-                ? "Paid"
-                : "-"}
+            {balanceLabel(row.original)}
           </span>
         ),
         size: 100,
@@ -776,92 +778,61 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
                 )}
                 data-testid={`tab-status-${status.key}`}
               >
-                <span className="flex flex-col items-start leading-tight">
-                  <span className="flex items-center gap-1.5">
-                    {status.label}
-                    {count > 0 && (
-                      <span className={cn(
-                        "inline-flex items-center justify-center rounded-full text-data min-w-4 h-4 px-1",
-                        isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
-                      )}>
-                        {count}
-                      </span>
-                    )}
+                {status.label}
+                {count > 0 && (
+                  <span className={cn(
+                    "inline-flex items-center justify-center rounded-full text-data min-w-4 h-4 px-1",
+                    isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                  )}>
+                    {count}
                   </span>
-                  <span
-                    className={cn(
-                      "text-[11px] font-semibold tabular-nums",
-                      status.key === "approved" ? "text-status-success" : isActive ? "text-foreground" : "text-muted-foreground",
-                      status.key === "rejected" && "line-through decoration-muted-foreground/50",
-                    )}
-                    data-testid={`tab-total-${status.key}`}
-                  >
-                    {formatCurrency(statusTotals[status.key] ?? 0)}
-                  </span>
-                </span>
+                )}
               </button>
             );
           })}
         </div>
 
-        {/* Row 3 — Lilac summary strip: every status's total, then the lot.
-            Amounts are inc GST; rejected is shown but left out of the total. */}
-        <div className="bg-primary/10 flex items-center px-4 py-2 gap-x-5 gap-y-1 text-xs flex-wrap">
-          {STATUS_OPTIONS.slice(1).map((status, i) => (
-            <Fragment key={status.key}>
-              {i > 0 && <div className="w-px h-3.5 bg-primary/40" />}
-              <div className="flex items-center gap-1.5" data-testid={`text-total-${status.key}`}>
-                <span className="text-muted-foreground">
-                  {status.label}
-                  <span className="text-muted-foreground/70"> ({statusCounts[status.key as keyof typeof statusCounts]})</span>
-                </span>
-                <span
-                  className={cn(
-                    "font-semibold tabular-nums",
-                    status.key === "approved" && "text-status-success",
-                    status.key === "rejected" && "text-muted-foreground line-through decoration-muted-foreground/50",
-                  )}
-                >
-                  {formatCurrency(statusTotals[status.key] ?? 0)}
-                </span>
-              </div>
-            </Fragment>
-          ))}
-          <div className="w-px h-3.5 bg-primary/40" />
-          <div className="flex items-center gap-1.5" data-testid="text-total-all">
-            <span className="text-muted-foreground">Total excl. rejected</span>
+        {/* Row 3 — Lilac summary strip. The tabs above already carry each
+            status's count and total, so the strip holds only the money
+            position: total (rejected left out), paid, still owed. Inc GST. */}
+        <div className="bg-primary/10 flex items-center justify-end px-4 py-2 gap-x-5 gap-y-1 text-xs flex-wrap">
+          <div className="flex items-center gap-1.5" title="All variations except rejected" data-testid="text-total-all">
+            <span className="text-muted-foreground">Total</span>
             <span className="font-semibold tabular-nums">{formatCurrency(statusTotals.all)}</span>
           </div>
-          {/* Right: where the money's up to. */}
-          <div className="ml-auto flex items-center gap-x-5">
-            <div className="flex items-center gap-1.5" data-testid="text-total-paid">
-              <span className="text-muted-foreground">Paid</span>
-              <span className="font-semibold tabular-nums text-status-success">{formatCurrency(paymentTotals.paid)}</span>
-            </div>
-            <div className="w-px h-3.5 bg-primary/40" />
-            <div
-              className="flex items-center gap-1.5"
-              title="Approved variations not yet paid"
-              data-testid="text-total-balance-due"
-            >
-              <span className="text-muted-foreground">Balance due</span>
-              <span className={cn("font-semibold tabular-nums", paymentTotals.due > 0 && "text-destructive")}>
-                {formatCurrency(paymentTotals.due)}
-              </span>
-            </div>
-            <span className="text-muted-foreground/70">inc GST</span>
+          <div className="w-px h-3.5 bg-primary/40" />
+          <div className="flex items-center gap-1.5" data-testid="text-total-paid">
+            <span className="text-muted-foreground">Paid</span>
+            <span className="font-semibold tabular-nums text-status-success">{formatCurrency(paymentTotals.paid)}</span>
           </div>
+          <div className="w-px h-3.5 bg-primary/40" />
+          <div className="flex items-center gap-1.5" title="Approved variations not yet paid" data-testid="text-total-balance-due">
+            <span className="text-muted-foreground">Balance due</span>
+            <span className={cn("font-semibold tabular-nums", paymentTotals.due > 0 && "text-destructive")}>
+              {formatCurrency(paymentTotals.due)}
+            </span>
+          </div>
+          <span className="text-muted-foreground/70">inc GST</span>
         </div>
 
       </div>{/* end header card */}
 
       {/* ── Content ── */}
-      <div className="flex-1 overflow-auto px-3 pb-3 pt-1.5 relative">
+      {/* Table view: the table fills what's left of the screen and scrolls on
+          its own, so the status totals bar under it pins to the bottom of the screen. The
+          Kanban board scrolls the page as before. */}
+      <div className={cn(
+        "flex-1 min-h-0 px-3 pb-3 pt-1.5 relative",
+        currentView === "table" ? "flex flex-col overflow-hidden" : "overflow-auto",
+      )}>
 
-        <div className="border border-border rounded-md bg-background overflow-hidden">
+        <div className={cn(
+          "border border-border rounded-md bg-background overflow-hidden",
+          currentView === "table" && "flex flex-col min-h-0",
+        )}>
 
           {/* Search / controls row — always visible for both views */}
-          <div className="h-9 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">
+          <div className="h-9 flex-shrink-0 flex items-center px-3 border-b border-border/50 gap-2 bg-background sticky top-0 z-20">
             {/* Search — left, thin border */}
             <div className="relative flex-shrink-0">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
@@ -943,8 +914,38 @@ export default function Variations({ embedded }: { embedded?: boolean } = {}) {
               rowKey={(v) => v.id}
               onRowClick={(v) => handleRowClick(v.id)}
               rowClassName={(v) => selectedIds.has(v.id) ? "bg-primary/8 dark:bg-primary/10" : ""}
-              className="max-h-[calc(100vh-260px)]"
+              className="h-auto min-h-0"
             />
+          )}
+
+          {/* Status totals bar — under the table, so it sits right below the
+              last row, and stays on screen (pinned to the bottom) when the
+              rows run past it: the table above scrolls, this doesn't. Every
+              status, whatever tab is open. Inc GST. */}
+          {currentView === "table" && variations.length > 0 && (
+            <div
+              className="flex-shrink-0 flex items-center gap-x-5 gap-y-1 flex-wrap px-3 py-2 border-t border-border bg-muted text-xs"
+              data-testid="variations-status-totals"
+            >
+              {STATUS_OPTIONS.slice(1).map((status, i) => (
+                <div key={status.key} className="flex items-center gap-x-5">
+                  {i > 0 && <div className="w-px h-3.5 bg-border" />}
+                  <div className="flex items-center gap-1.5" data-testid={`status-total-${status.key}`}>
+                    <span className="text-muted-foreground">{status.label}</span>
+                    <span
+                      className={cn(
+                        "font-semibold tabular-nums",
+                        status.key === "approved" && "text-status-success",
+                        status.key === "rejected" && "text-muted-foreground",
+                      )}
+                    >
+                      {formatCurrency(statusTotals[status.key] ?? 0)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              <span className="ml-auto text-muted-foreground/70">inc GST</span>
+            </div>
           )}
         </div>
 
