@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Boxes, Tag } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { centsToDollars, dollarsToCents, exGstFromInc, formatCents } from "@shared/money";
 import type { AssemblyWithComponents, PriceListItem } from "@shared/schema";
@@ -401,7 +402,9 @@ function PriceListOption({
   onPickStart: () => void;
 }) {
   const cents = useMemo(() => lookupItemExGstCents(item), [item]);
+  const detail = [item.code, item.listName, `${formatCents(cents)} / ${item.unitType}`].filter(Boolean).join(" · ");
   return (
+    <OptionTooltip title={item.name} detail={detail}>
     <li
       role="option"
       aria-selected={active}
@@ -430,6 +433,31 @@ function PriceListOption({
         {formatCents(cents)} / {item.unitType}
       </span>
     </li>
+    </OptionTooltip>
+  );
+}
+
+/**
+ * The dropdown is narrow, so long catalogue names are cut off. Hovering a row
+ * shows the whole name (and its code / price list) beside the list. The
+ * tooltip ignores the pointer so it can never steal the click or blur the
+ * input the list belongs to.
+ */
+function OptionTooltip({ title, detail, children }: { title: string; detail?: string; children: React.ReactElement }) {
+  return (
+    <Tooltip delayDuration={250} disableHoverableContent>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent
+        side="right"
+        align="start"
+        sideOffset={8}
+        className="pointer-events-none z-[1000] max-w-sm whitespace-normal break-words text-xs"
+        data-testid="tooltip-price-list-option"
+      >
+        <div className="font-medium">{title}</div>
+        {detail ? <div className="mt-0.5 text-[11px] text-muted-foreground">{detail}</div> : null}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -463,7 +491,9 @@ function AssemblyOption({
   const { perUnitExTax, fixedExTax } = useMemo(() => assemblyRateBreakdown(assembly.components, assembly.inputs), [assembly]);
   const money = (d: number) => formatCents(dollarsToCents(d), { alwaysShowDecimals: true });
   const n = assembly.components.length;
+  const detail = `Assembly · ${n} component${n === 1 ? "" : "s"} · ${money(perUnitExTax)} / ${assembly.unitType}${fixedExTax > 0 ? ` + ${money(fixedExTax)} fixed` : ""}`;
   return (
+    <OptionTooltip title={assembly.name} detail={detail}>
     <li
       role="option"
       aria-selected={active}
@@ -493,5 +523,6 @@ function AssemblyOption({
         {money(perUnitExTax)} / {assembly.unitType}
       </span>
     </li>
+    </OptionTooltip>
   );
 }

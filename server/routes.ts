@@ -8368,6 +8368,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return updates.filter((u: any) => allowed.has(u?.id)) as any;
   };
 
+  /**
+   * Writes many sortOrder values in ONE statement. The storage reorder helpers
+   * loop an UPDATE per row, which is ~400ms a row against Neon — a drag in a
+   * 20-row list took seconds to land.
+   */
+  const bulkSetSortOrder = async (table: any, all: { id: string; sortOrder: number }[]) => {
+    const updates = all.filter(u => Number.isFinite(Number(u.sortOrder)));
+    if (updates.length === 0) return;
+    const cases = sql.join(
+      updates.map(u => sql`when ${table.id} = ${u.id} then ${Math.round(Number(u.sortOrder))}::integer`),
+      sql` `,
+    );
+    await db.update(table)
+      .set({ sortOrder: sql`case ${cases} else ${table.sortOrder} end` })
+      .where(inArray(table.id, updates.map(u => u.id)));
+  };
+
   /** category → labour estimate → project → company */
   const getOwnedLabourEstimateCategory = async (req: any, res: any, id: string, notFound = "Category not found") => {
     if (!id) { res.status(404).json({ error: notFound }); return null; }
@@ -11357,9 +11374,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!companyId) return res.status(401).json({ error: "No company" });
       const updates = await ownedSortUpdates(
         req.body?.updates, schema.labourTaskTemplates, schema.labourTaskTemplates.companyId, companyId);
-      await storage.reorderLabourTaskTemplates(updates);
+      await bulkSetSortOrder(schema.labourTaskTemplates, updates);
       res.json({ ok: true });
     } catch (error) {
+      res.status(500).json({ error: "Failed to reorder templates" });
+    }
+  });
+
+  /** Drag-to-reorder of Details template categories. Same shape as labour's. */
+  app.patch("/api/enote-templates/reorder", requireAuth, async (req, res) => {
+    try {
+      const companyId = (req.user as any)?.companyId;
+      if (!companyId) return res.status(401).json({ error: "No company" });
+      const updates = await ownedSortUpdates(
+        req.body?.updates, schema.enoteTemplates, schema.enoteTemplates.companyId, companyId);
+      await bulkSetSortOrder(schema.enoteTemplates, updates);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[enote-templates] reorder:", error);
       res.status(500).json({ error: "Failed to reorder templates" });
     }
   });

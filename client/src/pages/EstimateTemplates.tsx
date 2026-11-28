@@ -73,7 +73,7 @@ import { useTemplateCrud } from "@/components/templates/useTemplateCrud";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { moveGroup, orderGroups } from "@shared/templateGroupOrder";
 
@@ -102,6 +102,58 @@ function SortableGroupRow({ id, children }: { id: string; children: ReactNode })
     </div>
   );
 }
+
+/**
+ * A draggable item row in the Details or Labour list. Only the grip starts a
+ * drag — the rest of the row is click-to-edit cells, which a whole-row handle
+ * would swallow.
+ */
+function SortableItemRow({ id, className, style, children }: {
+  id: string;
+  className?: string;
+  style?: React.CSSProperties;
+  children: (handle: ReactNode) => ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const handle = (
+    <button
+      type="button"
+      ref={setActivatorNodeRef}
+      {...attributes}
+      {...listeners}
+      aria-label="Drag to reorder"
+      title="Drag to reorder"
+      className="flex h-5 w-4 items-center justify-center text-muted-foreground/40 opacity-0 transition-opacity hover:text-muted-foreground focus-visible:opacity-100 group-hover/sortrow:opacity-100 cursor-grab active:cursor-grabbing touch-none"
+      data-testid={`drag-item-${id}`}
+    >
+      <GripVertical className="h-3.5 w-3.5" />
+    </button>
+  );
+  return (
+    <div
+      ref={setNodeRef}
+      className={`group/sortrow ${className ?? ""}`}
+      style={{
+        ...style,
+        transform: CSS.Transform.toString(transform),
+        transition,
+        position: "relative",
+        zIndex: isDragging ? 10 : undefined,
+        background: isDragging ? "hsl(var(--card))" : undefined,
+        boxShadow: isDragging ? "0 2px 8px rgba(0,0,0,0.08)" : undefined,
+      }}
+      data-testid={`sortable-item-${id}`}
+    >
+      {children(handle)}
+    </div>
+  );
+}
+
+/** Rows in the order they show: by sortOrder, ties kept as the server sent them. */
+const bySortOrder = <T extends { sortOrder?: number }>(rows: T[]) =>
+  rows.map((r, i) => [r, i] as const)
+    .sort((a, b) => ((a[0].sortOrder ?? 0) - (b[0].sortOrder ?? 0)) || (a[1] - b[1]))
+    .map(([r]) => r);
 
 interface TemplateItem {
   groupName?: string;
@@ -467,7 +519,7 @@ export default function EstimateTemplates() {
     queryKey: ["/api/detail-field-defs"],
   });
   const detailsGridTemplate = useMemo(
-    () => ["1fr", "1fr", ...detailFieldDefs.map((d: any) => (d.type === "checkbox" ? "64px" : "140px")), "32px"].join(" "),
+    () => ["16px", "1fr", "1fr", ...detailFieldDefs.map((d: any) => (d.type === "checkbox" ? "64px" : "140px")), "32px"].join(" "),
     [detailFieldDefs],
   );
 
@@ -499,9 +551,46 @@ export default function EstimateTemplates() {
   }, [detailsRows]);
 
   const detailsGroupItems = useMemo(
-    () => detailsRows.filter((t: any) => t.groupName === selectedGroup),
+    () => bySortOrder(detailsRows.filter((t: any) => t.groupName === selectedGroup)),
     [detailsRows, selectedGroup],
   );
+
+  const reorderDetailsItemsMutation = useMutation({
+    mutationFn: (updates: { id: string; sortOrder: number }[]) =>
+      apiRequest("/api/enote-templates/reorder", "PATCH", { updates }),
+    onMutate: async (updates) => {
+      const keys = [
+        ["/api/enote-templates"],
+        ["/api/enote-template-sets", openDetailsSet?.id, "rows"],
+      ];
+      const next = new Map(updates.map(u => [u.id, u.sortOrder]));
+      const prev = await Promise.all(keys.map(async key => {
+        await queryClient.cancelQueries({ queryKey: key });
+        const before = queryClient.getQueryData<any[]>(key);
+        queryClient.setQueryData<any[]>(key, old =>
+          old?.map(t => (next.has(t.id) ? { ...t, sortOrder: next.get(t.id) } : t)));
+        return [key, before] as const;
+      }));
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      ctx?.prev.forEach(([key, before]) => queryClient.setQueryData<any[] | undefined>(key, before));
+      toast({ title: "Couldn't save the new order", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/enote-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/enote-template-sets"] });
+    },
+  });
+
+  const handleDetailsItemDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const ids = detailsGroupItems.filter((t: any) => t.categoryName).map((t: any) => t.id as string);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    reorderDetailsItemsMutation.mutate(arrayMove(ids, from, to).map((id, i) => ({ id, sortOrder: i })));
+  };
 
   // ── Labour: the same library shape, on its own storage (migration 0065) ────
   // Until 0065 a company had exactly ONE labour template, and its "groups" were
@@ -723,9 +812,39 @@ export default function EstimateTemplates() {
   // A group with no real task in it is a placeholder row carrying only the
   // category name — the same trick the Details side uses to hold an empty group.
   const labourGroupTasks = useMemo(
-    () => labourRows.filter((t: any) => t.categoryName === selectedGroup && t.description),
+    () => bySortOrder(labourRows.filter((t: any) => t.categoryName === selectedGroup && t.description)),
     [labourRows, selectedGroup],
   );
+
+  /**
+   * Drag an item within its group. The group's rows are renumbered 0..n-1 in
+   * their new order and written in one request; both caches the screen can be
+   * reading from are patched first so the row stays where it was dropped.
+   */
+  const reorderLabourItemsMutation = useMutation({
+    mutationFn: (updates: { id: string; sortOrder: number }[]) =>
+      apiRequest("/api/labour-task-templates/reorder", "PATCH", { updates }),
+    onMutate: async (updates) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/labour-task-templates"] });
+      await queryClient.cancelQueries({ queryKey: ["/api/labour-template-sets"] });
+      const next = new Map(updates.map(u => [u.id, u.sortOrder]));
+      return patchLabourCaches(rows => rows.map(t => (next.has(t.id) ? { ...t, sortOrder: next.get(t.id) } : t)));
+    },
+    onError: (_e, _v, ctx) => {
+      restoreLabourCaches(ctx);
+      toast({ title: "Couldn't save the new order", variant: "destructive" });
+    },
+    onSettled: () => invalidateLabourCaches(),
+  });
+
+  const handleLabourItemDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const ids = labourGroupTasks.map((t: any) => t.id as string);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    reorderLabourItemsMutation.mutate(arrayMove(ids, from, to).map((id, i) => ({ id, sortOrder: i })));
+  };
 
   const labourSetCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -1696,7 +1815,8 @@ export default function EstimateTemplates() {
               <>
                 {/* Column headers */}
                 <div className="grid px-4 py-1.5 text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
-                  style={{ gridTemplateColumns: "1fr 90px 70px 80px 32px" }}>
+                  style={{ gridTemplateColumns: "16px 1fr 90px 70px 80px 32px" }}>
+                  <span />
                   <span>Description</span>
                   <span>Sub-Heading</span>
                   <span className="text-center">No. Men</span>
@@ -1752,8 +1872,10 @@ export default function EstimateTemplates() {
                         }
                       }
                       rendered.push(
-                        <div key={t.id} className="grid items-center border-b border-border/10 group/lrow min-h-[34px] px-4"
-                          style={{ gridTemplateColumns: "1fr 90px 70px 80px 32px" }}>
+                        <SortableItemRow key={t.id} id={t.id} className="grid items-center border-b border-border/10 group/lrow min-h-[34px] pl-1 pr-4"
+                          style={{ gridTemplateColumns: "16px 1fr 90px 70px 80px 32px" }}>
+                          {handle => (<>
+                          {handle}
                           {/* Description */}
                           <div className="pr-2 py-0.5">
                             {editingLabourCell?.id === t.id && editingLabourCell?.field === 'description' ? (
@@ -1817,10 +1939,17 @@ export default function EstimateTemplates() {
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
-                        </div>
+                          </>)}
+                        </SortableItemRow>
                       );
                     });
-                    return rendered;
+                    return (
+                      <DndContext sensors={groupDragSensors} collisionDetection={closestCenter} onDragEnd={handleLabourItemDragEnd}>
+                        <SortableContext items={items.map((t: any) => t.id)} strategy={verticalListSortingStrategy}>
+                          {rendered}
+                        </SortableContext>
+                      </DndContext>
+                    );
                   })()}
                 </div>
                 {/* Add row */}
@@ -2032,6 +2161,7 @@ export default function EstimateTemplates() {
                 {/* Column headers */}
                 <div className="grid px-4 py-1.5 text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/30 border-b border-border/50 flex-shrink-0"
                   style={{ gridTemplateColumns: detailsGridTemplate }}>
+                  <span />
                   <span>Category</span>
                   <span>Default Notes</span>
                   {/* The company's own columns, the same set the estimate's
@@ -2045,9 +2175,13 @@ export default function EstimateTemplates() {
                       No categories yet — add one below
                     </div>
                   )}
+                  <DndContext sensors={groupDragSensors} collisionDetection={closestCenter} onDragEnd={handleDetailsItemDragEnd}>
+                  <SortableContext items={detailsGroupItems.filter((t: any) => t.categoryName).map((t: any) => t.id)} strategy={verticalListSortingStrategy}>
                   {detailsGroupItems.filter((t: any) => t.categoryName).map((t: any) => (
-                    <div key={t.id} className="grid items-center border-b border-border/10 group/erow min-h-[34px] px-4"
+                    <SortableItemRow key={t.id} id={t.id} className="grid items-center border-b border-border/10 group/erow min-h-[34px] pl-1 pr-4"
                       style={{ gridTemplateColumns: detailsGridTemplate }}>
+                      {handle => (<>
+                      {handle}
                       {/* Category */}
                       <div className="pr-2 py-0.5">
                         {editingEnoteCell?.id === t.id && editingEnoteCell.field === 'categoryName' ? (
@@ -2135,8 +2269,11 @@ export default function EstimateTemplates() {
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
-                    </div>
+                      </>)}
+                    </SortableItemRow>
                   ))}
+                  </SortableContext>
+                  </DndContext>
                 </div>
                 {/* Add row */}
                 <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
