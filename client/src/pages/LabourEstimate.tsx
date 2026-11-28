@@ -37,6 +37,8 @@ import {
   LayoutTemplate,
   MoreVertical,
   Copy,
+  CopyPlus,
+  FolderInput,
   Columns3,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -46,6 +48,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -205,6 +210,9 @@ function SortableTaskRow({
   setEditingCell,
   onDelete,
   onCopyToTemplate,
+  onDuplicate,
+  moveTargets,
+  onMove,
   isTemplate,
   cols,
   gridTemplate,
@@ -220,6 +228,11 @@ function SortableTaskRow({
   setEditingCell: (v: null) => void;
   onDelete: () => void;
   onCopyToTemplate?: () => void;
+  /** Copy this task directly below itself. */
+  onDuplicate?: () => void;
+  /** Other categories this task can move to (same estimate). */
+  moveTargets?: { id: string; name: string }[];
+  onMove?: (categoryId: string) => void;
   isTemplate?: boolean;
   cols: { key: string }[];
   gridTemplate: string;
@@ -384,7 +397,29 @@ function SortableTaskRow({
               <MoreVertical className="w-3 h-3" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuContent align="end" className="w-52">
+            {onDuplicate && (
+              <DropdownMenuItem onClick={onDuplicate} data-testid={`menu-duplicate-task-${task.id}`}>
+                <CopyPlus className="w-3.5 h-3.5 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+            )}
+            {onMove && moveTargets && moveTargets.length > 0 && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger data-testid={`menu-move-task-${task.id}`}>
+                  <FolderInput className="w-3.5 h-3.5 mr-2" />
+                  Move to category
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-72 overflow-y-auto w-56">
+                  {moveTargets.map(t => (
+                    <DropdownMenuItem key={t.id} onClick={() => onMove(t.id)} className="truncate">
+                      {t.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
+            {(onDuplicate || onMove) && <DropdownMenuSeparator />}
             {!isTemplate && onCopyToTemplate && (
               <DropdownMenuItem onClick={onCopyToTemplate}>
                 <Copy className="w-3.5 h-3.5 mr-2" />
@@ -714,6 +749,31 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
     },
   });
+
+  // Row menu: Duplicate (copy lands directly below) and Move to category.
+  const refreshTasks = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
+  };
+  const duplicateTaskMutation = useMutation({
+    mutationFn: (taskId: string) => apiRequest(`/api/labour-estimate-tasks/${taskId}/duplicate`, "POST", {}),
+    onSuccess: refreshTasks,
+    onError: () => toast({ title: "Couldn't duplicate that task", variant: "destructive" }),
+  });
+  const moveTaskMutation = useMutation({
+    mutationFn: ({ taskId, categoryId }: { taskId: string; categoryId: string }) =>
+      apiRequest(`/api/labour-estimate-tasks/${taskId}/move`, "POST", { categoryId }),
+    onSuccess: (_r, v) => {
+      refreshTasks();
+      const name = categories.find(c => c.id === v.categoryId)?.name;
+      toast({ title: name ? `Moved to ${name}` : "Task moved" });
+    },
+    onError: () => toast({ title: "Couldn't move that task", variant: "destructive" }),
+  });
+  const moveTargets = useMemo(
+    () => categories.filter(c => c.id !== effectiveCatId).map(c => ({ id: c.id, name: c.name })),
+    [categories, effectiveCatId],
+  );
 
   const reorderTasksMutation = useMutation({
     mutationFn: (updates: { id: string; sortOrder: number }[]) =>
@@ -1376,6 +1436,9 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                       setEditingCell={setEditingCell}
                       onDelete={() => setConfirmDeleteTaskId(task.id)}
                       onCopyToTemplate={mode === 'project' ? () => copyTaskToTemplateMutation.mutate(task) : undefined}
+                      onDuplicate={mode === 'project' ? () => duplicateTaskMutation.mutate(task.id) : undefined}
+                      moveTargets={mode === 'project' ? moveTargets : undefined}
+                      onMove={mode === 'project' ? (catId) => moveTaskMutation.mutate({ taskId: task.id, categoryId: catId }) : undefined}
                       isTemplate={mode === 'template'}
                     />
                   ))}

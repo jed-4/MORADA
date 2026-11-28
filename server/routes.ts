@@ -11784,6 +11784,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Duplicate a task: the copy goes directly below the original, in the same
+   * category. Later tasks shift down one in a single UPDATE (not a loop —
+   * each round trip to the US database is ~400ms).
+   */
+  app.post("/api/labour-estimate-tasks/:taskId/duplicate", requireAuth, async (req, res) => {
+    try {
+      const task: any = await getOwnedLabourEstimateTask(req, res, req.params.taskId);
+      if (!task) return;
+      const { labourEstimateTasks } = await import("@shared/schema");
+      const at = Number(task.sortOrder) || 0;
+      await db.update(labourEstimateTasks)
+        .set({ sortOrder: sql`${labourEstimateTasks.sortOrder} + 1` })
+        .where(and(eq(labourEstimateTasks.categoryId, task.categoryId), gt(labourEstimateTasks.sortOrder, at)));
+      const copy = await storage.createLabourEstimateTask({
+        categoryId: task.categoryId,
+        description: task.description ?? "",
+        // text column (the sub-heading's label), not a flag — copy as-is.
+        subHeading: task.subHeading ?? null,
+        numMen: task.numMen,
+        hoursPerMan: task.hoursPerMan,
+        sortOrder: at + 1,
+      });
+      res.status(201).json(copy);
+    } catch (error) {
+      console.error("[labour task duplicate]", error);
+      res.status(500).json({ error: "Failed to duplicate task" });
+    }
+  });
+
+  /**
+   * Move a task to another category of the SAME labour estimate (it lands at
+   * the bottom). The PATCH above deliberately can't change categoryId; this
+   * route checks both ends belong to one estimate the caller owns.
+   */
+  app.post("/api/labour-estimate-tasks/:taskId/move", requireAuth, async (req, res) => {
+    try {
+      const task: any = await getOwnedLabourEstimateTask(req, res, req.params.taskId);
+      if (!task) return;
+      const targetId = typeof req.body?.categoryId === "string" ? req.body.categoryId : "";
+      if (targetId === task.categoryId) return res.json(task);
+      const target: any = await getOwnedLabourEstimateCategory(req, res, targetId);
+      if (!target) return;
+      const { labourEstimateTasks, labourEstimateCategories } = await import("@shared/schema");
+      const [source] = await db.select().from(labourEstimateCategories)
+        .where(eq(labourEstimateCategories.id, task.categoryId)).limit(1);
+      if (!source || (source as any).labourEstimateId !== target.labourEstimateId) {
+        return res.status(400).json({ error: "Tasks can only move between categories of the same estimate" });
+      }
+      const [{ max }] = await db.select({ max: sql<number>`coalesce(max(${labourEstimateTasks.sortOrder}), -1)` })
+        .from(labourEstimateTasks).where(eq(labourEstimateTasks.categoryId, targetId));
+      const [moved] = await db.update(labourEstimateTasks)
+        .set({ categoryId: targetId, sortOrder: Number(max) + 1 })
+        .where(eq(labourEstimateTasks.id, task.id))
+        .returning();
+      res.json(moved);
+    } catch (error) {
+      console.error("[labour task move]", error);
+      res.status(500).json({ error: "Failed to move task" });
+    }
+  });
+
   app.delete("/api/labour-estimate-tasks/:taskId", requireAuth, async (req, res) => {
     try {
       // Ownership: task → category → labour estimate → project → company.
