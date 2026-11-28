@@ -624,6 +624,25 @@ interface Props {
   estimateId: string;
 }
 
+/**
+ * The Req? icon. A plain function, NOT a component declared inside
+ * EstimateEnotes: a component defined in render is a new type every render, so
+ * the mousedown that selects the cell remounted the icon, the press and the
+ * release landed on different elements, and the browser never fired a click —
+ * the tick could not be changed at all.
+ */
+function requiredIcon(val: boolean | null) {
+  if (val === true) return <CheckCircle2 className="w-4 h-4 text-status-success cursor-pointer flex-shrink-0" />;
+  if (val === false) return <MinusCircle className="w-4 h-4 text-muted-foreground cursor-pointer flex-shrink-0" />;
+  return <Circle className="w-4 h-4 text-muted-foreground/40 cursor-pointer flex-shrink-0" />;
+}
+
+function requiredTitle(val: boolean | null) {
+  if (val === true) return "Required — click for Not required";
+  if (val === false) return "Not required — click to clear";
+  return "Not reviewed — click for Required";
+}
+
 export default function EstimateEnotes({ estimateId }: Props) {
   const { toast } = useToast();
 
@@ -962,11 +981,6 @@ export default function EstimateEnotes({ estimateId }: Props) {
     });
   };
 
-  const RequiredIcon = ({ val }: { val: boolean | null }) => {
-    if (val === true) return <CheckCircle2 className="w-4 h-4 text-status-success cursor-pointer flex-shrink-0" />;
-    if (val === false) return <MinusCircle className="w-4 h-4 text-muted-foreground cursor-pointer flex-shrink-0" />;
-    return <Circle className="w-4 h-4 text-muted-foreground/40 cursor-pointer flex-shrink-0" />;
-  };
 
   // ── Cell renderer per column id ────────────────────────────────────────────
   /** Write one of the company's own columns without disturbing the others. */
@@ -1031,8 +1045,17 @@ export default function EstimateEnotes({ estimateId }: Props) {
     switch (colId) {
       case "required":
         return (
-          <div className="flex justify-center" onClick={() => cycleRequired(row)}>
-            <RequiredIcon val={row.required} />
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => cycleRequired(row)}
+              className="flex items-center justify-center rounded-full"
+              title={requiredTitle(row.required)}
+              aria-label={requiredTitle(row.required)}
+              data-testid={`button-required-${row.id}`}
+            >
+              {requiredIcon(row.required)}
+            </button>
           </div>
         );
       case "brainstorm":
