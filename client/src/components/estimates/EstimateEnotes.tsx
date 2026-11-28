@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { BulkSelectionBar, selectAllState } from "@/components/estimates/BulkSelectionBar";
 import { useResizableColumns, fitWidthFromHandle } from "@/components/useResizableColumns";
 import { DetailColumnsForm } from "@/components/estimates/DetailColumnsForm";
 import { useGridNavigation, type GridCoord } from "@/components/spreadsheet/useGridNavigation";
@@ -746,6 +747,9 @@ export default function EstimateEnotes({ estimateId }: Props) {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newItemName, setNewItemName] = useState("");
   const [hideNotRequired, setHideNotRequired] = useState(false);
+  /** Rows ticked for the bulk bar. Only rows in the open category count. */
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const lastSelectedIdx = useRef<number | null>(null);
   const newCatInputRef = useRef<HTMLInputElement>(null);
   const newItemInputRef = useRef<HTMLInputElement>(null);
 
@@ -1057,6 +1061,90 @@ export default function EstimateEnotes({ estimateId }: Props) {
     const all = enotes.filter(r => r.groupName === effectiveCategory);
     return hideNotRequired ? all.filter(r => r.required !== false) : all;
   }, [enotes, effectiveCategory, hideNotRequired]);
+
+  // ── Bulk selection ─────────────────────────────────────────────────────────
+  // A selection belongs to the category on screen: switching category (or the
+  // filter hiding a row) drops what can no longer be seen, so the bar never
+  // acts on rows you can't see.
+  useEffect(() => { setSelected(new Set()); lastSelectedIdx.current = null; }, [effectiveCategory]);
+  const visibleIds = useMemo(() => categoryItems.map(r => r.id), [categoryItems]);
+  const selectedRows = useMemo(() => categoryItems.filter(r => selected.has(r.id)), [categoryItems, selected]);
+  const clearSelection = useCallback(() => { setSelected(new Set()); lastSelectedIdx.current = null; }, []);
+
+  /** Click toggles one row; Shift+click selects the range from the last click. */
+  const onSelectClick = (e: React.MouseEvent, rowIdx: number) => {
+    e.preventDefault(); // we own the checked state, not Radix
+    e.stopPropagation();
+    const id = visibleIds[rowIdx];
+    setSelected(prev => {
+      const next = new Set(prev);
+      const from = lastSelectedIdx.current;
+      if (e.shiftKey && from !== null && from !== rowIdx) {
+        const [a, b] = from < rowIdx ? [from, rowIdx] : [rowIdx, from];
+        for (let i = a; i <= b; i++) next.add(visibleIds[i]);
+      } else if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+    lastSelectedIdx.current = rowIdx;
+  };
+
+  const toggleSelectAll = () => {
+    const state = selectAllState(selected, visibleIds);
+    setSelected(state === true ? new Set() : new Set(visibleIds));
+  };
+
+  type BulkBody =
+    | { action: "update"; ids: string[]; changes: Partial<EnoteRow>; label?: string }
+    | { action: "delete" | "duplicate"; ids: string[]; label?: string };
+
+  const enotesKey = ["/api/estimates", estimateId, "enotes"];
+  const bulkMutation = useMutation({
+    mutationFn: ({ label: _l, ...body }: BulkBody) =>
+      apiRequest(`/api/estimates/${estimateId}/enotes/bulk-action`, "POST", body) as Promise<{ count: number; skipped?: number }>,
+    onMutate: async (body) => {
+      if (body.action !== "update") return {};
+      await queryClient.cancelQueries({ queryKey: enotesKey });
+      const prev = queryClient.getQueryData<EnoteRow[]>(enotesKey);
+      const ids = new Set(body.ids);
+      queryClient.setQueryData<EnoteRow[]>(enotesKey, old =>
+        old?.map(r => (ids.has(r.id) ? { ...r, ...body.changes } : r)) ?? []);
+      return { prev };
+    },
+    onSuccess: (res, body) => {
+      const n = res?.count ?? body.ids.length;
+      const rows = (k: number) => `${k} row${k === 1 ? "" : "s"}`;
+      if (body.action === "delete") {
+        const skipped = res?.skipped ?? 0;
+        toast({
+          title: n > 0 ? `Deleted ${rows(n)}` : "Nothing deleted",
+          description: skipped > 0
+            ? `${rows(skipped)} from the standard checklist can't be deleted — mark them Not required instead.`
+            : undefined,
+        });
+        clearSelection();
+      } else if (body.action === "duplicate") {
+        toast({ title: `Duplicated ${rows(n)}`, description: "The copies are at the bottom of this category." });
+        clearSelection();
+      } else if (body.action === "update" && body.changes.groupName) {
+        toast({ title: `Moved ${rows(n)} to ${body.changes.groupName}` });
+        clearSelection();
+      } else {
+        toast({ title: body.label ? `${body.label} · ${rows(n)}` : `Updated ${rows(n)}` });
+      }
+    },
+    onError: (_e, _b, ctx: any) => {
+      if (ctx?.prev) queryClient.setQueryData(enotesKey, ctx.prev);
+      toast({ title: "Couldn't update the selected rows", description: "Nothing was changed. Try again.", variant: "destructive" });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: enotesKey }),
+  });
+  const bulkUpdate = (changes: Partial<EnoteRow>, label: string) =>
+    bulkMutation.mutate({ action: "update", ids: selectedRows.map(r => r.id), changes, label });
+  const selectedCustomCount = selectedRows.filter(r => r.isCustom).length;
 
   // ── Spreadsheet keyboard navigation ─────────────────────────────────────────
   // Rows = visible category items, cols = visible data columns. Arrow/Tab/Enter
@@ -1419,6 +1507,14 @@ export default function EstimateEnotes({ estimateId }: Props) {
                 >
                   {/* Fixed: Item — stays first, but resizes like the rest */}
                   <div className="relative flex items-center">
+                    <Checkbox
+                      checked={selectAllState(selected, visibleIds)}
+                      onClick={e => { e.preventDefault(); toggleSelectAll(); }}
+                      className="mr-2 flex-shrink-0"
+                      aria-label="Select all rows in this category"
+                      title="Select all"
+                      data-testid="details-select-all"
+                    />
                     <span className="flex-1 truncate">Item</span>
                     <div
                       className="absolute right-0 top-0 bottom-0 w-3 flex items-center justify-center cursor-col-resize group/resize z-10"
@@ -1492,11 +1588,21 @@ export default function EstimateEnotes({ estimateId }: Props) {
                       key={row.id}
                       className={`grid items-center px-3 border-b border-border/10 transition-colors group/erow ${
                         row.required === false ? "opacity-40" : ""
-                      } ${row.completed ? "bg-status-success-bg/50" : ""}`}
+                      } ${selected.has(row.id) ? "bg-primary/[0.07]" : row.completed ? "bg-status-success-bg/50" : ""}`}
                       style={{ gridTemplateColumns: gridTemplate, minHeight: "34px", minWidth: gridMinWidth }}
                     >
                       {/* Fixed: Item name + attachment badge */}
                       <div className="flex items-center gap-1.5 min-w-0">
+                        <Checkbox
+                          checked={selected.has(row.id)}
+                          onClick={e => onSelectClick(e, rowIdx)}
+                          className={`mr-0.5 flex-shrink-0 transition-opacity ${
+                            selected.size > 0 ? "" : "opacity-0 group-hover/erow:opacity-100 focus-visible:opacity-100"
+                          }`}
+                          aria-label={`Select ${row.categoryName || "row"}`}
+                          title="Select (Shift+click for a range)"
+                          data-testid={`details-select-${row.id}`}
+                        />
                         {row.isCustom ? (
                           <CustomItemName
                             value={row.categoryName}
@@ -1643,7 +1749,114 @@ export default function EstimateEnotes({ estimateId }: Props) {
                 )}
               </div>
 
-              {/* Add named item row */}
+              {/* Selection bar — stands in for the add row while rows are ticked */}
+              {selectedRows.length > 0 ? (
+                <BulkSelectionBar
+                  count={selectedRows.length}
+                  noun="row"
+                  onClear={clearSelection}
+                  busy={bulkMutation.isPending}
+                  onDelete={selectedCustomCount > 0
+                    ? () => bulkMutation.mutate({ action: "delete", ids: selectedRows.map(r => r.id) })
+                    : undefined}
+                  deleteNote={selectedCustomCount < selectedRows.length
+                    ? `Only the ${selectedCustomCount} row${selectedCustomCount === 1 ? "" : "s"} you added will go — the standard checklist rows stay (mark them Not required instead).`
+                    : undefined}
+                >
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1" data-testid="bulk-required">
+                        <CheckCircle2 className="w-3 h-3" /> Required
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-44">
+                      <DropdownMenuItem className="text-xs gap-2" onSelect={() => bulkUpdate({ required: true }, "Required")}>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-status-success" /> Required
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="text-xs gap-2" onSelect={() => bulkUpdate({ required: false }, "Not required")}>
+                        <MinusCircle className="w-3.5 h-3.5 text-muted-foreground" /> Not required
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="text-xs gap-2" onSelect={() => bulkUpdate({ required: null }, "Not reviewed")}>
+                        <Circle className="w-3.5 h-3.5 text-muted-foreground/50" /> Not reviewed
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" data-testid="bulk-tick">Tick / untick</Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-48">
+                      {([
+                        ["rfiRequired", "RFI"],
+                        ["rfqRequired", "RFQ"],
+                        ["labourRequired", "Labour"],
+                        ["completed", "Completed"],
+                      ] as const).map(([key, label]) => (
+                        <DropdownMenuSub key={key}>
+                          <DropdownMenuSubTrigger className="text-xs">{label}</DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="w-32">
+                            <DropdownMenuItem className="text-xs" onSelect={() => bulkUpdate({ [key]: true } as Partial<EnoteRow>, `${label} ticked`)}>
+                              Tick
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-xs" onSelect={() => bulkUpdate({ [key]: false } as Partial<EnoteRow>, `${label} unticked`)}>
+                              Untick
+                            </DropdownMenuItem>
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  {enoteStatusOptions.length > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" className="h-7 text-xs" data-testid="bulk-status">Status</Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-48">
+                        {enoteStatusOptions.map(o => (
+                          <DropdownMenuItem key={o.id} className="text-xs gap-2" onSelect={() => bulkUpdate({ status: o.key }, `Status: ${o.name}`)}>
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: o.color }} />
+                            {o.name}
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-xs text-muted-foreground" onSelect={() => bulkUpdate({ status: null }, "Status cleared")}>
+                          Clear status
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+
+                  {categoryNames.length > 1 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" data-testid="bulk-move">
+                          <FolderInput className="w-3 h-3" /> Move to
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-52 max-h-72 overflow-y-auto">
+                        {categoryNames.filter(c => c !== effectiveCategory).map(c => (
+                          <DropdownMenuItem key={c} className="text-xs" onSelect={() => bulkUpdate({ groupName: c }, `Moved to ${c}`)}>
+                            {c}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => bulkMutation.mutate({ action: "duplicate", ids: selectedRows.map(r => r.id) })}
+                    disabled={bulkMutation.isPending}
+                    data-testid="bulk-duplicate"
+                  >
+                    <CopyPlus className="w-3 h-3" /> Duplicate
+                  </Button>
+                </BulkSelectionBar>
+              ) : (
               <div className="flex-shrink-0 border-t border-border/50 px-3 py-2 flex items-center gap-2">
                 <Input
                   ref={newItemInputRef}
@@ -1664,6 +1877,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                   Add Item
                 </Button>
               </div>
+              )}
             </>
           )}
         </div>

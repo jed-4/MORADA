@@ -72,6 +72,7 @@ import type { LabourEstimate, LabourEstimateCategory, LabourEstimateTask, Projec
 import { parseLabourPaste, describeRoles, MAX_PASTE_ROWS } from "@/lib/parseLabourPaste";
 import { useResizableColumns, ColResizeHandle } from "@/components/useResizableColumns";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { BulkSelectionBar, selectAllState } from "@/components/estimates/BulkSelectionBar";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Circle; color: string }> = {
   not_required: { label: "Not Required", icon: MinusCircle, color: "text-muted-foreground" },
@@ -224,6 +225,7 @@ function SortableTaskRow({
   isTemplate,
   cols,
   gridTemplate,
+  selection,
 }: {
   task: TaskLike;
   editingCell: { taskId: string; field: string } | null;
@@ -244,6 +246,8 @@ function SortableTaskRow({
   isTemplate?: boolean;
   cols: { key: string }[];
   gridTemplate: string;
+  /** Bulk-select box (project mode). Absent = no select column. */
+  selection?: { checked: boolean; anySelected: boolean; onClick: (e: React.MouseEvent) => void };
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const dndStyle = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
@@ -383,11 +387,23 @@ function SortableTaskRow({
   return (
     <div
       ref={setNodeRef}
-      style={{ ...dndStyle, gridTemplateColumns: `20px ${gridTemplate}` } as React.CSSProperties}
+      style={{ ...dndStyle, gridTemplateColumns: `${selection ? "22px " : ""}20px ${gridTemplate}` } as React.CSSProperties}
       className={`grid items-center border-b border-border/10 group/row min-h-[34px] ${
-        task.subHeading ? "bg-muted/30 font-medium" : ""
+        selection?.checked ? "bg-primary/[0.07]" : task.subHeading ? "bg-muted/30 font-medium" : ""
       }`}
     >
+      {selection && (
+        <div className="flex items-center justify-end h-full">
+          <Checkbox
+            checked={selection.checked}
+            onClick={selection.onClick}
+            className={`transition-opacity ${selection.anySelected ? "" : "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"}`}
+            aria-label={`Select ${task.description || "task"}`}
+            title="Select (Shift+click for a range)"
+            data-testid={`labour-select-${task.id}`}
+          />
+        </div>
+      )}
       <div
         {...attributes}
         {...listeners}
@@ -795,6 +811,80 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     () => categories.filter(c => c.id !== effectiveCatId).map(c => ({ id: c.id, name: c.name })),
     [categories, effectiveCatId],
   );
+
+  // ── Bulk selection (project mode) ─────────────────────────────────────────
+  // Belongs to the open category: switching category clears it.
+  const selectable = mode === 'project';
+  const lead = selectable ? 42 : 20; // select box + grip, px
+  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(() => new Set());
+  const lastTaskIdx = useRef<number | null>(null);
+  useEffect(() => { setSelectedTasks(new Set()); lastTaskIdx.current = null; }, [effectiveCatId]);
+  const visibleTaskIds = useMemo(() => (selectable ? tasks.map(t => t.id) : []), [selectable, tasks]);
+  const selectedTaskList = useMemo(() => tasks.filter(t => selectedTasks.has(t.id)), [tasks, selectedTasks]);
+  const clearTaskSelection = useCallback(() => { setSelectedTasks(new Set()); lastTaskIdx.current = null; }, []);
+  const onTaskSelectClick = (e: React.MouseEvent, idx: number) => {
+    e.preventDefault(); // we own the checked state, not Radix
+    e.stopPropagation();
+    const id = visibleTaskIds[idx];
+    setSelectedTasks(prev => {
+      const next = new Set(prev);
+      const from = lastTaskIdx.current;
+      if (e.shiftKey && from !== null && from !== idx) {
+        const [a, b] = from < idx ? [from, idx] : [idx, from];
+        for (let i = a; i <= b; i++) next.add(visibleTaskIds[i]);
+      } else if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    lastTaskIdx.current = idx;
+  };
+  const toggleSelectAllTasks = () => {
+    const state = selectAllState(selectedTasks, visibleTaskIds);
+    setSelectedTasks(state === true ? new Set() : new Set(visibleTaskIds));
+  };
+
+  type BulkTaskBody = {
+    action: "update" | "delete" | "move" | "duplicate";
+    ids: string[];
+    changes?: { numMen?: number; hoursPerMan?: number };
+    categoryId?: string;
+    /** Toast text only — not sent. */
+    label?: string;
+  };
+  const tasksKey = ["/api/labour-estimate-categories", effectiveCatId, "tasks"];
+  const bulkTaskMutation = useMutation({
+    mutationFn: ({ label: _l, ...body }: BulkTaskBody) =>
+      apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/tasks/bulk-action`, "POST", body) as Promise<{ count: number }>,
+    onMutate: async (body) => {
+      if (body.action !== "update" || !body.changes) return {};
+      await queryClient.cancelQueries({ queryKey: tasksKey });
+      const prev = queryClient.getQueryData<LabourEstimateTask[]>(tasksKey);
+      const ids = new Set(body.ids);
+      queryClient.setQueryData<LabourEstimateTask[]>(tasksKey, old => old?.map(t => {
+        if (!ids.has(t.id)) return t;
+        const next = { ...t, ...body.changes };
+        return { ...next, totalHours: (next.numMen ?? 1) * (next.hoursPerMan ?? 0) };
+      }) ?? []);
+      return { prev };
+    },
+    onSuccess: (res, body) => {
+      const n = res?.count ?? body.ids.length;
+      const what = `${n} task${n === 1 ? "" : "s"}`;
+      if (body.action === "delete") toast({ title: `Deleted ${what}` });
+      else if (body.action === "duplicate") toast({ title: `Duplicated ${what}`, description: "The copies are at the bottom of this category." });
+      else if (body.action === "move") toast({ title: `Moved ${what} to ${body.label ?? "another category"}` });
+      else toast({ title: `${body.label ?? "Updated"} · ${what}` });
+      if (body.action !== "update") clearTaskSelection();
+    },
+    onError: (_e, _b, ctx: any) => {
+      if (ctx?.prev) queryClient.setQueryData(tasksKey, ctx.prev);
+      toast({ title: "Couldn't update the selected tasks", description: "Nothing was changed. Try again.", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
+    },
+  });
 
   const reorderTasksMutation = useMutation({
     mutationFn: (updates: { id: string; sortOrder: number }[]) =>
@@ -1428,8 +1518,19 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           <div ref={labourHeaderScrollRef} className="overflow-hidden flex-shrink-0">
           <div
             className="grid text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/40 border-b border-border/50 py-1.5"
-            style={{ gridTemplateColumns: `20px ${taskCols.gridTemplate}`, minWidth: 20 + taskCols.minWidth }}
+            style={{ gridTemplateColumns: `${selectable ? "22px " : ""}20px ${taskCols.gridTemplate}`, minWidth: lead + taskCols.minWidth }}
           >
+            {selectable && (
+              <span className="flex items-center justify-end">
+                <Checkbox
+                  checked={selectAllState(selectedTasks, visibleTaskIds)}
+                  onClick={e => { e.preventDefault(); toggleSelectAllTasks(); }}
+                  aria-label="Select all tasks in this category"
+                  title="Select all"
+                  data-testid="labour-select-all"
+                />
+              </span>
+            )}
             <span />
             {taskCols.cols.map(c => (
               <span
@@ -1485,16 +1586,21 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                 className="h-full"
               />
             ) : (
-              <div style={{ minWidth: 20 + taskCols.minWidth }}>
+              <div style={{ minWidth: lead + taskCols.minWidth }}>
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
                 onDragEnd={mode === 'template' ? handleTemplateDragEnd : handleTaskDragEnd}
               >
                 <SortableContext items={activeTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-                  {activeTasks.map(task => (
+                  {activeTasks.map((task, taskIdx) => (
                     <SortableTaskRow
                       key={task.id}
+                      selection={selectable ? {
+                        checked: selectedTasks.has(task.id),
+                        anySelected: selectedTasks.size > 0,
+                        onClick: e => onTaskSelectClick(e, taskIdx),
+                      } : undefined}
                       cols={taskCols.cols}
                       gridTemplate={taskCols.gridTemplate}
                       task={task}
@@ -1520,8 +1626,57 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
             )}
           </div>
 
-          {/* Add row */}
-          {selectedCat && (
+          {/* Selection bar — stands in for the add row while tasks are ticked */}
+          {selectable && selectedTaskList.length > 0 ? (
+            <BulkSelectionBar
+              count={selectedTaskList.length}
+              noun="task"
+              onClear={clearTaskSelection}
+              busy={bulkTaskMutation.isPending}
+              onDelete={() => bulkTaskMutation.mutate({ action: "delete", ids: selectedTaskList.map(t => t.id) })}
+            >
+              <BulkNumberSetter
+                label="No. men"
+                testId="bulk-num-men"
+                onApply={v => bulkTaskMutation.mutate({ action: "update", ids: selectedTaskList.map(t => t.id), changes: { numMen: v }, label: `No. men set to ${v}` })}
+              />
+              <BulkNumberSetter
+                label="Hrs / man"
+                testId="bulk-hours-per-man"
+                onApply={v => bulkTaskMutation.mutate({ action: "update", ids: selectedTaskList.map(t => t.id), changes: { hoursPerMan: v }, label: `Hrs per man set to ${v}` })}
+              />
+              {moveTargets.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" data-testid="bulk-move">
+                      <FolderInput className="w-3 h-3" /> Move to
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-52 max-h-72 overflow-y-auto">
+                    {moveTargets.map(t => (
+                      <DropdownMenuItem
+                        key={t.id}
+                        className="text-xs"
+                        onSelect={() => bulkTaskMutation.mutate({ action: "move", ids: selectedTaskList.map(x => x.id), categoryId: t.id, label: t.name })}
+                      >
+                        {t.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1"
+                onClick={() => bulkTaskMutation.mutate({ action: "duplicate", ids: selectedTaskList.map(t => t.id) })}
+                disabled={bulkTaskMutation.isPending}
+                data-testid="bulk-duplicate"
+              >
+                <CopyPlus className="w-3 h-3" /> Duplicate
+              </Button>
+            </BulkSelectionBar>
+          ) : selectedCat && (
             <div className="flex items-center gap-2 px-4 py-2 border-t border-border/30 flex-shrink-0">
               <Input
                 data-labour-add-item="true"
@@ -1548,6 +1703,44 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Bulk bar button: "No. men ▾" opens a box to set one value on every selected task. */
+function BulkNumberSetter({ label, onApply, testId }: { label: string; onApply: (v: number) => void; testId: string }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const n = Number(value);
+  const valid = value.trim() !== "" && Number.isFinite(n) && n >= 0;
+  const apply = () => {
+    if (!valid) return;
+    onApply(n);
+    setOpen(false);
+    setValue("");
+  };
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="outline" className="h-7 text-xs" data-testid={testId}>{label}</Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-48 p-2">
+        <form className="flex items-center gap-1.5" onSubmit={e => { e.preventDefault(); apply(); }}>
+          <Input
+            autoFocus
+            inputMode="decimal"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            placeholder={label}
+            className="h-7 text-sm"
+            data-testid={`${testId}-input`}
+          />
+          <Button type="submit" size="sm" className="h-7 text-xs" disabled={!valid} data-testid={`${testId}-apply`}>Set</Button>
+        </form>
+        {value.trim() !== "" && !valid && (
+          <p className="text-[11px] text-destructive mt-1">Enter a number, 0 or more.</p>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 

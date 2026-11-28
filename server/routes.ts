@@ -10945,6 +10945,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * Bulk edit of selected Details rows (the selection bar). One request.
+   *
+   * body: { action: "update" | "delete" | "duplicate", ids: string[],
+   *         changes?: { required?, rfiRequired?, rfqRequired?, labourRequired?,
+   *                     completed?, status?, groupName? } }
+   *
+   * Ids are filtered to rows on THIS estimate. Delete only removes custom rows —
+   * the same rule as the single delete; the standard checklist rows are kept
+   * and counted as `skipped` so the client can say so.
+   */
+  app.post("/api/estimates/:id/enotes/bulk-action", requireAuth, async (req, res) => {
+    try {
+      if (!(await getOwnedEstimate(req, res, req.params.id, "Estimate not found"))) return;
+      const { estimateEnotes } = schema;
+      const action = String(req.body?.action ?? "");
+      const rawIds: string[] = Array.isArray(req.body?.ids)
+        ? req.body.ids.filter((x: unknown): x is string => typeof x === "string").slice(0, 2000)
+        : [];
+      if (rawIds.length === 0) return res.status(400).json({ error: "No rows selected" });
+      const rows = await db.select().from(estimateEnotes)
+        .where(and(eq(estimateEnotes.estimateId, req.params.id), inArray(estimateEnotes.id, rawIds)))
+        .orderBy(asc(estimateEnotes.sortOrder));
+      const ids = rows.map(r => r.id);
+      if (ids.length === 0) return res.status(404).json({ error: "No matching rows" });
+
+      if (action === "update") {
+        const c = req.body?.changes ?? {};
+        const set: Record<string, any> = {};
+        if (c.required !== undefined) {
+          if (c.required !== null && typeof c.required !== "boolean") return res.status(400).json({ error: "Bad required value" });
+          set.required = c.required;
+        }
+        for (const k of ["rfiRequired", "rfqRequired", "labourRequired", "completed"] as const) {
+          if (c[k] !== undefined) {
+            if (typeof c[k] !== "boolean") return res.status(400).json({ error: `Bad ${k} value` });
+            set[k] = c[k];
+          }
+        }
+        if (c.status !== undefined) {
+          if (c.status !== null && typeof c.status !== "string") return res.status(400).json({ error: "Bad status value" });
+          set.status = c.status;
+        }
+        if (c.groupName !== undefined) {
+          const g = typeof c.groupName === "string" ? c.groupName.trim() : "";
+          if (!g) return res.status(400).json({ error: "Category name required" });
+          set.groupName = g;
+        }
+        if (Object.keys(set).length === 0) return res.status(400).json({ error: "Nothing to change" });
+        await db.update(estimateEnotes).set(set).where(inArray(estimateEnotes.id, ids));
+        return res.json({ count: ids.length });
+      }
+
+      if (action === "delete") {
+        const custom = rows.filter(r => r.isCustom).map(r => r.id);
+        if (custom.length > 0) await db.delete(estimateEnotes).where(inArray(estimateEnotes.id, custom));
+        return res.json({ count: custom.length, skipped: ids.length - custom.length });
+      }
+
+      if (action === "duplicate") {
+        const [{ max }] = await db.select({ max: sql<number>`coalesce(max(${estimateEnotes.sortOrder}), -1)` })
+          .from(estimateEnotes).where(eq(estimateEnotes.estimateId, req.params.id));
+        const base = Number(max) + 1;
+        await db.insert(estimateEnotes).values(rows.map((r: any, i) => {
+          const { id: _id, sortOrder: _s, ...fields } = r;
+          return { ...fields, completed: false, isCustom: true, sortOrder: base + i };
+        }));
+        return res.json({ count: ids.length });
+      }
+
+      res.status(400).json({ error: "Unknown action" });
+    } catch (error) {
+      console.error("[enotes bulk-action]", error);
+      res.status(500).json({ error: "Failed to update the selected rows" });
+    }
+  });
+
   app.delete("/api/estimate-enotes/:rowId", requireAuth, async (req, res) => {
     try {
       if (!(await getOwnedEnote(req, res, req.params.rowId, "Row not found"))) return;
@@ -11888,6 +11965,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete task" });
+    }
+  });
+
+  /**
+   * Bulk edit of selected tasks in ONE category (the Labour sheet's selection
+   * bar). One request, a handful of statements — never a loop of round trips.
+   *
+   * body: { action: "update" | "delete" | "move" | "duplicate", ids: string[],
+   *         changes?: { numMen?, hoursPerMan? }, categoryId?: string }
+   *
+   * Ids are filtered to tasks actually in :catId, which the caller owns, so a
+   * foreign id in the list is silently ignored rather than touched.
+   */
+  app.post("/api/labour-estimate-categories/:catId/tasks/bulk-action", requireAuth, async (req, res) => {
+    try {
+      const cat: any = await getOwnedLabourEstimateCategory(req, res, req.params.catId);
+      if (!cat) return;
+      const { labourEstimateTasks } = await import("@shared/schema");
+      const action = String(req.body?.action ?? "");
+      const rawIds: string[] = Array.isArray(req.body?.ids)
+        ? req.body.ids.filter((x: unknown): x is string => typeof x === "string").slice(0, 1000)
+        : [];
+      if (rawIds.length === 0) return res.status(400).json({ error: "No tasks selected" });
+      const rows = await db.select().from(labourEstimateTasks)
+        .where(and(eq(labourEstimateTasks.categoryId, cat.id), inArray(labourEstimateTasks.id, rawIds)))
+        .orderBy(asc(labourEstimateTasks.sortOrder));
+      const ids = rows.map(r => r.id);
+      if (ids.length === 0) return res.status(404).json({ error: "No matching tasks" });
+
+      if (action === "update") {
+        const c = req.body?.changes ?? {};
+        const nonNegative = (v: unknown) => (Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : null);
+        const set: Record<string, any> = {};
+        if (c.numMen !== undefined) {
+          const v = nonNegative(c.numMen);
+          if (v === null) return res.status(400).json({ error: "No. men must be a number" });
+          set.numMen = v;
+        }
+        if (c.hoursPerMan !== undefined) {
+          const v = nonNegative(c.hoursPerMan);
+          if (v === null) return res.status(400).json({ error: "Hrs per man must be a number" });
+          set.hoursPerMan = v;
+        }
+        if (Object.keys(set).length === 0) return res.status(400).json({ error: "Nothing to change" });
+        // totalHours is stored: recompute it in the same statement from the
+        // row's own other factor.
+        const men = set.numMen ?? sql`coalesce(${labourEstimateTasks.numMen}, 1)`;
+        const hrs = set.hoursPerMan ?? sql`coalesce(${labourEstimateTasks.hoursPerMan}, 0)`;
+        set.totalHours = sql`${men} * ${hrs}`;
+        await db.update(labourEstimateTasks).set(set).where(inArray(labourEstimateTasks.id, ids));
+        return res.json({ count: ids.length });
+      }
+
+      if (action === "delete") {
+        await db.delete(labourEstimateTasks).where(inArray(labourEstimateTasks.id, ids));
+        return res.json({ count: ids.length });
+      }
+
+      if (action === "move" || action === "duplicate") {
+        let targetId = cat.id;
+        if (action === "move") {
+          targetId = typeof req.body?.categoryId === "string" ? req.body.categoryId : "";
+          if (targetId === cat.id) return res.json({ count: 0 });
+          const target: any = await getOwnedLabourEstimateCategory(req, res, targetId);
+          if (!target) return;
+          if (target.labourEstimateId !== cat.labourEstimateId) {
+            return res.status(400).json({ error: "Tasks can only move between categories of the same estimate" });
+          }
+        }
+        const [{ max }] = await db.select({ max: sql<number>`coalesce(max(${labourEstimateTasks.sortOrder}), -1)` })
+          .from(labourEstimateTasks).where(eq(labourEstimateTasks.categoryId, targetId));
+        const base = Number(max) + 1;
+        if (action === "move") {
+          // Keep their relative order; land at the bottom of the target.
+          const cases = sql.join(ids.map((id, i) => sql`when ${labourEstimateTasks.id} = ${id} then ${base + i}::integer`), sql` `);
+          await db.update(labourEstimateTasks)
+            .set({ categoryId: targetId, sortOrder: sql`case ${cases} else ${labourEstimateTasks.sortOrder} end` })
+            .where(inArray(labourEstimateTasks.id, ids));
+        } else {
+          await db.insert(labourEstimateTasks).values(rows.map((t: any, i) => ({
+            categoryId: cat.id,
+            description: t.description ?? "",
+            subHeading: t.subHeading ?? null, // text label, not a flag
+            numMen: t.numMen,
+            hoursPerMan: t.hoursPerMan,
+            totalHours: t.totalHours,
+            sortOrder: base + i,
+          })));
+        }
+        return res.json({ count: ids.length });
+      }
+
+      res.status(400).json({ error: "Unknown action" });
+    } catch (error) {
+      console.error("[labour tasks bulk-action]", error);
+      res.status(500).json({ error: "Failed to update the selected tasks" });
     }
   });
 
