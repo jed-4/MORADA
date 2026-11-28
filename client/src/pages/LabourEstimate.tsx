@@ -87,6 +87,14 @@ const STATUS_CYCLE: Record<string, string> = {
 
 type CategoryWithHours = LabourEstimateCategory & { totalHours: number };
 
+/** GET JSON, throwing on a non-2xx so the query errors instead of handing the
+ *  sheet an error object as if it were rows. */
+async function fetchJson<T>(url: string): Promise<T> {
+  const r = await fetch(url, { credentials: "include" });
+  if (!r.ok) throw new Error(`${r.status}: ${r.statusText}`);
+  return r.json();
+}
+
 // ─── Sortable category sidebar row ───────────────────────────────────────────
 
 function SortableCategoryItem({
@@ -563,24 +571,24 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  const { data: estimate, isLoading: estimateLoading } = useQuery<LabourEstimate>({
+  const { data: estimate, isLoading: estimateLoading, isError: estimateError, refetch: refetchEstimate } = useQuery<LabourEstimate>({
     queryKey: ["/api/projects", projectId, "labour-estimate"],
-    queryFn: () => fetch(`/api/projects/${projectId}/labour-estimate`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson<LabourEstimate>(`/api/projects/${projectId}/labour-estimate`),
     enabled: !!projectId,
   });
 
-  const { data: categories = [] } = useQuery<CategoryWithHours[]>({
+  const { data: categories = [], isError: categoriesError, refetch: refetchCategories } = useQuery<CategoryWithHours[]>({
     queryKey: ["/api/labour-estimates", estimate?.id, "categories"],
-    queryFn: () => fetch(`/api/labour-estimates/${estimate!.id}/categories`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson<CategoryWithHours[]>(`/api/labour-estimates/${estimate!.id}/categories`),
     enabled: !!estimate?.id,
   });
 
   const selectedCat = categories.find(c => c.id === selectedCatId) ?? categories[0] ?? null;
   const effectiveCatId = selectedCat?.id ?? null;
 
-  const { data: tasks = [] } = useQuery<LabourEstimateTask[]>({
+  const { data: tasks = [], isLoading: tasksLoading, isError: tasksError, refetch: refetchTasks } = useQuery<LabourEstimateTask[]>({
     queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"],
-    queryFn: () => fetch(`/api/labour-estimate-categories/${effectiveCatId}/tasks`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson<LabourEstimateTask[]>(`/api/labour-estimate-categories/${effectiveCatId}/tasks`),
     enabled: !!effectiveCatId && mode === 'project',
   });
 
@@ -605,7 +613,10 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
       );
       return { prev };
     },
-    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-estimates", estimate?.id, "categories"], ctx?.prev),
+    onError: (_e, _v, ctx) => {
+      queryClient.setQueryData(["/api/labour-estimates", estimate?.id, "categories"], ctx?.prev);
+      toast({ title: "Couldn't save that change", description: "It's been put back. Check your connection and try again.", variant: "destructive" });
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] }),
   });
 
@@ -629,14 +640,20 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
       if (selectedCatId === catId) setSelectedCatId(null);
       return { prev };
     },
-    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-estimates", estimate?.id, "categories"], ctx?.prev),
+    onError: (_e, _v, ctx) => {
+      queryClient.setQueryData(["/api/labour-estimates", estimate?.id, "categories"], ctx?.prev);
+      toast({ title: "Couldn't save that change", description: "It's been put back. Check your connection and try again.", variant: "destructive" });
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] }),
   });
 
   const reorderCategoriesMutation = useMutation({
     mutationFn: (updates: { id: string; sortOrder: number }[]) =>
       apiRequest(`/api/labour-estimates/${estimate!.id}/categories/reorder`, "PATCH", { updates }),
-    onError: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] }),
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
+      toast({ title: "Couldn't save the new order", variant: "destructive" });
+    },
   });
 
   const updateTaskMutation = useMutation({
@@ -650,7 +667,10 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
       );
       return { prev };
     },
-    onError: (_e, _v, ctx) => queryClient.setQueryData(["/api/labour-estimate-categories", effectiveCatId, "tasks"], ctx?.prev),
+    onError: (_e, _v, ctx) => {
+      queryClient.setQueryData(["/api/labour-estimate-categories", effectiveCatId, "tasks"], ctx?.prev);
+      toast({ title: "Couldn't save that change", description: "It's been put back. Check your connection and try again.", variant: "destructive" });
+    },
     onSettled: () => {
       // Only refresh category totals, not tasks — avoids reordering
       queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
@@ -748,6 +768,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/labour-estimates", estimate?.id, "categories"] });
     },
+    onError: () => toast({ title: "Couldn't delete that task", variant: "destructive" }),
   });
 
   // Row menu: Duplicate (copy lands directly below) and Move to category.
@@ -778,7 +799,10 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
   const reorderTasksMutation = useMutation({
     mutationFn: (updates: { id: string; sortOrder: number }[]) =>
       apiRequest(`/api/labour-estimate-categories/${effectiveCatId}/tasks/reorder`, "PATCH", { updates }),
-    onError: () => queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] }),
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labour-estimate-categories", effectiveCatId, "tasks"] });
+      toast({ title: "Couldn't save the new order", variant: "destructive" });
+    },
   });
 
   /**
@@ -949,6 +973,22 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
     // Optimistic row: the server has not given it an id yet, so there is
     // nothing to PATCH. The refetch a moment later brings the real row in.
     if (task.id.startsWith(PENDING_PREFIX)) return;
+    // Tabbing across a row used to save every cell it passed through, each
+    // one refetching the category totals. Unchanged → nothing to send.
+    if (field === 'description') {
+      if (editValue === (task.description ?? '')) return;
+    } else {
+      const trimmed = editValue.trim();
+      const parsed = trimmed === '' ? NaN : Number(trimmed);
+      // Men and hours can't be negative or words. Blank, "abc" or "-2" used
+      // to save as 0 or a negative total; now the old value stays.
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        toast({ title: field === 'numMen' ? "No. men must be 0 or more" : "Hrs / man must be 0 or more", description: "The previous value was kept." });
+        return;
+      }
+      const current = field === 'numMen' ? (task as LabourEstimateTask).numMen : task.hoursPerMan;
+      if (parsed === Number(current)) return;
+    }
     if (mode === 'template') {
       const data: Partial<TaskLike> = {};
       if (field === 'description') data.description = editValue;
@@ -966,7 +1006,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
         updateTaskMutation.mutate({ taskId: task.id, data: { description: editValue } });
       }
     }
-  }, [editingCell, editValue, mode, updateTaskMutation, updateTemplateMutation]);
+  }, [editingCell, editValue, mode, updateTaskMutation, updateTemplateMutation, toast]);
 
   const FIELD_ORDER = ['description', 'numMen', 'hoursPerMan'] as const;
   type EditField = typeof FIELD_ORDER[number];
@@ -1070,6 +1110,23 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
       </div>
     );
   }
+
+  if (estimateError || categoriesError) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm" data-testid="labour-load-error">
+        <span className="text-muted-foreground">Couldn't load the labour estimate.</span>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { refetchEstimate(); refetchCategories(); }}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  // Hours for the whole job: every category that's still needed. (The footer
+  // only ever showed the selected category.)
+  const jobTotalHours = categories
+    .filter(c => c.status !== 'not_required')
+    .reduce((sum, c) => sum + (Number(c.totalHours) || 0), 0);
 
   // Name of cat to confirm deletion
   const catToDeleteName = categories.find(c => c.id === confirmDeleteCatId)?.name;
@@ -1268,6 +1325,10 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
           {/* Status legend */}
           {mode === 'project' && (
             <div className="border-t border-border/50 px-3 py-2 space-y-1 flex-shrink-0">
+              <div className="flex items-baseline justify-between text-xs pb-1" data-testid="text-labour-job-total">
+                <span className="text-muted-foreground">Job total</span>
+                <span className="font-semibold tabular-nums">{jobTotalHours.toFixed(2)} hrs</span>
+              </div>
               {Object.entries(STATUS_CONFIG).map(([status, { label, icon: Icon, color }]) => {
                 const count = categories.filter(c => c.status === status).length;
                 return count > 0 ? (
@@ -1404,6 +1465,17 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
             {!selectedCat ? (
               <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
                 Select a category to view {mode === 'template' ? 'template items' : 'tasks'}.
+              </div>
+            ) : mode === 'project' && tasksLoading ? (
+              // Not "No tasks yet" while they're still on the way — that read
+              // as "my tasks are gone" for the half-second a category loads.
+              <div className="flex items-center justify-center h-24 text-sm text-muted-foreground" data-testid="labour-tasks-loading">
+                Loading tasks…
+              </div>
+            ) : mode === 'project' && tasksError ? (
+              <div className="flex flex-col items-center justify-center gap-2 h-24 text-sm" data-testid="labour-tasks-error">
+                <span className="text-muted-foreground">Couldn't load these tasks.</span>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => refetchTasks()}>Try again</Button>
               </div>
             ) : activeTasks.length === 0 ? (
               <EmptyState
