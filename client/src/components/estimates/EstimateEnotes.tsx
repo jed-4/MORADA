@@ -153,6 +153,14 @@ function saveHidden(hidden: string[]) {
   } catch (_) {}
 }
 
+/** GET JSON, throwing on a non-2xx so the query shows an error instead of
+ *  handing the grid an error object as if it were rows (which crashed it). */
+async function fetchJson<T>(url: string): Promise<T> {
+  const r = await fetch(url, { credentials: "include" });
+  if (!r.ok) throw new Error(`${r.status}: ${r.statusText}`);
+  return r.json();
+}
+
 // ─── NotePopover ──────────────────────────────────────────────────────────────
 
 function NotePopover({
@@ -166,6 +174,13 @@ function NotePopover({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
+
+  /** Esc throws the edit away (as on the Labour sheet); anything else that
+   *  closes the box — Enter, Save, clicking away — saves it. */
+  const cancel = () => {
+    setDraft(value ?? "");
+    setOpen(false);
+  };
 
   const handleOpenChange = (o: boolean) => {
     if (!o) {
@@ -182,7 +197,10 @@ function NotePopover({
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <span className="text-xs text-muted-foreground cursor-pointer hover:text-foreground line-clamp-1 min-h-[20px] flex items-center w-full">
+        <span
+          className="text-xs text-muted-foreground cursor-pointer hover:text-foreground line-clamp-1 min-h-[20px] flex items-center w-full"
+          title={value || undefined}
+        >
           {value ? (
             <span className="truncate">{value}</span>
           ) : (
@@ -203,6 +221,9 @@ function NotePopover({
         onPointerDown={e => e.stopPropagation()}
         onClick={e => e.stopPropagation()}
         onKeyDown={e => e.stopPropagation()}
+        // Radix closes on Esc itself (a document listener) and reports it as
+        // an ordinary close, which saved. Esc is a cancel.
+        onEscapeKeyDown={e => { e.preventDefault(); cancel(); }}
       >
         <Textarea
           autoFocus
@@ -220,7 +241,12 @@ function NotePopover({
               requestAnimationFrame(() => el.setSelectionRange(at + 1, at + 1));
               return;
             }
-            if (e.key === "Escape" || (e.key === "Enter" && !e.shiftKey)) {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              cancel();
+              return;
+            }
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               handleOpenChange(false);
             }
@@ -230,13 +256,46 @@ function NotePopover({
           rows={4}
         />
         <div className="flex justify-between items-center mt-1.5">
-          <span className="text-data text-muted-foreground">Enter to save · Shift+Enter new line</span>
+          <span className="text-data text-muted-foreground">Enter saves · Shift+Enter new line · Esc cancels</span>
           <Button size="sm" className="h-6 text-xs px-2" onClick={() => handleOpenChange(false)}>
             Save
           </Button>
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+// ─── CustomItemName ───────────────────────────────────────────────────────────
+
+/**
+ * A custom row's name. Held locally while you type and saved once — on blur
+ * or Enter (Esc reverts). It used to PATCH on every keystroke, each save
+ * refetched the list, and a refetch landing mid-word dropped letters or saved
+ * a half-typed name.
+ */
+function CustomItemName({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const [focused, setFocused] = useState(false);
+  const shown = focused ? draft : value;
+  const commit = () => {
+    const next = draft.trim();
+    if (next !== value) onSave(next);
+  };
+  return (
+    <Input
+      value={shown}
+      onFocus={() => { setDraft(value); setFocused(true); }}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={() => { setFocused(false); commit(); }}
+      onKeyDown={e => {
+        if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+        if (e.key === "Escape") { e.preventDefault(); setDraft(value); setFocused(false); requestAnimationFrame(() => (e.target as HTMLInputElement).blur()); }
+      }}
+      placeholder="Item name…"
+      title={value || undefined}
+      className="h-6 text-xs border-0 focus-visible:ring-0 px-0 bg-transparent min-w-0 flex-1"
+    />
   );
 }
 
@@ -255,8 +314,13 @@ function StatusPill({
 
   return (
     <Select
-      value={value ?? "__none__"}
-      onValueChange={v => onChange(v === "__none__" ? null : v)}
+      // "" (not "__none__") when empty, so the trigger shows the "—"
+      // placeholder; "__none__" selected the "Clear" item and showed its text.
+      value={value ?? ""}
+      onValueChange={v => {
+        if (v === "") return; // Radix can emit "" for a value it doesn't know
+        onChange(v === "__none__" ? null : v);
+      }}
     >
       <SelectTrigger
         className="h-5 text-table border-0 focus:ring-0 focus:ring-offset-0 px-1.5 rounded gap-0.5"
@@ -464,7 +528,7 @@ function AttachmentPanel({
 
   const { data: attachments = [], isLoading, refetch } = useQuery<EnoteAttachment[]>({
     queryKey: ["/api/estimate-enotes", row.id, "attachments"],
-    queryFn: () => fetch(`/api/estimate-enotes/${row.id}/attachments`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson<EnoteAttachment[]>(`/api/estimate-enotes/${row.id}/attachments`),
     enabled: open,
   });
 
@@ -824,14 +888,14 @@ export default function EstimateEnotes({ estimateId }: Props) {
   }, [visibleCols, detailCols]);
 
   // ── Data queries ──────────────────────────────────────────────────────────
-  const { data: enotes = [], isLoading } = useQuery<EnoteRow[]>({
+  const { data: enotes = [], isLoading, isError: enotesError, refetch: refetchEnotes } = useQuery<EnoteRow[]>({
     queryKey: ["/api/estimates", estimateId, "enotes"],
-    queryFn: () => fetch(`/api/estimates/${estimateId}/enotes`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson<EnoteRow[]>(`/api/estimates/${estimateId}/enotes`),
   });
 
   const { data: serverCounts = {} } = useQuery<Record<string, number>>({
     queryKey: ["/api/estimates", estimateId, "enotes", "attachment-counts"],
-    queryFn: () => fetch(`/api/estimates/${estimateId}/enotes/attachment-counts`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson<Record<string, number>>(`/api/estimates/${estimateId}/enotes/attachment-counts`),
   });
 
   // Merge server counts with local overrides
@@ -1000,7 +1064,9 @@ export default function EstimateEnotes({ estimateId }: Props) {
       setNewCategoryName("");
       return;
     }
-    createMutation.mutate({ groupName: trimmed, categoryName: "" }, {
+    // Custom, like "Add blank row": rows you add yourself can be renamed and
+    // deleted. (Without isCustom they were locked the moment they appeared.)
+    createMutation.mutate({ groupName: trimmed, categoryName: "", isCustom: true }, {
       onSuccess: () => {
         setSelectedCategory(trimmed);
         setNewCategoryName("");
@@ -1011,7 +1077,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
   const addItem = () => {
     const trimmed = newItemName.trim();
     if (!trimmed || !effectiveCategory) return;
-    createMutation.mutate({ groupName: effectiveCategory, categoryName: trimmed }, {
+    createMutation.mutate({ groupName: effectiveCategory, categoryName: trimmed, isCustom: true }, {
       onSuccess: () => setNewItemName(""),
     });
   };
@@ -1120,7 +1186,10 @@ export default function EstimateEnotes({ estimateId }: Props) {
                 value={editValue}
                 onChange={e => setEditValue(e.target.value)}
                 onBlur={() => commitEdit(row, "rfqDate")}
-                onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") commitEdit(row, "rfqDate"); }}
+                onKeyDown={e => {
+                  if (e.key === "Enter") commitEdit(row, "rfqDate");
+                  if (e.key === "Escape") setEditingCell(null); // cancel, like everywhere else
+                }}
                 className="h-6 text-xs focus-visible:ring-0 border-primary"
                 placeholder="dd/mm/yy"
               />
@@ -1175,6 +1244,17 @@ export default function EstimateEnotes({ estimateId }: Props) {
     return (
       <div className="flex-1 flex items-center justify-center p-8 text-muted-foreground text-sm">
         Loading Details…
+      </div>
+    );
+  }
+
+  if (enotesError) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-8 text-sm" data-testid="details-load-error">
+        <span className="text-muted-foreground">Couldn't load the Details.</span>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => refetchEnotes()}>
+          Try again
+        </Button>
       </div>
     );
   }
@@ -1395,14 +1475,12 @@ export default function EstimateEnotes({ estimateId }: Props) {
                       {/* Fixed: Item name + attachment badge */}
                       <div className="flex items-center gap-1.5 min-w-0">
                         {row.isCustom ? (
-                          <Input
+                          <CustomItemName
                             value={row.categoryName}
-                            onChange={e => update(row.id, { categoryName: e.target.value })}
-                            placeholder="Item name…"
-                            className="h-6 text-xs border-0 focus-visible:ring-0 px-0 bg-transparent min-w-0 flex-1"
+                            onSave={name => update(row.id, { categoryName: name })}
                           />
                         ) : (
-                          <span className="text-sm truncate flex-1 min-w-0">
+                          <span className="text-sm truncate flex-1 min-w-0" title={row.categoryName || undefined}>
                             {row.categoryName || <span className="italic text-muted-foreground/40 text-xs">Unnamed</span>}
                           </span>
                         )}

@@ -11774,8 +11774,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const patch: Record<string, unknown> = {};
       if (description !== undefined) patch.description = description;
       if (subHeading !== undefined) patch.subHeading = subHeading;
-      if (numMen !== undefined) patch.numMen = numMen;
-      if (hoursPerMan !== undefined) patch.hoursPerMan = hoursPerMan;
+      // Same rule as the bulk paste: a number, never negative.
+      const nonNegative = (v: unknown) => (Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : 0);
+      if (numMen !== undefined) patch.numMen = nonNegative(numMen);
+      if (hoursPerMan !== undefined) patch.hoursPerMan = nonNegative(hoursPerMan);
       if (sortOrder !== undefined) patch.sortOrder = sortOrder;
       const updated = await storage.updateLabourEstimateTask(req.params.taskId, patch);
       res.json(updated);
