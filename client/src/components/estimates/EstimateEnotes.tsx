@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from "react";
-import { useResizableColumns } from "@/components/useResizableColumns";
+import { useResizableColumns, fitWidthFromHandle } from "@/components/useResizableColumns";
 import { DetailColumnsForm } from "@/components/estimates/DetailColumnsForm";
 import { useGridNavigation, type GridCoord } from "@/components/spreadsheet/useGridNavigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -771,6 +771,19 @@ export default function EstimateEnotes({ estimateId }: Props) {
 
   const gridTemplate = detailCols.gridTemplate;
 
+  /** Header scrolls sideways with the rows (it sits outside their scroller). */
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  /** Rows and header are at least as wide as the columns (+ px-3 padding), so
+   *  a wide layout scrolls sideways instead of squeezing — Google Sheets. */
+  const gridMinWidth = detailCols.minWidth + 24;
+
+  /** Double-click a column edge: fit it to its contents. */
+  const fitColumn = useCallback((colId: string, e: React.MouseEvent<HTMLElement>) => {
+    e.stopPropagation();
+    const w = fitWidthFromHandle(e.currentTarget);
+    if (w) detailCols.setWidth(colId, w);
+  }, [detailCols]);
+
   /** Resize, through the shared hook. Its own minimum applies. */
   const startResize = useCallback((colId: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -1276,13 +1289,27 @@ export default function EstimateEnotes({ estimateId }: Props) {
               </div>
 
               {/* Column header */}
-              <div className="flex-shrink-0 bg-muted/50 border-b border-border/50 text-data font-medium text-muted-foreground uppercase tracking-wide select-none overflow-hidden">
+              <div
+                ref={headerScrollRef}
+                className="flex-shrink-0 bg-muted/50 border-b border-border/50 text-data font-medium text-muted-foreground uppercase tracking-wide select-none overflow-hidden"
+              >
                 <div
                   className="grid items-center px-3 py-1.5"
-                  style={{ gridTemplateColumns: gridTemplate }}
+                  style={{ gridTemplateColumns: gridTemplate, minWidth: gridMinWidth }}
                 >
-                  {/* Fixed: Item */}
-                  <span>Item</span>
+                  {/* Fixed: Item — stays first, but resizes like the rest */}
+                  <div className="relative flex items-center">
+                    <span className="flex-1 truncate">Item</span>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-3 flex items-center justify-center cursor-col-resize group/resize z-10"
+                      onMouseDown={e => startResize("item", e)}
+                      onDoubleClick={e => fitColumn("item", e)}
+                      title="Drag to resize · double-click to fit"
+                      data-testid="details-col-resize-item"
+                    >
+                      <div className="w-px h-full bg-border/0 group-hover/resize:bg-border/60 transition-colors" />
+                    </div>
+                  </div>
 
                   {/* Dynamic visible columns */}
                   {visibleCols.map((col, idx) => {
@@ -1303,7 +1330,9 @@ export default function EstimateEnotes({ estimateId }: Props) {
                         <div
                           className="absolute right-0 top-0 bottom-0 w-3 flex items-center justify-center cursor-col-resize group/resize z-10"
                           onMouseDown={e => startResize(col.id, e)}
-                          title="Drag to resize"
+                          onDoubleClick={e => fitColumn(col.id, e)}
+                          title="Drag to resize · double-click to fit"
+                          data-testid={`details-col-resize-${col.id}`}
                         >
                           <div className="w-px h-full bg-border/0 group-hover/resize:bg-border/60 transition-colors" />
                         </div>
@@ -1320,6 +1349,9 @@ export default function EstimateEnotes({ estimateId }: Props) {
               <div
                 className="flex-1 overflow-auto min-h-0"
                 ref={gridBodyRef}
+                onScroll={(e) => {
+                  if (headerScrollRef.current) headerScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
+                }}
                 onKeyDown={(e) => {
                   // Only drive grid navigation when focus is on a cell wrapper.
                   // If an editor inside a cell (input / select / popover) is
@@ -1341,7 +1373,7 @@ export default function EstimateEnotes({ estimateId }: Props) {
                       className={`grid items-center px-3 border-b border-border/10 transition-colors group/erow ${
                         row.required === false ? "opacity-40" : ""
                       } ${row.completed ? "bg-status-success-bg/50" : ""}`}
-                      style={{ gridTemplateColumns: gridTemplate, minHeight: "34px" }}
+                      style={{ gridTemplateColumns: gridTemplate, minHeight: "34px", minWidth: gridMinWidth }}
                     >
                       {/* Fixed: Item name + attachment badge */}
                       <div className="flex items-center gap-1.5 min-w-0">
