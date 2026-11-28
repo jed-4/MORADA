@@ -515,6 +515,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
 
   // Filtered before the hook sees them, the way the template grid does it, so a
   // hidden column takes no track in the grid and its cells are never rendered.
+  const labourHeaderScrollRef = useRef<HTMLDivElement>(null);
   const taskCols = useResizableColumns(
     "labour-tasks",
     useMemo(
@@ -1301,10 +1302,12 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
             </div>
           )}
 
-          {/* Column headers */}
+          {/* Column headers — outside the rows' scroller, so they follow its
+              sideways scroll (columns wider than the screen scroll, Sheets-style). */}
+          <div ref={labourHeaderScrollRef} className="overflow-hidden flex-shrink-0">
           <div
-            className="grid text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/40 border-b border-border/50 py-1.5 flex-shrink-0"
-            style={{ gridTemplateColumns: `20px ${taskCols.gridTemplate}` }}
+            className="grid text-data font-medium text-muted-foreground uppercase tracking-wide bg-muted/40 border-b border-border/50 py-1.5"
+            style={{ gridTemplateColumns: `20px ${taskCols.gridTemplate}`, minWidth: 20 + taskCols.minWidth }}
           >
             <span />
             {taskCols.cols.map(c => (
@@ -1321,15 +1324,23 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                 {c.key === 'totalHours' && mode === 'template' ? 'Default' : LABOUR_COLUMN_LABELS[c.key]}
                 <ColResizeHandle
                   onStart={e => taskCols.startResize(c.key, e.clientX, c.width)}
+                  onFit={w => taskCols.setWidth(c.key, w)}
                   testId={`labour-col-resize-${c.key}`}
                 />
               </span>
             ))}
             <span />
           </div>
+          </div>
 
           {/* Task rows */}
-          <div className="flex-1 overflow-y-auto" ref={taskListRef}>
+          <div
+            className="flex-1 overflow-auto"
+            ref={taskListRef}
+            onScroll={e => {
+              if (labourHeaderScrollRef.current) labourHeaderScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
+            }}
+          >
             {!selectedCat ? (
               <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
                 Select a category to view {mode === 'template' ? 'template items' : 'tasks'}.
@@ -1342,6 +1353,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                 className="h-full"
               />
             ) : (
+              <div style={{ minWidth: 20 + taskCols.minWidth }}>
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
@@ -1369,6 +1381,7 @@ export function LabourEstimatePanel({ projectId }: { projectId: string }) {
                   ))}
                 </SortableContext>
               </DndContext>
+              </div>
             )}
           </div>
 

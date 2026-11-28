@@ -28,7 +28,7 @@ import {
   type MeasurementType,
 } from "@/components/takeoff/TakeoffMeasurementFormModal";
 import type { TakeoffTemplate, TakeoffTemplateItem } from "@shared/takeoffTemplates";
-import { useResizableColumns, type ResizableColumn } from "@/components/useResizableColumns";
+import { useResizableColumns, fitWidthFromHandle, type ResizableColumn } from "@/components/useResizableColumns";
 
 /**
  * Edit one take-off template's items.
@@ -352,7 +352,7 @@ export default function TakeoffTemplateDetail() {
     });
   };
 
-  const { cols, gridTemplate, minWidth, startResize, headerDragProps, draggingKey, resetOrder } =
+  const { cols, gridTemplate, minWidth, startResize, setWidth, headerDragProps, draggingKey, resetOrder } =
     useResizableColumns("takeoff-template-items", COLUMNS, 40, { reorderable: true });
 
   /** One cell. Keyed by column so the header's order drives the row's order. */
@@ -715,7 +715,12 @@ export default function TakeoffTemplateDetail() {
                     <div
                       className="absolute right-0 top-0 bottom-0 w-3 flex items-center justify-center cursor-col-resize group/resize z-10"
                       onMouseDown={(e) => startResize(col.key, e.clientX, col.width)}
-                      title="Drag to resize"
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        const w = fitWidthFromHandle(e.currentTarget);
+                        if (w) setWidth(col.key, w);
+                      }}
+                      title="Drag to resize · double-click to fit"
                     >
                       <div className="w-px h-full bg-border/0 group-hover/resize:bg-border transition-colors" />
                     </div>

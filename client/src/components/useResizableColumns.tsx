@@ -108,10 +108,12 @@ export type ResizableColumn = {
   key: string;
   defaultWidth: number; // px
   /**
-   * Soaks up leftover horizontal space so the table reaches the right edge
-   * instead of trailing off into a gap. Sized `minmax(width, 1fr)`; dragging it
-   * still works because the drag sets the minimum. At most one column should
-   * set this — the first that does wins.
+   * DEPRECATED, now ignored. It made the column soak up leftover width
+   * (`minmax(width, 1fr)`), which made resizing feel backwards: widening a
+   * column to its right shrank this one instead, so the dragged column grew
+   * LEFTWARD under a stationary edge, and dragging this column's own edge did
+   * nothing until it passed the stretched width. Columns now behave like
+   * Google Sheets (see gridTemplate below). Kept so old call sites compile.
    */
   flex?: boolean;
   /** Never moves and never resizes — e.g. a drag-handle or checkbox column. */
@@ -221,24 +223,87 @@ export function useResizableColumns(
     };
   };
 
-  // A flex column is sized minmax(px, 1fr) so the table still reaches the right
-  // edge; every other column keeps its exact saved width.
-  const flexKey = cols.find((c) => c.flex)?.key;
+  // Google Sheets behaviour: every column is exactly its own width, so dragging
+  // an edge moves only that edge and everything to its right slides along.
+  // Leftover space is an EMPTY track at the very end — nothing stretches. Rows
+  // never put a cell in it. Wider than the screen → the grid scrolls sideways
+  // (callers give the grid `minWidth`).
   const gridTemplate =
-    cols
-      .map((c) => (c.key === flexKey ? `minmax(${c.width}px, 1fr)` : `${c.width}px`))
-      .join(" ") + (trailingPx ? ` ${trailingPx}px` : "");
+    cols.map((c) => `${c.width}px`).join(" ") +
+    (trailingPx ? ` ${trailingPx}px` : "") +
+    " minmax(0, 1fr)";
   const minWidth = cols.reduce((s, c) => s + c.width, 0) + trailingPx;
 
-  return { widthFor, startResize, gridTemplate, minWidth, cols, moveColumn, resetOrder, headerDragProps, draggingKey: dragVisual };
+  /** Set a column's width outright (double-click to fit). */
+  const setWidth = useCallback(
+    (key: string, width: number) => setStoredWidth(`${namespace}:${key}`, width),
+    [namespace],
+  );
+
+  return { widthFor, startResize, setWidth, gridTemplate, minWidth, cols, moveColumn, resetOrder, headerDragProps, draggingKey: dragVisual };
+}
+
+/**
+ * Double-click a column edge to fit it to its contents, like Google Sheets.
+ * Given the resize handle, finds its header cell, then the same column's cell
+ * in every row drawn with the SAME grid template, and measures the widest
+ * text / control in them. Generic over the bespoke grids because they all
+ * render header and rows as CSS grids with one child per column.
+ */
+export function fitWidthFromHandle(handle: HTMLElement, maxPx = 640): number | null {
+  const headCell = handle.parentElement;
+  const grid = headCell?.parentElement;
+  if (!headCell || !grid) return null;
+  const index = Array.prototype.indexOf.call(grid.children, headCell);
+  const template = grid.style.gridTemplateColumns;
+  if (index < 0 || !template) return null;
+  const cells: Element[] = [headCell];
+  document.querySelectorAll<HTMLElement>("[style]").forEach((el) => {
+    if (el !== grid && el.style.gridTemplateColumns === template && el.children[index]) cells.push(el.children[index]);
+  });
+  // Text is measured at its natural one-line width with its own font, so a
+  // truncated ("…") or wrapped (line-clamp) cell still reports how wide its
+  // text really is, not how wide the column happens to be now.
+  const ctx = document.createElement("canvas").getContext("2d");
+  let widest = 0;
+  for (const cell of cells) {
+    const left = cell.getBoundingClientRect().left;
+    const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const text = n.textContent ?? "";
+      const parent = n.parentElement;
+      if (!text.trim() || !parent || !ctx) continue;
+      const cs = getComputedStyle(parent);
+      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const spacing = parseFloat(cs.letterSpacing) || 0;
+      const lineWidth = Math.max(
+        ...text.split("\n").map((line) => {
+          const shown = cs.textTransform === "uppercase" ? line.toUpperCase() : line;
+          return ctx.measureText(shown).width + spacing * shown.length;
+        }),
+      );
+      const start = parent.getBoundingClientRect().left - left + (parseFloat(cs.paddingLeft) || 0);
+      widest = Math.max(widest, start + lineWidth);
+    }
+    // Icons, checkboxes, pills — but not full-width text inputs, which are
+    // as wide as the column whatever is in them.
+    cell.querySelectorAll("svg, button, [role=checkbox], input[type=checkbox]").forEach((el) => {
+      widest = Math.max(widest, el.getBoundingClientRect().right - left);
+    });
+  }
+  if (widest <= 0) return null;
+  return Math.min(maxPx, Math.max(MIN_COL_WIDTH, Math.ceil(widest + 14)));
 }
 
 /** The draggable divider drawn on a header cell's right edge. */
 export function ColResizeHandle({
   onStart,
+  onFit,
   testId,
 }: {
   onStart: (e: React.MouseEvent) => void;
+  /** Double-click: fit the column to its contents. */
+  onFit?: (width: number) => void;
   testId?: string;
 }) {
   return (
@@ -247,9 +312,15 @@ export function ColResizeHandle({
         e.preventDefault();
         onStart(e);
       }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        if (!onFit) return;
+        const w = fitWidthFromHandle(e.currentTarget);
+        if (w) onFit(w);
+      }}
       onClick={(e) => e.stopPropagation()}
       className="absolute top-1/2 -translate-y-1/2 -right-[5px] h-4 w-[9px] cursor-col-resize flex items-center justify-center group/resize z-10"
-      title="Drag to resize"
+      title={onFit ? "Drag to resize · double-click to fit" : "Drag to resize"}
       data-testid={testId}
     >
       <span className="h-3.5 w-px bg-border group-hover/resize:bg-primary transition-colors" />
